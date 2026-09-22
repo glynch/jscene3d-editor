@@ -54,7 +54,7 @@
 	padding: 7px 0;
 	border: 0;
 	background: transparent;
-	color: #a99aff;
+	color: var(--vscode-textLink-foreground);
 	font: inherit;
 	font-size: 1rem;
 	text-align: left;
@@ -62,6 +62,7 @@
 }
 
 .monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action:hover {
+	color: var(--vscode-textLink-activeForeground);
 	text-decoration: underline;
 }
 

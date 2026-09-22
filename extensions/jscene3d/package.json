@@ -22,6 +22,20 @@
 		}
 	},
 	"contributes": {
+		"themes": [
+			{
+				"id": "JScene3D Dark",
+				"label": "JScene3D Dark",
+				"uiTheme": "vs-dark",
+				"path": "./themes/jscene3d-dark-color-theme.json"
+			},
+			{
+				"id": "JScene3D Light",
+				"label": "JScene3D Light",
+				"uiTheme": "vs",
+				"path": "./themes/jscene3d-light-color-theme.json"
+			}
+		],
 		"commands": [
 			{
 				"command": "jscene3d.showProjectPlaceholder",
@@ -75,6 +89,7 @@
 			}
 		},
 		"configurationDefaults": {
+			"workbench.colorTheme": "JScene3D Dark",
 			"workbench.secondarySideBar.defaultVisibility": "hidden",
 			"chat.disableAIFeatures": true,
 			"chat.agentsControl.enabled": "hidden",
