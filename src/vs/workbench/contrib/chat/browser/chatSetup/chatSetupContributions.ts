@@ -560,7 +560,9 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 			}
 		}
 
-		registerAction2(ChatSetupTriggerAction);
+		if (product.applicationName !== 'jscene3d-editor') {
+			registerAction2(ChatSetupTriggerAction);
+		}
 		registerAction2(ChatSetupTriggerForceSignInDialogAction);
 		registerAction2(ChatSetupFromAccountsAction);
 		registerAction2(ChatSetupSignInTitleBarAction);

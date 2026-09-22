@@ -234,6 +234,10 @@ export class StartupPageRunnerContribution extends Disposable implements IWorkbe
 	}
 
 	private tryShowOnboarding(): void {
+		if (this.productService.applicationName === 'jscene3d-editor') {
+			return; // The stock first-run overlay promotes Copilot, which is not part of this product.
+		}
+
 		if (this.environmentService.skipWelcome) {
 			return; // skip welcome flag is set
 		}

@@ -60,7 +60,12 @@
 			}
 		},
 		"configurationDefaults": {
-			"workbench.secondarySideBar.defaultVisibility": "hidden"
+			"workbench.secondarySideBar.defaultVisibility": "hidden",
+			"chat.disableAIFeatures": true,
+			"chat.agentsControl.enabled": "hidden",
+			"chat.viewSessions.enabled": false,
+			"chat.titleBar.signIn.enabled": false,
+			"chat.titleBar.openInAgentsWindow.enabled": false
 		}
 	}
 }

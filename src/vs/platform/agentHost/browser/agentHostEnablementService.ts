@@ -9,6 +9,7 @@ import { isWeb } from '../../../base/common/platform.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { ChatAIDisabledSettingId } from '../../chat/common/chatSettings.js';
 import { IContextKeyService } from '../../contextkey/common/contextkey.js';
+import product from '../../product/common/product.js';
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
 import { bindContextKey, observableConfigValue } from '../../observable/common/platformObservableUtils.js';
 import { COPILOT_SANDBOX_ALLOW_BYPASS_KEY, COPILOT_SANDBOX_ENABLED_KEY, IManagedSettingsService } from '../../policy/common/copilotManagedSettings.js';
@@ -30,7 +31,7 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 	) {
 		super();
 		const aiFeaturesDisabled = observableConfigValue(ChatAIDisabledSettingId, false, configurationService);
-		this.enabled = derived(this, reader => this._isAgentHostRuntimeAvailable && !aiFeaturesDisabled.read(reader));
+		this.enabled = derived(this, reader => product.applicationName !== 'jscene3d-editor' && this._isAgentHostRuntimeAvailable && !aiFeaturesDisabled.read(reader));
 		this._register(bindContextKey(AGENT_HOST_ENABLED_CONTEXT_KEY, contextKeyService, reader => this.enabled.read(reader)));
 
 		this.managedSandboxEnforced = observableFromEvent(this,

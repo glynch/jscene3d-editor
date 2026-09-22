@@ -936,7 +936,7 @@ export class GettingStartedPage extends EditorPane {
 		const gettingStartedList = this.buildGettingStartedWalkthroughsList();
 
 		const footerChildren: HTMLElement[] = [];
-		if (canShowAgentsBanner(this.chatEntitlementService)) {
+		if (this.productService.applicationName !== 'jscene3d-editor' && canShowAgentsBanner(this.chatEntitlementService)) {
 			const agentsBanner = createAgentsBanner(
 				{
 					cssClass: 'getting-started-category.agents-banner',
