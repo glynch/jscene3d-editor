@@ -75,6 +75,7 @@ import { AccessibilityVerbositySettingId } from '../../accessibility/browser/acc
 import { AccessibleViewAction } from '../../accessibility/browser/accessibleViewActions.js';
 import { KeybindingLabel } from '../../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
+import { createJScene3DWelcome } from '../../jscene3d/browser/jscene3dWelcome.js';
 
 const SLIDE_TRANSITION_TIME_MS = 250;
 const configurationKey = 'workbench.startupEditor';
@@ -896,6 +897,18 @@ export class GettingStartedPage extends EditorPane {
 	private async buildCategoriesSlide(preserveFocus?: boolean) {
 
 		this.categoriesSlideDisposables.clear();
+		if (this.productService.applicationName === 'jscene3d-editor') {
+			this.currentWalkthrough = undefined;
+			if (this.editorInput) {
+				this.editorInput.selectedCategory = undefined;
+				this.editorInput.selectedStep = undefined;
+			}
+			this.dispatchListeners.clear();
+			reset(this.categoriesSlide, createJScene3DWelcome(this.commandService, this.categoriesSlideDisposables));
+			this.categoriesPageScrollbar?.scanDomNode();
+			this.setSlide('categories');
+			return;
+		}
 		const showOnStartupCheckbox = new Toggle({
 			icon: Codicon.check,
 			actionClassName: 'getting-started-checkbox',

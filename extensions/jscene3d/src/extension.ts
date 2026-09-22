@@ -33,6 +33,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		vscode.commands.registerCommand('jscene3d.showProjectPlaceholder', () => {
 			vscode.window.showInformationMessage(placeholderLabel());
+		}),
+		vscode.commands.registerCommand('jscene3d.createProject', () => {
+			return vscode.window.showInformationMessage(vscode.l10n.t('Create Project is a placeholder for the future JScene3D project workflow.'));
+		}),
+		vscode.commands.registerCommand('jscene3d.openProject', () => {
+			return vscode.window.showInformationMessage(vscode.l10n.t('Open Project is a placeholder. JScene3D projects are folders containing jscene3d.json; Java integration will load and validate them.'));
+		}),
+		vscode.commands.registerCommand('jscene3d.gettingStarted', () => {
+			return vscode.window.showInformationMessage(vscode.l10n.t('JScene3D Getting Started content will be added in a later stage.'));
 		})
 	);
 

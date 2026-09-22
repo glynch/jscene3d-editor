@@ -10,6 +10,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { IUntypedEditorInput } from '../../../common/editor.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
+import product from '../../../../platform/product/common/product.js';
 
 export const gettingStartedInputTypeId = 'workbench.editors.gettingStartedInput';
 
@@ -78,7 +79,7 @@ export class GettingStartedInput extends EditorInput {
 	}
 
 	override getName() {
-		return this.walkthroughPageTitle ? localize('walkthroughPageTitle', 'Walkthrough: {0}', this.walkthroughPageTitle) : localize('getStarted', "Welcome");
+		return this.walkthroughPageTitle ? localize('walkthroughPageTitle', 'Walkthrough: {0}', this.walkthroughPageTitle) : product.applicationName === 'jscene3d-editor' ? localize('jscene3dWelcome.editorName', "JScene3D Welcome") : localize('getStarted', "Welcome");
 	}
 
 	get selectedCategory() {

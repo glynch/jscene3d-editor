@@ -13,8 +13,7 @@
 	],
 	"main": "./out/extension.js",
 	"activationEvents": [
-		"onStartupFinished",
-		"onView:jscene3d.project"
+		"onStartupFinished"
 	],
 	"capabilities": {
 		"virtualWorkspaces": true,
@@ -29,6 +28,21 @@
 				"title": "%command.showProjectPlaceholder%",
 				"category": "JScene3D",
 				"icon": "$(info)"
+			},
+			{
+				"command": "jscene3d.createProject",
+				"title": "%command.createProject%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.openProject",
+				"title": "%command.openProject%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.gettingStarted",
+				"title": "%command.gettingStarted%",
+				"category": "JScene3D"
 			}
 		],
 		"menus": {
@@ -45,6 +59,7 @@
 				{
 					"id": "jscene3d.project",
 					"name": "%view.project%",
+					"icon": "$(folder)",
 					"visibility": "visible"
 				}
 			]

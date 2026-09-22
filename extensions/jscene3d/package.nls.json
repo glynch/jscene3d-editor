@@ -2,6 +2,9 @@
 	"displayName": "JScene3D",
 	"description": "JScene3D editor shell contributions",
 	"command.showProjectPlaceholder": "Show Project Placeholder",
+	"command.createProject": "Create Project",
+	"command.openProject": "Open Project...",
+	"command.gettingStarted": "Getting Started",
 	"view.project": "JScene3D Project",
 	"configuration.placeholderLabel": "Text shown in the JScene3D Project view during this proof of concept."
 }

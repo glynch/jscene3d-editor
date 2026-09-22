@@ -1,0 +1,76 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) JScene3D contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome {
+	box-sizing: border-box;
+	max-width: 720px;
+	min-height: 100%;
+	margin: 0 auto;
+	padding: clamp(36px, 9vh, 112px) 28px 48px;
+	color: var(--vscode-foreground);
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-heading {
+	margin-bottom: 52px;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-mark {
+	display: block;
+	width: 88px;
+	height: 88px;
+	margin-bottom: 24px;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome h1 {
+	font-size: clamp(2.25rem, 5vw, 3.25rem);
+	font-weight: 400;
+	line-height: 1.15;
+	white-space: normal;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-tagline {
+	margin: 12px 0 0;
+	color: var(--vscode-descriptionForeground);
+	font-size: 1.1rem;
+	line-height: 1.5;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-actions {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 48px;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-section h2 {
+	margin-bottom: 12px;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action {
+	display: block;
+	width: fit-content;
+	margin: 0 0 6px;
+	padding: 7px 0;
+	border: 0;
+	background: transparent;
+	color: #a99aff;
+	font: inherit;
+	font-size: 1rem;
+	text-align: left;
+	cursor: pointer;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action:hover {
+	text-decoration: underline;
+}
+
+.monaco-workbench .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 3px;
+}
+
+.monaco-workbench.hc-black .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action,
+.monaco-workbench.hc-light .part.editor > .content .gettingStartedContainer .jscene3d-welcome-action {
+	color: var(--vscode-textLink-foreground);
+}

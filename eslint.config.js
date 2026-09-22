@@ -150,6 +150,22 @@ export default defineConfig(
 			]
 		},
 	},
+	// JScene3D-owned workbench files retain their own copyright notice.
+	{
+		files: ['src/vs/workbench/contrib/jscene3d/**/*.{ts,tsx}'],
+		rules: {
+			'header/header': [
+				2,
+				'block',
+				[
+					'---------------------------------------------------------------------------------------------',
+					' *  Copyright (c) JScene3D contributors. All rights reserved.',
+					' *  Licensed under the MIT License. See License.txt in the project root for license information.',
+					' *--------------------------------------------------------------------------------------------'
+				]
+			]
+		},
+	},
 	// Disallow bracket notation for property names that can use dot notation.
 	{
 		files: [

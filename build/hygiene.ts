@@ -23,6 +23,13 @@ const copyrightHeaderLines = [
 	' *--------------------------------------------------------------------------------------------*/',
 ];
 
+const jscene3dCopyrightHeaderLines = [
+	'/*---------------------------------------------------------------------------------------------',
+	' *  Copyright (c) JScene3D contributors. All rights reserved.',
+	' *  Licensed under the MIT License. See License.txt in the project root for license information.',
+	' *--------------------------------------------------------------------------------------------*/',
+];
+
 interface VinylFileWithLines extends VinylFile {
 	__lines: string[];
 }
@@ -161,9 +168,10 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 
 	const copyrights = es.through(function (file: VinylFileWithLines) {
 		const lines = file.__lines;
+		const expectedHeader = file.relative.split(path.sep).join('/').startsWith('src/vs/workbench/contrib/jscene3d/') ? jscene3dCopyrightHeaderLines : copyrightHeaderLines;
 
-		for (let i = 0; i < copyrightHeaderLines.length; i++) {
-			if (lines[i] !== copyrightHeaderLines[i]) {
+		for (let i = 0; i < expectedHeader.length; i++) {
+			if (lines[i] !== expectedHeader[i]) {
 				console.error(file.relative + ': Missing or bad copyright statement');
 				errorCount++;
 				break;

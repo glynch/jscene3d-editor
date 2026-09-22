@@ -34,6 +34,7 @@ import { AccessibleViewRegistry } from '../../../../platform/accessibility/brows
 import { GettingStartedAccessibleView } from './gettingStartedAccessibleView.js';
 import { AgentSessionsWelcomePage } from '../../welcomeAgentSessions/browser/agentSessionsWelcome.js';
 import { IChatEntitlementService } from '../../../services/chat/common/chatEntitlementService.js';
+import product from '../../../../platform/product/common/product.js';
 
 export * as icons from './gettingStartedIcons.js';
 
@@ -41,7 +42,7 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'workbench.action.openWalkthrough',
-			title: localize2('miWelcome', 'Welcome'),
+			title: product.applicationName === 'jscene3d-editor' ? localize2('jscene3dWelcome.menuTitle', 'JScene3D Welcome') : localize2('miWelcome', 'Welcome'),
 			category: Categories.Help,
 			f1: true,
 			menu: {
@@ -50,7 +51,7 @@ registerAction2(class extends Action2 {
 				order: 1,
 			},
 			metadata: {
-				description: localize2('minWelcomeDescription', 'Opens a Walkthrough to help you get started in VS Code.')
+				description: product.applicationName === 'jscene3d-editor' ? localize2('jscene3dWelcome.menuDescription', 'Open the JScene3D Welcome page.') : localize2('minWelcomeDescription', 'Opens a Walkthrough to help you get started in VS Code.')
 			}
 		});
 	}

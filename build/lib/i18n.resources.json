@@ -131,6 +131,10 @@
 			"project": "vscode-workbench"
 		},
 		{
+			"name": "vs/workbench/contrib/jscene3d",
+			"project": "vscode-workbench"
+		},
+		{
 			"name": "vs/workbench/contrib/languageStatus",
 			"project": "vscode-workbench"
 		},
