@@ -20,6 +20,12 @@ import { getUNCHost, addUNCHostToAllowlist } from './vs/base/node/unc.js';
 import { INLSConfiguration } from './vs/nls.js';
 import { NativeParsedArgs } from './vs/platform/environment/common/argv.js';
 
+// Source launches use the repository package name by default. Set the native
+// development name before Electron initializes macOS Safe Storage.
+if (process.env['VSCODE_DEV'] && product.nameShort) {
+	app.setName(`${product.nameShort} Dev`);
+}
+
 perf.mark('code/didStartMain');
 
 perf.mark('code/willLoadMainBundle', {

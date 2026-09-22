@@ -1,0 +1,66 @@
+{
+	"name": "jscene3d",
+	"displayName": "%displayName%",
+	"description": "%description%",
+	"publisher": "jscene3d",
+	"version": "0.0.1",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.138.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"main": "./out/extension.js",
+	"activationEvents": [
+		"onStartupFinished",
+		"onView:jscene3d.project"
+	],
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"commands": [
+			{
+				"command": "jscene3d.showProjectPlaceholder",
+				"title": "%command.showProjectPlaceholder%",
+				"category": "JScene3D",
+				"icon": "$(info)"
+			}
+		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "jscene3d.showProjectPlaceholder",
+					"when": "view == jscene3d.project",
+					"group": "navigation"
+				}
+			]
+		},
+		"views": {
+			"explorer": [
+				{
+					"id": "jscene3d.project",
+					"name": "%view.project%",
+					"visibility": "visible"
+				}
+			]
+		},
+		"configuration": {
+			"title": "JScene3D",
+			"properties": {
+				"jscene3d.project.placeholderLabel": {
+					"type": "string",
+					"default": "Project integration is a Stage 3 placeholder",
+					"description": "%configuration.placeholderLabel%"
+				}
+			}
+		},
+		"configurationDefaults": {
+			"workbench.secondarySideBar.defaultVisibility": "hidden"
+		}
+	}
+}
