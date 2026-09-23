@@ -18,6 +18,7 @@ import { getErrorMessage } from '../../../../base/common/errors.js';
 import { IWorkbenchExtensionManagementService } from '../../extensionManagement/common/extensionManagement.js';
 import { toExtensionDescription } from '../common/extensions.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
 
 export class CachedExtensionScanner {
 
@@ -33,6 +34,7 @@ export class CachedExtensionScanner {
 		@IWorkbenchExtensionManagementService private readonly _extensionManagementService: IWorkbenchExtensionManagementService,
 		@IWorkbenchEnvironmentService private readonly _environmentService: IWorkbenchEnvironmentService,
 		@ILogService private readonly _logService: ILogService,
+		@IProductService private readonly _productService: IProductService,
 	) {
 		this.scannedExtensions = new Promise<IExtensionDescription[]>((resolve, reject) => {
 			this._scannedExtensionsResolve = resolve;
@@ -112,7 +114,7 @@ export class CachedExtensionScanner {
 			const user = scannedUserExtensions.map(e => toExtensionDescriptionFromScannedExtension(e, false));
 			const workspace = workspaceExtensions.map(e => toExtensionDescription(e, false));
 			const development = scannedDevelopedExtensions.map(e => toExtensionDescriptionFromScannedExtension(e, true));
-			const r = dedupExtensions(system, user, workspace, development, this._logService);
+			const r = dedupExtensions(system, user, workspace, development, this._logService, this._productService);
 
 			if (!hasErrors) {
 				const disposable = this._extensionsScannerService.onDidChangeCache(() => {

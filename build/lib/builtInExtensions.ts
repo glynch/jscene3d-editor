@@ -48,6 +48,44 @@ const webBuiltInExtensions = productjson.webBuiltInExtensions as IExtensionDefin
 const controlFilePath = path.join(os.homedir(), '.vscode-oss-dev', 'extensions', 'control.json');
 const ENABLE_LOGGING = !process.env['VSCODE_BUILD_BUILTIN_EXTENSIONS_SILENCE_PLEASE'];
 
+export function validateRequiredExtensions(product: {
+	requiredExtensions?: unknown;
+	builtInExtensions?: unknown;
+	builtInExtensionsEnabledWithAutoUpdates?: unknown;
+}): void {
+	const requiredExtensions = product.requiredExtensions;
+	if (requiredExtensions === undefined) {
+		return;
+	}
+	if (!Array.isArray(requiredExtensions) || requiredExtensions.some(id => typeof id !== 'string' || id !== id.toLowerCase() || !id.includes('.'))) {
+		throw new Error('product.json requiredExtensions must be an array of canonical lower-case extension IDs.');
+	}
+	if (new Set(requiredExtensions).size !== requiredExtensions.length) {
+		throw new Error('product.json requiredExtensions contains duplicate extension IDs.');
+	}
+
+	const definitions = Array.isArray(product.builtInExtensions) ? product.builtInExtensions as Partial<IExtensionDefinition>[] : [];
+	const autoUpdateIds = new Set(Array.isArray(product.builtInExtensionsEnabledWithAutoUpdates)
+		? product.builtInExtensionsEnabledWithAutoUpdates.filter((id): id is string => typeof id === 'string').map(id => id.toLowerCase())
+		: []);
+
+	for (const id of requiredExtensions) {
+		const matches = definitions.filter(definition => definition.name?.toLowerCase() === id);
+		if (matches.length !== 1) {
+			throw new Error(`Required extension '${id}' must match exactly one product.json builtInExtensions entry.`);
+		}
+		const definition = matches[0];
+		if (typeof definition.version !== 'string' || !definition.version || typeof definition.repo !== 'string' || !definition.repo || typeof definition.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(definition.sha256)) {
+			throw new Error(`Required extension '${id}' must have pinned version, repository, and SHA-256 fields.`);
+		}
+		if (autoUpdateIds.has(id)) {
+			throw new Error(`Required extension '${id}' cannot be listed in builtInExtensionsEnabledWithAutoUpdates.`);
+		}
+	}
+}
+
+validateRequiredExtensions(productjson);
+
 function log(...messages: string[]): void {
 	if (ENABLE_LOGGING) {
 		fancyLog(...messages);

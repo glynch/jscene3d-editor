@@ -312,6 +312,12 @@
 		}
 	],
 	"builtInExtensionsEnabledWithAutoUpdates": [],
+	"requiredExtensions": [
+		"redhat.java",
+		"vscjava.vscode-java-debug",
+		"vscjava.vscode-maven",
+		"vscjava.vscode-java-test"
+	],
 	"sessionsWindowAllowedExtensions": [],
 	"voiceWsUrl": "wss://falcon-caas.mai.microsoft.com/voice-code/api/v1/realtime/voice"
 }

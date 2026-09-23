@@ -24,6 +24,7 @@ import { Schemas } from '../../base/common/network.js';
 import { IRemoteExtensionsScannerService } from '../../platform/remote/common/remoteExtensionsScanner.js';
 import { ILanguagePackService } from '../../platform/languagePacks/common/languagePacks.js';
 import { areSameExtensions } from '../../platform/extensionManagement/common/extensionManagementUtil.js';
+import { IProductService } from '../../platform/product/common/productService.js';
 
 export class RemoteExtensionsScannerService implements IRemoteExtensionsScannerService {
 
@@ -41,6 +42,7 @@ export class RemoteExtensionsScannerService implements IRemoteExtensionsScannerS
 		private readonly _extensionGalleryService: IExtensionGalleryService,
 		private readonly _languagePackService: ILanguagePackService,
 		private readonly _extensionManagementService: IExtensionManagementService,
+		private readonly _productService: IProductService,
 	) {
 		const builtinExtensionsToInstall = environmentService.args['install-builtin-extension'];
 		if (builtinExtensionsToInstall) {
@@ -141,7 +143,7 @@ export class RemoteExtensionsScannerService implements IRemoteExtensionsScannerS
 			this._scanDevelopedExtensions(language, extensionDevelopmentPath)
 		]);
 
-		return dedupExtensions(builtinExtensions, installedExtensions, workspaceInstalledExtensions, developedExtensions, this._logService);
+		return dedupExtensions(builtinExtensions, installedExtensions, workspaceInstalledExtensions, developedExtensions, this._logService, this._productService);
 	}
 
 	private async _scanDevelopedExtensions(language: string, extensionDevelopmentPaths?: string[]): Promise<IExtensionDescription[]> {

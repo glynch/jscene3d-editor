@@ -14,6 +14,8 @@ import { ILogService } from '../../log/common/log.js';
 import { arch } from '../../../base/common/process.js';
 import { TelemetryTrustedValue } from '../../telemetry/common/telemetryUtils.js';
 import { isString } from '../../../base/common/types.js';
+import { IProductService } from '../../product/common/productService.js';
+import { localize } from '../../../nls.js';
 
 export function areSameExtensions(a: IExtensionIdentifier, b: IExtensionIdentifier): boolean {
 	if (a.uuid && b.uuid) {
@@ -23,6 +25,14 @@ export function areSameExtensions(a: IExtensionIdentifier, b: IExtensionIdentifi
 		return true;
 	}
 	return compareIgnoreCase(a.id, b.id) === 0;
+}
+
+export function isRequiredExtension(productService: Pick<IProductService, 'requiredExtensions'>, identifier: IExtensionIdentifier): boolean {
+	return productService.requiredExtensions?.some(id => areSameExtensions({ id }, identifier)) === true;
+}
+
+export function getRequiredExtensionManagementMessage(productService: Pick<IProductService, 'nameLong'>, identifier: IExtensionIdentifier): string {
+	return localize('required extension managed by product', "Extension '{0}' is managed by {1} and cannot be installed, updated, disabled, or uninstalled separately.", identifier.id, productService.nameLong);
 }
 
 const ExtensionKeyRegex = /^([^.]+\..+)-(\d+\.\d+\.\d+)(-(.+))?$/;

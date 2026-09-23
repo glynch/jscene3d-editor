@@ -8,9 +8,11 @@ import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import * as semver from '../../../../base/common/semver/semver.js';
 import { Mutable } from '../../../../base/common/types.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
+import { isRequiredExtension } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
 
 // TODO: @sandy081 merge this with deduping in extensionsScannerService.ts
-export function dedupExtensions(system: IExtensionDescription[], user: IExtensionDescription[], workspace: IExtensionDescription[], development: IExtensionDescription[], logService: ILogService): IExtensionDescription[] {
+export function dedupExtensions(system: IExtensionDescription[], user: IExtensionDescription[], workspace: IExtensionDescription[], development: IExtensionDescription[], logService: ILogService, productService: Pick<IProductService, 'requiredExtensions'>): IExtensionDescription[] {
 	const result = new ExtensionIdentifierMap<IExtensionDescription>();
 	system.forEach((systemExtension) => {
 		const extension = result.get(systemExtension.identifier);
@@ -23,6 +25,10 @@ export function dedupExtensions(system: IExtensionDescription[], user: IExtensio
 		const extension = result.get(userExtension.identifier);
 		if (extension) {
 			if (extension.isBuiltin) {
+				if (isRequiredExtension(productService, { id: extension.identifier.value })) {
+					logService.info(`Skipping user extension ${userExtension.extensionLocation.path} because the builtin extension is required by the product.`);
+					return;
+				}
 				if (semver.gte(extension.version, userExtension.version)) {
 					logService.warn(`Skipping extension ${userExtension.extensionLocation.path} in favour of the builtin extension ${extension.extensionLocation.path}.`);
 					return;
@@ -41,6 +47,10 @@ export function dedupExtensions(system: IExtensionDescription[], user: IExtensio
 	workspace.forEach(workspaceExtension => {
 		const extension = result.get(workspaceExtension.identifier);
 		if (extension) {
+			if (extension.isBuiltin && isRequiredExtension(productService, { id: extension.identifier.value })) {
+				logService.info(`Skipping workspace extension ${workspaceExtension.extensionLocation.path} because the builtin extension is required by the product.`);
+				return;
+			}
 			logService.warn(localize('overwritingWithWorkspaceExtension', "Overwriting {0} with Workspace Extension {1}.", extension.extensionLocation.fsPath, workspaceExtension.extensionLocation.fsPath));
 		}
 		result.set(workspaceExtension.identifier, workspaceExtension);

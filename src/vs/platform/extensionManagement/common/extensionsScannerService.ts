@@ -21,7 +21,7 @@ import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IEnvironmentService } from '../../environment/common/environment.js';
 import { IProductVersion, Metadata } from './extensionManagement.js';
-import { areSameExtensions, computeTargetPlatform, getExtensionId, getGalleryExtensionId } from './extensionManagementUtil.js';
+import { areSameExtensions, computeTargetPlatform, getExtensionId, getGalleryExtensionId, isRequiredExtension } from './extensionManagementUtil.js';
 import { ExtensionType, ExtensionIdentifier, IExtensionManifest, TargetPlatform, IExtensionIdentifier, IRelaxedExtensionManifest, UNDEFINED_PUBLISHER, IExtensionDescription, BUILTIN_MANIFEST_CACHE_FILE, USER_MANIFEST_CACHE_FILE, ExtensionIdentifierMap, parseEnabledApiProposalNames } from '../../extensions/common/extensions.js';
 import { validateExtensionManifest } from '../../extensions/common/extensionValidator.js';
 import { FileOperationResult, IFileService, toFileOperationResult } from '../../files/common/files.js';
@@ -422,6 +422,10 @@ export abstract class AbstractExtensionsScannerService extends Disposable implem
 			}
 			if (productBuiltInExtensionsEnabledWithAutoUpdates.has(extension.identifier.id.toLowerCase()) && !extension.forceAutoUpdate) {
 				this.logService.info(`Skipping user installed builtin extension ${extension.identifier.id} with version ${extension.manifest.version} because it is not allowed to in the current product quality ${this.productService.quality}`);
+				return;
+			}
+			if (existing?.type === ExtensionType.System && isRequiredExtension(this.productService, existing.identifier)) {
+				this.logService.info(`Skipping user extension ${extension.identifier.id} with version ${extension.manifest.version} because the system extension is required by the product.`);
 				return;
 			}
 			if (!existing || pick(existing, extension, false)) {

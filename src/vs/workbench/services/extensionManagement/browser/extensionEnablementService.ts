@@ -8,7 +8,7 @@ import { Event, Emitter } from '../../../../base/common/event.js';
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IExtensionManagementService, IExtensionIdentifier, IGlobalExtensionEnablementService, ENABLED_EXTENSIONS_STORAGE_PATH, DISABLED_EXTENSIONS_STORAGE_PATH, InstallOperation, IAllowedExtensionsService, MaliciousExtensionInfo } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IWorkbenchExtensionEnablementService, EnablementState, IExtensionManagementServerService, IWorkbenchExtensionManagementService, IExtensionManagementServer, ExtensionInstallLocation } from '../common/extensionManagement.js';
-import { areSameExtensions, BetterMergeId, getExtensionDependencies, isMalicious } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
+import { areSameExtensions, BetterMergeId, getExtensionDependencies, getRequiredExtensionManagementMessage, isMalicious, isRequiredExtension } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
@@ -88,7 +88,7 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 		@IChatEntitlementService private readonly chatEntitlementService: IChatEntitlementService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
-		@IProductService productService: IProductService
+		@IProductService private readonly productService: IProductService
 	) {
 		super();
 		this.storageManager = this._register(new StorageManager(storageService));
@@ -253,6 +253,10 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 	}
 
 	private throwErrorIfCannotChangeEnablement(extension: IExtension, donotCheckDependencies?: boolean): void {
+		if (this._isRequiredSystemExtension(extension)) {
+			throw new Error(getRequiredExtensionManagementMessage(this.productService, extension.identifier));
+		}
+
 		if (isLanguagePackExtension(extension.manifest)) {
 			throw new Error(localize('cannot disable language pack extension', "Cannot change enablement of {0} extension because it contributes language packs.", extension.manifest.displayName || extension.identifier.id));
 		}
@@ -299,6 +303,10 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 	private throwErrorIfCannotChangeWorkspaceEnablement(extension: IExtension): void {
 		if (!this.hasWorkspace) {
 			throw new Error(localize('noWorkspace', "No workspace."));
+		}
+
+		if (this._isRequiredSystemExtension(extension)) {
+			throw new Error(getRequiredExtensionManagementMessage(this.productService, extension.identifier));
 		}
 
 		if (this.isDefaultOrSettingsSyncAuthProviderExtension(extension.manifest)) {
@@ -532,11 +540,18 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 	}
 
 	private _isEnabledInEnv(extension: IExtension): boolean {
+		if (this._isRequiredSystemExtension(extension)) {
+			return true;
+		}
 		const enabledExtensions = this.environmentService.enableExtensions;
 		if (Array.isArray(enabledExtensions)) {
 			return enabledExtensions.some(id => areSameExtensions({ id }, extension.identifier));
 		}
 		return false;
+	}
+
+	private _isRequiredSystemExtension(extension: IExtension): boolean {
+		return extension.type === ExtensionType.System && isRequiredExtension(this.productService, extension.identifier);
 	}
 
 	private _isDisabledByVirtualWorkspace(extension: IExtension, workspaceType: WorkspaceType): boolean {

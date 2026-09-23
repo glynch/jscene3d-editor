@@ -24,7 +24,7 @@ import {
 	ExtensionSignatureVerificationCode,
 	IAllowedExtensionsService
 } from './extensionManagement.js';
-import { areSameExtensions, ExtensionKey, getGalleryExtensionId, getGalleryExtensionTelemetryData, getLocalExtensionTelemetryData, isMalicious } from './extensionManagementUtil.js';
+import { areSameExtensions, ExtensionKey, getGalleryExtensionId, getGalleryExtensionTelemetryData, getLocalExtensionTelemetryData, getRequiredExtensionManagementMessage, isMalicious, isRequiredExtension } from './extensionManagementUtil.js';
 import { ExtensionType, IExtensionManifest, isApplicationScopedExtension, TargetPlatform } from '../../extensions/common/extensions.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
@@ -775,6 +775,10 @@ export abstract class AbstractExtensionManagementService extends CommontExtensio
 	}
 
 	async uninstallExtensions(extensions: UninstallExtensionInfo[]): Promise<void> {
+		const requiredSystemExtension = extensions.find(({ extension }) => extension.type === ExtensionType.System && isRequiredExtension(this.productService, extension.identifier));
+		if (requiredSystemExtension) {
+			throw new ExtensionManagementError(getRequiredExtensionManagementMessage(this.productService, requiredSystemExtension.extension.identifier), ExtensionManagementErrorCode.NotAllowed);
+		}
 
 		const getUninstallExtensionTaskKey = (extension: ILocalExtension, uninstallOptions: UninstallExtensionTaskOptions) => this.getUninstallExtensionTaskKey(extension.identifier, uninstallOptions.profileLocation, uninstallOptions.versionOnly ? extension.manifest.version : undefined);
 

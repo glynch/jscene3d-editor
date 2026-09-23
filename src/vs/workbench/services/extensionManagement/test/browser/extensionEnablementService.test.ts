@@ -105,7 +105,7 @@ export class TestExtensionEnablementService extends ExtensionEnablementService {
 			chatEntitlementService ?? new TestChatEntitlementService(),
 			instantiationService,
 			new NullLogService(),
-			productService
+			instantiationService.get(IProductService) || productService
 		);
 		this._register(disposables);
 	}
@@ -656,6 +656,39 @@ suite('ExtensionEnablementService Test', () => {
 		instantiationService.stub(IWorkbenchEnvironmentService, { enableExtensions: <readonly string[]>['pub.a'] });
 		testObject = disposableStore.add(new TestExtensionEnablementService(instantiationService));
 		assert.strictEqual(testObject.canChangeEnablement(aLocalExtension('pub.a')), false);
+	});
+
+	test('required system extension overrides persisted global and workspace disablement', async () => {
+		const extension = aLocalExtension('pub.a', undefined, ExtensionType.System);
+		installed.push(extension);
+
+		await testObject.setEnablement([extension], EnablementState.DisabledGlobally);
+		await testObject.setEnablement([extension], EnablementState.DisabledWorkspace);
+		instantiationService.stub(IProductService, { ...TestProductService, requiredExtensions: ['pub.a'] });
+		testObject = disposableStore.add(new TestExtensionEnablementService(instantiationService));
+
+		assert.strictEqual(testObject.getEnablementState(extension), EnablementState.EnabledByEnvironment);
+		assert.strictEqual(testObject.canChangeEnablement(extension), false);
+		assert.strictEqual(testObject.canChangeWorkspaceEnablement(extension), false);
+		await assert.rejects(testObject.setEnablement([extension], EnablementState.DisabledGlobally), /managed by/);
+		await assert.rejects(testObject.setEnablement([extension], EnablementState.DisabledWorkspace), /managed by/);
+	});
+
+	test('required extension policy does not affect ordinary system extensions', () => {
+		instantiationService.stub(IProductService, { ...TestProductService, requiredExtensions: ['pub.required'] });
+		testObject = disposableStore.add(new TestExtensionEnablementService(instantiationService));
+
+		assert.strictEqual(testObject.canChangeEnablement(aLocalExtension('pub.optional', undefined, ExtensionType.System)), true);
+	});
+
+	test('environment disable overrides required system extension for diagnostics', () => {
+		const extension = aLocalExtension('pub.a', undefined, ExtensionType.System);
+		installed.push(extension);
+		instantiationService.stub(IProductService, { ...TestProductService, requiredExtensions: ['pub.a'] });
+		instantiationService.stub(IWorkbenchEnvironmentService, { disableExtensions: ['pub.a'] });
+		testObject = disposableStore.add(new TestExtensionEnablementService(instantiationService));
+
+		assert.strictEqual(testObject.getEnablementState(extension), EnablementState.DisabledByEnvironment);
 	});
 
 	test('test extension does not support vitrual workspace is not enabled in virtual workspace', async () => {

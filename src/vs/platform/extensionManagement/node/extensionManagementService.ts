@@ -37,7 +37,7 @@ import {
 	VerifyExtensionSignatureConfigKey,
 	shouldRequireRepositorySignatureFor,
 } from '../common/extensionManagement.js';
-import { areSameExtensions, computeTargetPlatform, ExtensionKey, getGalleryExtensionId, groupByExtension } from '../common/extensionManagementUtil.js';
+import { areSameExtensions, computeTargetPlatform, ExtensionKey, getGalleryExtensionId, getRequiredExtensionManagementMessage, groupByExtension, isRequiredExtension } from '../common/extensionManagementUtil.js';
 import { IExtensionsProfileScannerService, IScannedProfileExtension } from '../common/extensionsProfileScannerService.js';
 import { IExtensionsScannerService, IScannedExtension, ManifestMetadata, UserExtensionsScanOptions } from '../common/extensionsScannerService.js';
 import { ExtensionsDownloader } from './extensionDownloader.js';
@@ -179,6 +179,9 @@ export class ExtensionManagementService extends AbstractExtensionManagementServi
 		if (!local || !local.manifest.name || !local.manifest.version) {
 			throw new Error(`Cannot find a valid extension from the location ${location.toString()}`);
 		}
+		if (isRequiredExtension(this.productService, local.identifier)) {
+			throw new ExtensionManagementError(getRequiredExtensionManagementMessage(this.productService, local.identifier), ExtensionManagementErrorCode.NotAllowed);
+		}
 		await this.addExtensionsToProfile([[local, { source: 'resource' }]], profileLocation);
 		this.logService.info('Successfully installed extension', local.identifier.id, profileLocation.toString());
 		return local;
@@ -187,6 +190,10 @@ export class ExtensionManagementService extends AbstractExtensionManagementServi
 	async installExtensionsFromProfile(extensions: IExtensionIdentifier[], fromProfileLocation: URI, toProfileLocation: URI): Promise<ILocalExtension[]> {
 		this.logService.trace('ExtensionManagementService#installExtensionsFromProfile', extensions, fromProfileLocation.toString(), toProfileLocation.toString());
 		const extensionsToInstall = (await this.getInstalled(ExtensionType.User, fromProfileLocation)).filter(e => extensions.some(id => areSameExtensions(id, e.identifier)));
+		const requiredExtension = extensionsToInstall.find(extension => isRequiredExtension(this.productService, extension.identifier));
+		if (requiredExtension) {
+			throw new ExtensionManagementError(getRequiredExtensionManagementMessage(this.productService, requiredExtension.identifier), ExtensionManagementErrorCode.NotAllowed);
+		}
 		if (extensionsToInstall.length) {
 			const metadata = await Promise.all(extensionsToInstall.map(e => this.extensionsScanner.scanMetadata(e, fromProfileLocation)));
 			await this.addExtensionsToProfile(extensionsToInstall.map((e, index) => [e, metadata[index]]), toProfileLocation);
@@ -1064,6 +1071,9 @@ class InstallExtensionInProfileTask extends AbstractExtensionTask<ILocalExtensio
 	}
 
 	protected async doRun(token: CancellationToken): Promise<ILocalExtension> {
+		if (isRequiredExtension(this.productService, this.identifier)) {
+			throw new ExtensionManagementError(getRequiredExtensionManagementMessage(this.productService, this.identifier), ExtensionManagementErrorCode.NotAllowed);
+		}
 		const installed = await this.extensionsScanner.scanExtensions(ExtensionType.User, this.options.profileLocation, this.options.productVersion);
 		const existingExtension = installed.find(i => areSameExtensions(i.identifier, this.identifier));
 		if (existingExtension) {
