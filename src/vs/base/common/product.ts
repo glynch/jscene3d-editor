@@ -253,6 +253,7 @@ export interface IProductConfiguration {
 	}>;
 	readonly extensionsForceVersionByQuality?: readonly string[];
 	readonly builtInExtensionsEnabledWithAutoUpdates: readonly string[];
+	readonly excludedBuiltInExtensions?: readonly string[];
 	readonly requiredExtensions?: readonly string[];
 	readonly sessionsWindowAllowedExtensions?: readonly string[];
 

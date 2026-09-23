@@ -22,6 +22,7 @@ import { type IExtensionDefinition, getExtensionStream } from './builtInExtensio
 import { fetchUrls, fetchGithub } from './fetch.ts';
 import { createTsgoStream, spawnTsgo } from './tsgo.ts';
 import watcher from './watch/index.ts';
+import { getExcludedBuiltinExtensionIds, isExcludedBuiltinExtension } from './extensionProductPolicy.ts';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -336,9 +337,12 @@ const marketplaceWebExtensionsExclude = new Set([
 const productJson = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../product.json'), 'utf8'));
 const builtInExtensions: IExtensionDefinition[] = productJson.builtInExtensions || [];
 const webBuiltInExtensions: IExtensionDefinition[] = productJson.webBuiltInExtensions || [];
+const productExcludedBuiltinExtensions = getExcludedBuiltinExtensionIds(productJson);
 
 type ExtensionKind = 'ui' | 'workspace' | 'web';
 interface IExtensionManifest {
+	name?: string;
+	publisher?: string;
 	main?: string;
 	browser?: string;
 	extensionKind?: ExtensionKind | ExtensionKind[];
@@ -422,11 +426,12 @@ function doPackageLocalExtensionsStream(forWeb: boolean, disableMangle: boolean,
 				const absoluteManifestPath = path.join(root, manifestPath);
 				const extensionPath = path.dirname(path.join(root, manifestPath));
 				const extensionName = path.basename(extensionPath);
-				return { name: extensionName, path: extensionPath, manifestPath: absoluteManifestPath };
+				return { name: extensionName, path: extensionPath, manifestPath: absoluteManifestPath, manifest: require(absoluteManifestPath) as IExtensionManifest };
 			})
 			.filter(({ name }) => native ? nativeExtensionsSet.has(name) : !nativeExtensionsSet.has(name))
 			.filter(({ name }) => excludedExtensions.indexOf(name) === -1)
 			.filter(({ name }) => builtInExtensions.every(b => b.name !== name))
+			.filter(({ manifest }) => !isExcludedBuiltinExtension(manifest, productExcludedBuiltinExtensions))
 			.filter(({ manifestPath }) => (forWeb ? isWebExtension(require(manifestPath)) : true))
 	);
 

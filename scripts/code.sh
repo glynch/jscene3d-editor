@@ -40,8 +40,10 @@ function code() {
 	export NODE_ENV=development
 	export VSCODE_DEV=1
 	export VSCODE_CLI=1
-	# Keep the source-built Copilot extension out of this JScene3D development product.
-	export VSCODE_SKIP_BUILTIN_EXTENSIONS="GitHub.copilot-chat${VSCODE_SKIP_BUILTIN_EXTENSIONS:+,$VSCODE_SKIP_BUILTIN_EXTENSIONS}"
+	# Keep product-excluded built-ins out of JScene3D source-development launches.
+	PRODUCT_EXCLUDED_BUILTIN_EXTENSIONS=`node -p "(require('./product.json').excludedBuiltInExtensions || []).join(',')"`
+	JSCENE3D_SKIP_BUILTIN_EXTENSIONS="GitHub.copilot-chat${PRODUCT_EXCLUDED_BUILTIN_EXTENSIONS:+,$PRODUCT_EXCLUDED_BUILTIN_EXTENSIONS}"
+	export VSCODE_SKIP_BUILTIN_EXTENSIONS="$JSCENE3D_SKIP_BUILTIN_EXTENSIONS${VSCODE_SKIP_BUILTIN_EXTENSIONS:+,$VSCODE_SKIP_BUILTIN_EXTENSIONS}"
 	export ELECTRON_ENABLE_STACK_DUMPING=1
 	export ELECTRON_ENABLE_LOGGING=1
 
