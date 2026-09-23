@@ -4,11 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { mainWindow } from '../../../base/browser/window.js';
 import { mock } from '../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
 import { IPartsSplash } from '../../../platform/theme/common/themeService.js';
 import { ThemeTypeSelector } from '../../../platform/theme/common/theme.js';
 import { getPartsSplashColors } from '../../electron-browser/workbench/partsSplash.js';
+import { hideJScene3DSplash, showJScene3DSplash } from '../../electron-browser/workbench/jscene3dSplash.js';
 
 suite('Parts splash colors', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -94,6 +96,44 @@ suite('Parts splash colors', () => {
 			background: '#606060',
 			titleBarBackground: '#404040',
 			statusBarBackground: '#00000000',
+		});
+	});
+});
+
+suite('JScene3D startup splash', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	teardown(() => hideJScene3DSplash(mainWindow));
+
+	test('composes the owned background, mark, and product name', () => {
+		showJScene3DSplash(mainWindow);
+
+		const splash = mainWindow.document.getElementById('monaco-parts-splash');
+		assert.deepStrictEqual({
+			role: splash?.getAttribute('role'),
+			label: splash?.getAttribute('aria-label'),
+			background: splash?.querySelector<HTMLImageElement>('.jscene3d-startup-splash-background')?.src.endsWith('/media/jscene3d/viewport-emergence-background.png'),
+			mark: splash?.querySelector<HTMLImageElement>('.jscene3d-startup-splash-mark')?.src.endsWith('/media/jscene3d/jscene3d-mark.svg'),
+			title: splash?.querySelector('.jscene3d-startup-splash-title')?.textContent,
+		}, {
+			role: 'img',
+			label: 'JScene3D Editor',
+			background: true,
+			mark: true,
+			title: 'JScene3D Editor',
+		});
+	});
+
+	test('removes the splash and its initial styles on startup failure', () => {
+		showJScene3DSplash(mainWindow);
+		hideJScene3DSplash(mainWindow);
+
+		assert.deepStrictEqual({
+			splash: mainWindow.document.getElementById('monaco-parts-splash'),
+			styles: mainWindow.document.head.querySelector('.jscene3d-startup-splash-styles'),
+		}, {
+			splash: null,
+			styles: null,
 		});
 	});
 });

@@ -30,6 +30,11 @@ const jscene3dCopyrightHeaderLines = [
 	' *--------------------------------------------------------------------------------------------*/',
 ];
 
+function isJScene3DOwnedFile(relativePath: string): boolean {
+	const normalizedPath = relativePath.split(path.sep).join('/');
+	return normalizedPath.startsWith('src/vs/workbench/contrib/jscene3d/') || normalizedPath === 'src/vs/code/electron-browser/workbench/jscene3dSplash.ts';
+}
+
 interface VinylFileWithLines extends VinylFile {
 	__lines: string[];
 }
@@ -168,7 +173,7 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 
 	const copyrights = es.through(function (file: VinylFileWithLines) {
 		const lines = file.__lines;
-		const expectedHeader = file.relative.split(path.sep).join('/').startsWith('src/vs/workbench/contrib/jscene3d/') ? jscene3dCopyrightHeaderLines : copyrightHeaderLines;
+		const expectedHeader = isJScene3DOwnedFile(file.relative) ? jscene3dCopyrightHeaderLines : copyrightHeaderLines;
 
 		for (let i = 0; i < expectedHeader.length; i++) {
 			if (lines[i] !== expectedHeader[i]) {

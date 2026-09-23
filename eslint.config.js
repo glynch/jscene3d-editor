@@ -150,9 +150,12 @@ export default defineConfig(
 			]
 		},
 	},
-	// JScene3D-owned workbench files retain their own copyright notice.
+	// JScene3D-owned files retain their own copyright notice.
 	{
-		files: ['src/vs/workbench/contrib/jscene3d/**/*.{ts,tsx}'],
+		files: [
+			'src/vs/workbench/contrib/jscene3d/**/*.{ts,tsx}',
+			'src/vs/code/electron-browser/workbench/jscene3dSplash.ts'
+		],
 		rules: {
 			'header/header': [
 				2,

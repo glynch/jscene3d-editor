@@ -1514,6 +1514,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 		const newWindowProfile = windowConfig?.newWindowProfile
 			? this.userDataProfilesMainService.profiles.find(profile => profile.name === windowConfig.newWindowProfile) : undefined;
 		const defaultProfile = newWindowProfile ?? (lastActiveWindow?.profile?.isAgentsWindowProfile ? undefined : lastActiveWindow?.profile) ?? this.userDataProfilesMainService.defaultProfile;
+		const isSessionsWindow = isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace);
 
 		let window: ICodeWindow | undefined;
 		if (!options.forceNewWindow && !options.forceNewTabbedWindow) {
@@ -1582,6 +1583,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			product,
 			isInitialStartup: options.initialStartup,
+			showJScene3DSplash: product.applicationName === 'jscene3d-editor' && options.initialStartup === true && !window && this.windows.size === 0 && !isSessionsWindow,
 			perfMarks: getMarks(),
 			os: { release: release(), hostname: hostname(), arch: arch() },
 
@@ -1594,7 +1596,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			cssModules: this.cssDevelopmentService.isEnabled ? await this.cssDevelopmentService.getCssModules() : undefined,
 
-			isSessionsWindow: isWorkspaceIdentifier(options.workspace) && isEqual(options.workspace.configPath, this.environmentMainService.agentSessionsWorkspace),
+			isSessionsWindow,
 		};
 
 		// New window

@@ -485,6 +485,7 @@ export interface INativeWindowConfiguration extends IWindowConfiguration, Native
 	workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier;
 
 	isInitialStartup?: boolean;
+	showJScene3DSplash?: boolean;
 	logLevel: LogLevel;
 	loggers: UriDto<ILoggerResource>[];
 

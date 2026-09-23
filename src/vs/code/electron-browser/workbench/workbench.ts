@@ -6,6 +6,7 @@
 /* eslint-disable no-restricted-globals */
 
 import { getPartsSplashColors } from './partsSplash.js';
+import { hideJScene3DSplash, showJScene3DSplash } from './jscene3dSplash.js';
 
 (async function () {
 
@@ -27,7 +28,21 @@ import { getPartsSplashColors } from './partsSplash.js';
 
 	function showSplash(configuration: INativeWindowConfiguration) {
 		performance.mark('code/willShowPartsSplash');
-		showDefaultSplash(configuration);
+		if (configuration.showJScene3DSplash) {
+			try {
+				const zoomLevel = configuration.partsSplash?.zoomLevel;
+				if (typeof zoomLevel === 'number' && typeof preloadGlobals?.webFrame?.setZoomLevel === 'function') {
+					preloadGlobals.webFrame.setZoomLevel(zoomLevel);
+				}
+
+				showJScene3DSplash(window);
+			} catch (error) {
+				console.error('[JScene3D splash] Unable to show the branded startup splash.', error);
+				showDefaultSplash(configuration);
+			}
+		} else {
+			showDefaultSplash(configuration);
+		}
 		performance.mark('code/didShowPartsSplash');
 	}
 
@@ -525,6 +540,7 @@ import { getPartsSplashColors } from './partsSplash.js';
 
 			return { result, configuration };
 		} catch (error) {
+			hideJScene3DSplash(window);
 			onUnexpectedError(error, enableDeveloperKeybindings && !forceDisableShowDevtoolsOnError);
 
 			throw error;
