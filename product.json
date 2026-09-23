@@ -84,6 +84,77 @@
 				},
 				"publisherDisplayName": "Microsoft"
 			}
+		},
+		{
+			"name": "redhat.java",
+			"version": "1.56.0",
+			"sha256": "0326b19b55d378dfdd11cc01a86eb6c90fcc42755c542f6261179be41d7e1812",
+			"repo": "https://github.com/redhat-developer/vscode-java",
+			"platforms": [
+				"darwin"
+			],
+			"vsix": ".build/jscene3d-java-tooling/redhat.java-1.56.0-darwin-arm64.vsix",
+			"metadata": {
+				"id": "198a707e-28af-4e84-8610-6e2f628dd12d",
+				"publisherId": {
+					"publisherId": "eed56242-9699-4317-8bc7-e9f4b9bdd3ff",
+					"publisherName": "redhat",
+					"displayName": "Red Hat",
+					"flags": "verified"
+				},
+				"publisherDisplayName": "Red Hat"
+			}
+		},
+		{
+			"name": "vscjava.vscode-java-debug",
+			"version": "0.59.0",
+			"sha256": "87627e24dbb5b01137decc0265f043cb08adad22af3c195f1ba39898dafb1588",
+			"repo": "https://github.com/microsoft/vscode-java-debug",
+			"vsix": ".build/jscene3d-java-tooling/vscjava.vscode-java-debug-0.59.0.vsix",
+			"metadata": {
+				"id": "61fcd0cf-64d7-4836-8d6b-d55f4fb83281",
+				"publisherId": {
+					"publisherId": "bae08b87-578e-41ec-ab1c-0b036e7add88",
+					"publisherName": "vscjava",
+					"displayName": "Microsoft",
+					"flags": "verified"
+				},
+				"publisherDisplayName": "Microsoft"
+			}
+		},
+		{
+			"name": "vscjava.vscode-maven",
+			"version": "0.45.3",
+			"sha256": "2d7b30676793604e0c140ab0e5cc5a649d6af2fd9e0b2797911f86a9164654b0",
+			"repo": "https://github.com/microsoft/vscode-maven",
+			"vsix": ".build/jscene3d-java-tooling/vscjava.vscode-maven-0.45.3.vsix",
+			"metadata": {
+				"id": "b0f06c6b-24fb-4d7b-bd79-bc5e2fa17312",
+				"publisherId": {
+					"publisherId": "bae08b87-578e-41ec-ab1c-0b036e7add88",
+					"publisherName": "vscjava",
+					"displayName": "Microsoft",
+					"flags": "verified"
+				},
+				"publisherDisplayName": "Microsoft"
+			}
+		},
+		{
+			"name": "vscjava.vscode-java-test",
+			"version": "0.46.0",
+			"sha256": "56c1e14dc73a30e9574c47042106fa52893bf8325b580f47c14ace07d5eef255",
+			"repo": "https://github.com/microsoft/vscode-java-test",
+			"vsix": ".build/jscene3d-java-tooling/vscjava.vscode-java-test-0.46.0.vsix",
+			"metadata": {
+				"id": "67c06b0d-1891-42ca-b2a8-113e79bff069",
+				"publisherId": {
+					"publisherId": "bae08b87-578e-41ec-ab1c-0b036e7add88",
+					"publisherName": "vscjava",
+					"displayName": "Microsoft",
+					"flags": "verified"
+				},
+				"publisherDisplayName": "Microsoft"
+			}
 		}
 	],
 	"defaultChatAgent": {
