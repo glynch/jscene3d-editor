@@ -5,7 +5,7 @@
 
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 
-export type ProjectDiagnosticSeverity = 'error' | 'warning' | 'information' | 'hint';
+export type ProjectDiagnosticSeverity = ProjectDiagnosticDto['severity'];
 
 /** VS Code-independent presentation data for one project diagnostic. */
 export interface ProjectDiagnosticPresentation {
@@ -20,19 +20,9 @@ export interface ProjectDiagnosticPresentation {
 export function projectDiagnosticPresentations(diagnostics: readonly ProjectDiagnosticDto[]): readonly ProjectDiagnosticPresentation[] {
 	return diagnostics.map(diagnostic => ({
 		source: diagnostic.source,
-		severity: diagnosticSeverity(diagnostic.severity),
+		severity: diagnostic.severity,
 		code: diagnostic.code,
 		message: diagnostic.message,
 		location: diagnostic.location
 	}));
-}
-
-/** Maps Java severity names onto the supported presentation severities. */
-function diagnosticSeverity(severity: string): ProjectDiagnosticSeverity {
-	switch (severity.toLowerCase()) {
-		case 'error': return 'error';
-		case 'warning': return 'warning';
-		case 'hint': return 'hint';
-		default: return 'information';
-	}
 }

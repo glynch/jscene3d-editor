@@ -80,6 +80,108 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(request, /process exited/);
 	});
 
+	test('treats an unknown response ID as a terminal connection failure', async () => {
+		const transport = new TestTransport();
+		const rpc = new JsonRpcClient(transport);
+		let failure: Error | undefined;
+		rpc.onDidFail(error => failure = error);
+		const request = rpc.request('pending', {}, stringValue);
+		transport.respond(success(2, 'wrong request'));
+		await assert.rejects(request, /unknown response ID 2/);
+		assert.match(failure?.message ?? '', /unknown response ID 2/);
+	});
+
+	test('rejects a response containing both a result and an error', async () => {
+		const transport = new TestTransport();
+		const request = new JsonRpcClient(transport).request('invalid', {}, stringValue);
+		transport.respond({
+			...success(1, 'unexpected result'),
+			error: { code: -32603, message: 'Internal error' }
+		});
+		await assert.rejects(request, /both a result and an error/);
+	});
+
+	test('rejects result and error field coexistence even when the error is null', async () => {
+		const transport = new TestTransport();
+		const request = new JsonRpcClient(transport).request('invalid', {}, stringValue);
+		transport.respond({ ...success(1, 'unexpected result'), error: null });
+		await assert.rejects(request, /both a result and an error/);
+	});
+
+	test('rejects a non-integer structured protocol error code', async () => {
+		const transport = new TestTransport();
+		const request = new JsonRpcClient(transport).request('invalid', {}, stringValue);
+		transport.respond({
+			jsonrpc: '2.0',
+			id: 1,
+			connectionGeneration: 'connection-1',
+			error: { code: -32603.5, message: 'Invalid error' }
+		});
+		await assert.rejects(request, /invalid error/);
+	});
+
+	test('rejects a project diagnostic with an unknown severity', async () => {
+		const transport = new TestTransport();
+		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
+		const initialization = client.initialize();
+		transport.respond(fixture('initialize-response.json'));
+		await initialization;
+
+		const opened = client.openProject('/projects/small/small.j3d');
+		const response = fixture('project-open-response.json');
+		const result = object(response.result);
+		const diagnostics = jsonArray(result.diagnostics);
+		transport.respond({
+			...response,
+			result: {
+				...result,
+				diagnostics: [{ ...object(diagnostics[0]), severity: 'notice' }]
+			}
+		});
+		await assert.rejects(opened, /diagnostic.severity/);
+	});
+
+	test('rejects malformed nested project data', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openProject('/projects/small/small.j3d');
+		const response = fixture('project-open-response.json');
+		const result = object(response.result);
+		const project = object(result.project);
+		transport.respond({ ...response, result: { ...result, project: { ...project, startupWorld: null } } });
+		await assert.rejects(opened, /startupWorld must be an object/);
+	});
+
+	test('rejects a non-integer project asset count', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openProject('/projects/small/small.j3d');
+		const response = fixture('project-open-response.json');
+		const result = object(response.result);
+		const project = object(result.project);
+		transport.respond({
+			...response,
+			result: {
+				...result,
+				project: { ...project, assetCounts: { authored: 1.5, projected: 4 } }
+			}
+		});
+		await assert.rejects(opened, /assetCounts.authored must be a non-negative integer/);
+	});
+
+	test('rejects an inconsistent project-close result', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const closed = client.closeProject();
+		transport.respond({
+			jsonrpc: '2.0',
+			id: 2,
+			connectionGeneration: 'connection-1',
+			result: { closed: false, invalidatedProjectGeneration: 7 }
+		});
+		await assert.rejects(closed, /inconsistent success shape/);
+	});
+
 	test('opens, closes, and shuts down using the Stage 1 DTOs', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
@@ -152,6 +254,21 @@ function object(value: unknown): JsonObject {
 		throw new Error('Expected a JSON object fixture');
 	}
 	return value as JsonObject;
+}
+
+function jsonArray(value: JsonValue | undefined): readonly JsonValue[] {
+	if (!Array.isArray(value)) {
+		throw new Error('Expected a JSON array fixture');
+	}
+	return value;
+}
+
+async function initializedClient(transport: TestTransport): Promise<AuthoringProtocolClient> {
+	const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
+	const initialization = client.initialize();
+	transport.respond(fixture('initialize-response.json'));
+	await initialization;
+	return client;
 }
 
 function success(id: number, result: JsonValue): JsonObject {

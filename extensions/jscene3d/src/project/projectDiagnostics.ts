@@ -48,8 +48,5 @@ function diagnosticSeverity(severity: ProjectDiagnosticSeverity): vscode.Diagnos
 	switch (severity) {
 		case 'error': return vscode.DiagnosticSeverity.Error;
 		case 'warning': return vscode.DiagnosticSeverity.Warning;
-		case 'information': return vscode.DiagnosticSeverity.Information;
-		case 'hint': return vscode.DiagnosticSeverity.Hint;
-		default: return vscode.DiagnosticSeverity.Information;
 	}
 }

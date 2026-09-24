@@ -28,12 +28,18 @@ interface PendingRequest {
 /** Correlates JSON-RPC-style requests over the framed authoring transport. */
 export class JsonRpcClient {
 	private readonly pending = new Map<number, PendingRequest>();
+	private readonly failureListeners = new Set<(error: Error) => void>();
 	private nextRequestId = 1;
 	private closed = false;
 
 	constructor(private readonly transport: MessageTransport) {
 		transport.onMessage(message => this.accept(message));
-		transport.onClose(error => this.fail(error));
+		transport.onClose(error => this.fail(error, true));
+	}
+
+	onDidFail(listener: (error: Error) => void): { dispose(): void } {
+		this.failureListeners.add(listener);
+		return { dispose: () => this.failureListeners.delete(listener) };
 	}
 
 	request<T>(method: string, params: JsonObject, validate: (value: JsonValue) => T): Promise<JsonRpcResult<T>> {
@@ -47,52 +53,64 @@ export class JsonRpcClient {
 				reject
 			});
 			void this.transport.send({ jsonrpc: '2.0', id, method, params }).catch(error => {
-				const request = this.pending.get(id);
-				if (request !== undefined) {
-					this.pending.delete(id);
-					request.reject(error instanceof Error ? error : new Error(String(error)));
-				}
+				this.fail(error instanceof Error ? error : new Error(String(error)), true);
 			});
 		});
 	}
 
 	dispose(): void {
-		this.fail(new Error('Authoring protocol client was disposed'));
+		this.fail(new Error('Authoring protocol client was disposed'), false);
 		this.transport.dispose();
+		this.failureListeners.clear();
 	}
 
 	private accept(message: JsonObject): void {
 		if (message.jsonrpc !== '2.0' || typeof message.id !== 'number' || !Number.isSafeInteger(message.id)) {
-			this.fail(new Error('Received an invalid authoring protocol response'));
+			this.failProtocol(new Error('Received an invalid authoring protocol response'));
 			return;
 		}
 		const request = this.pending.get(message.id);
 		if (request === undefined) {
+			this.failProtocol(new Error(`Received a response for unknown response ID ${message.id}`));
 			return;
 		}
-		this.pending.delete(message.id);
 
 		try {
 			if (typeof message.connectionGeneration !== 'string' || message.connectionGeneration.length === 0) {
 				throw new Error('Protocol response is missing its connection generation');
 			}
-			if (isJsonObject(message.error)) {
-				if (typeof message.error.code !== 'number' || typeof message.error.message !== 'string') {
+			const hasResult = Object.hasOwn(message, 'result');
+			const hasError = Object.hasOwn(message, 'error');
+			if (hasResult && hasError) {
+				throw new Error('Protocol response contains both a result and an error');
+			}
+			if (!hasResult && !hasError) {
+				throw new Error('Protocol response contains neither a result nor an error');
+			}
+			if (hasError) {
+				if (!isJsonObject(message.error)) {
 					throw new Error('Protocol response contains an invalid error');
 				}
+				if (typeof message.error.code !== 'number' || !Number.isSafeInteger(message.error.code) || typeof message.error.message !== 'string') {
+					throw new Error('Protocol response contains an invalid error');
+				}
+				this.pending.delete(message.id);
 				request.reject(new JsonRpcError(message.error.code, message.error.message, message.error.data));
 				return;
 			}
-			if (!Object.hasOwn(message, 'result')) {
-				throw new Error('Protocol response contains neither a result nor an error');
-			}
 			request.accept(message.result ?? null, message.connectionGeneration);
+			this.pending.delete(message.id);
 		} catch (error) {
-			request.reject(error instanceof Error ? error : new Error(String(error)));
+			this.failProtocol(error instanceof Error ? error : new Error(String(error)));
 		}
 	}
 
-	private fail(error: Error): void {
+	private failProtocol(error: Error): void {
+		this.fail(error, true);
+		this.transport.dispose();
+	}
+
+	private fail(error: Error, notify: boolean): void {
 		if (this.closed) {
 			return;
 		}
@@ -101,6 +119,11 @@ export class JsonRpcClient {
 			request.reject(error);
 		}
 		this.pending.clear();
+		if (notify) {
+			for (const listener of Array.from(this.failureListeners)) {
+				listener(error);
+			}
+		}
 	}
 }
 

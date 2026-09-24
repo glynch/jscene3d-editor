@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { AuthoringLaunchConfiguration, AuthoringService, NodeAuthoringProcessLauncher } from './authoring/authoringService';
 import { publishProjectDiagnostics } from './project/projectDiagnostics';
+import { localProjectPath } from './project/projectLocation';
 import { ProjectState } from './project/projectState';
 import { ProjectTreeDataProvider } from './project/projectView';
 
@@ -14,20 +15,28 @@ const initialLayoutKey = 'initialLayoutApplied';
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
 
+let activeService: AuthoringService | undefined;
+let activeProjectState: ProjectState | undefined;
+
 /** Activates and wires the built-in JScene3D authoring extension. */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	const output = vscode.window.createOutputChannel('JScene3D');
 	const diagnostics = vscode.languages.createDiagnosticCollection('jscene3d');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
+	activeService = service;
+	activeProjectState = projectState;
 	const projectProvider = new ProjectTreeDataProvider(projectState);
 	const tree = vscode.window.createTreeView(viewId, { treeDataProvider: projectProvider });
 
 	const stateSubscription = projectState.onDidChange(() => {
 		const snapshot = projectState.snapshot;
 		publishProjectDiagnostics(diagnostics, snapshot.diagnostics);
-		void vscode.commands.executeCommand('setContext', projectOpenContext, snapshot.status === 'open');
-		void vscode.commands.executeCommand('setContext', projectBusyContext, snapshot.status === 'opening' || snapshot.status === 'closing');
+		void Promise.all([
+			vscode.commands.executeCommand('setContext', projectOpenContext, snapshot.status === 'open'),
+			vscode.commands.executeCommand('setContext', projectBusyContext,
+				snapshot.status === 'opening' || snapshot.status === 'cancellingOpen' || snapshot.status === 'closing')
+		]).catch(error => output.appendLine(`Failed to update JScene3D context keys: ${error instanceof Error ? error.message : String(error)}`));
 	});
 
 	context.subscriptions.push(
@@ -53,8 +62,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (selections === undefined || selections.length === 0) {
 				return;
 			}
+			let descriptorPath: string;
 			try {
-				const result = await projectState.open(selections[0].fsPath);
+				descriptorPath = localProjectPath(selections[0]);
+			} catch (error) {
+				output.appendLine(`Open Project command rejected the selected location: ${error instanceof Error ? error.message : String(error)}`);
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D projects must be selected from the local file system.'));
+				return;
+			}
+			try {
+				const result = await projectState.open(descriptorPath);
 				if (!result.opened) {
 					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See Problems and JScene3D Output for details.'));
 				}
@@ -87,6 +104,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		await context.globalState.update(initialLayoutKey, true);
 	}
+}
+
+/** Stops project callbacks before awaiting termination of the owned Java service. */
+export async function deactivate(): Promise<void> {
+	const projectState = activeProjectState;
+	const service = activeService;
+	activeProjectState = undefined;
+	activeService = undefined;
+	projectState?.dispose();
+	await service?.shutdown();
 }
 
 /** Resolves the isolated development launch configuration from environment and settings. */

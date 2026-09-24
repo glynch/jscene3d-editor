@@ -20,8 +20,7 @@ suite('JScene3D project state', () => {
 			status: 'open',
 			generation: 7,
 			project: summary,
-			diagnostics: [diagnostic],
-			failure: null
+			diagnostics: [diagnostic]
 		});
 		assert.deepStrictEqual(logger.lines, [
 			'Opening project: /projects/small/small.j3d',
@@ -37,10 +36,7 @@ suite('JScene3D project state', () => {
 		await state.close();
 		assert.deepStrictEqual(state.snapshot, {
 			status: 'closed',
-			generation: null,
-			project: null,
-			diagnostics: [],
-			failure: null
+			diagnostics: []
 		});
 		assert.strictEqual(client.closeCalls, 1);
 	});
@@ -57,9 +53,7 @@ suite('JScene3D project state', () => {
 		});
 		await state.open('/projects/broken/broken.j3d');
 		assert.deepStrictEqual(state.snapshot, {
-			status: 'failed',
-			generation: null,
-			project: null,
+			status: 'openFailed',
 			diagnostics: [diagnostic],
 			failure: 'Project validation failed'
 		});
@@ -71,17 +65,56 @@ suite('JScene3D project state', () => {
 		let complete: ((result: ProjectOpenResultDto) => void) | undefined;
 		client.nextOpen = new Promise(resolve => complete = resolve);
 		const opening = state.open('/projects/small/small.j3d');
-		await state.close();
+		const closing = state.close();
 		complete?.(openResult());
-		await opening;
+		await Promise.all([opening, closing]);
 		assert.deepStrictEqual(state.snapshot, {
 			status: 'closed',
-			generation: null,
-			project: null,
-			diagnostics: [],
-			failure: null
+			diagnostics: []
 		});
 		assert.strictEqual(client.closeCalls, 1);
+	});
+
+	test('does not allow another open until a cancelled open is reconciled with Java', async () => {
+		const client = new TestProjectClient();
+		const state = new ProjectState(client, new TestLogger());
+		let completeOpen: ((result: ProjectOpenResultDto) => void) | undefined;
+		let completeClose: (() => void) | undefined;
+		client.nextOpen = new Promise(resolve => completeOpen = resolve);
+		client.nextClose = new Promise(resolve => completeClose = () => resolve({
+			closed: true,
+			invalidatedProjectGeneration: 7
+		}));
+
+		const opening = state.open('/projects/a/a.j3d');
+		const closing = state.close();
+		await assert.rejects(state.open('/projects/b/b.j3d'), /already open or changing state/);
+
+		completeOpen?.(openResult());
+		await client.closeStarted;
+		await assert.rejects(state.open('/projects/b/b.j3d'), /already open or changing state/);
+		completeClose?.();
+		await Promise.all([opening, closing]);
+
+		client.nextOpen = Promise.resolve(openResult(8));
+		await state.open('/projects/b/b.j3d');
+		assert.strictEqual(state.snapshot.status, 'open');
+		if (state.snapshot.status === 'open') {
+			assert.strictEqual(state.snapshot.generation, 8);
+		}
+	});
+
+	test('does not start compensating project work after disposal', async () => {
+		const client = new TestProjectClient();
+		const state = new ProjectState(client, new TestLogger());
+		let completeOpen: ((result: ProjectOpenResultDto) => void) | undefined;
+		client.nextOpen = new Promise(resolve => completeOpen = resolve);
+		const opening = state.open('/projects/a/a.j3d');
+		state.dispose();
+		completeOpen?.(openResult());
+		await opening;
+		assert.strictEqual(client.closeCalls, 0);
+		assert.strictEqual(state.snapshot.status, 'closed');
 	});
 
 	test('invalidates active state when the service fails', async () => {
@@ -91,12 +124,51 @@ suite('JScene3D project state', () => {
 		await state.open('/projects/small/small.j3d');
 		client.fail(new Error('service exited'));
 		assert.deepStrictEqual(state.snapshot, {
-			status: 'failed',
-			generation: null,
-			project: null,
+			status: 'serviceUnavailable',
 			diagnostics: [],
 			failure: 'service exited'
 		});
+	});
+
+	test('rejects a close acknowledgement for another project generation', async () => {
+		const client = new TestProjectClient();
+		const state = new ProjectState(client, new TestLogger());
+		await state.open('/projects/small/small.j3d');
+		client.nextClose = Promise.resolve({ closed: true, invalidatedProjectGeneration: 6 });
+		await assert.rejects(state.close(), /expected 7/);
+		assert.strictEqual(state.snapshot.status, 'serviceUnavailable');
+	});
+
+	test('retains the open project when close fails without losing the service', async () => {
+		const client = new TestProjectClient();
+		const state = new ProjectState(client, new TestLogger());
+		await state.open('/projects/small/small.j3d');
+		client.nextClose = Promise.reject(new Error('close failed'));
+		await assert.rejects(state.close(), /close failed/);
+		assert.strictEqual(state.snapshot.status, 'open');
+	});
+
+	test('shares duplicate close work and supports repeated open and close', async () => {
+		const client = new TestProjectClient();
+		const state = new ProjectState(client, new TestLogger());
+		await state.open('/projects/a/a.j3d');
+		let completeClose: (() => void) | undefined;
+		client.nextClose = new Promise(resolve => completeClose = () => resolve({
+			closed: true,
+			invalidatedProjectGeneration: 7
+		}));
+		const firstClose = state.close();
+		const secondClose = state.close();
+		completeClose?.();
+		await Promise.all([firstClose, secondClose]);
+		assert.strictEqual(client.closeCalls, 1);
+
+		client.nextOpen = Promise.resolve(openResult(8));
+		client.nextClose = Promise.resolve({ closed: true, invalidatedProjectGeneration: 8 });
+		await state.open('/projects/b/b.j3d');
+		await state.close();
+		assert.strictEqual(state.snapshot.status, 'closed');
+		assert.strictEqual(client.closeCalls, 2);
 	});
 
 	test('projects the opened Java summary into the Project view', () => {
@@ -104,8 +176,7 @@ suite('JScene3D project state', () => {
 			status: 'open',
 			generation: 7,
 			project: summary,
-			diagnostics: [diagnostic],
-			failure: null
+			diagnostics: [diagnostic]
 		}, labels);
 		assert.deepStrictEqual(nodes, [{
 			label: 'Small Authoring Project',
@@ -136,7 +207,13 @@ suite('JScene3D project state', () => {
 
 class TestProjectClient implements ProjectAuthoringClient {
 	nextOpen: Promise<ProjectOpenResultDto> = Promise.resolve(openResult());
+	nextClose: Promise<{ readonly closed: boolean; readonly invalidatedProjectGeneration: number | null }> = Promise.resolve({
+		closed: true,
+		invalidatedProjectGeneration: 7
+	});
 	closeCalls = 0;
+	private closeStartedResolve: (() => void) | undefined;
+	readonly closeStarted = new Promise<void>(resolve => this.closeStartedResolve = resolve);
 	private readonly failureListeners = new Set<(error: Error) => void>();
 
 	openProject(): Promise<ProjectOpenResultDto> {
@@ -145,7 +222,8 @@ class TestProjectClient implements ProjectAuthoringClient {
 
 	closeProject(): Promise<{ readonly closed: boolean; readonly invalidatedProjectGeneration: number | null }> {
 		this.closeCalls++;
-		return Promise.resolve({ closed: true, invalidatedProjectGeneration: 7 });
+		this.closeStartedResolve?.();
+		return this.nextClose;
 	}
 
 	onDidFail(listener: (error: Error) => void): { dispose(): void } {
@@ -187,10 +265,10 @@ const diagnostic: ProjectDiagnosticDto = {
 	details: { asset: 'example' }
 };
 
-function openResult(): ProjectOpenResultDto {
+function openResult(generation = 7): ProjectOpenResultDto {
 	return {
 		opened: true,
-		projectGeneration: 7,
+		projectGeneration: generation,
 		project: summary,
 		diagnostics: [diagnostic],
 		failureCode: null

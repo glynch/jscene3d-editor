@@ -16,7 +16,7 @@
 		"onStartupFinished"
 	],
 	"capabilities": {
-		"virtualWorkspaces": true,
+		"virtualWorkspaces": false,
 		"untrustedWorkspaces": {
 			"supported": true
 		}

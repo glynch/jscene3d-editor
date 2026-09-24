@@ -19,48 +19,77 @@ export class ProtocolFramingError extends Error {
 
 /** Incrementally decodes the authoring service's byte-oriented Content-Length frames. */
 export class ContentLengthDecoder {
-	private buffered = Buffer.alloc(0);
+	private readonly header = Buffer.allocUnsafe(maximumHeaderBytes);
+	private headerLength = 0;
+	private payload: Buffer | undefined;
+	private payloadLength = 0;
 
 	accept(chunk: Buffer): string[] {
-		if (chunk.length === 0) {
-			return [];
-		}
-
-		this.buffered = Buffer.concat([this.buffered, chunk]);
 		const messages: string[] = [];
-		while (this.buffered.length > 0) {
-			const headerEnd = this.buffered.indexOf(headerTerminator);
-			if (headerEnd < 0) {
-				if (this.buffered.length > maximumHeaderBytes) {
-					throw new ProtocolFramingError(`Protocol headers exceed ${maximumHeaderBytes} bytes`);
-				}
-				break;
-			}
-
-			const headerLength = headerEnd + headerTerminator.length;
-			if (headerLength > maximumHeaderBytes) {
-				throw new ProtocolFramingError(`Protocol headers exceed ${maximumHeaderBytes} bytes`);
-			}
-			const payloadLength = this.readContentLength(this.buffered.subarray(0, headerEnd));
-			const frameLength = headerLength + payloadLength;
-			if (this.buffered.length < frameLength) {
-				break;
-			}
-
-			const payload = this.buffered.subarray(headerLength, frameLength);
-			this.buffered = this.buffered.subarray(frameLength);
-			try {
-				messages.push(new TextDecoder('utf-8', { fatal: true }).decode(payload));
-			} catch {
-				throw new ProtocolFramingError('Protocol payload is not valid UTF-8');
+		let offset = 0;
+		while (offset < chunk.length) {
+			if (this.payload === undefined) {
+				offset = this.acceptHeader(chunk, offset, messages);
+			} else {
+				offset = this.acceptPayload(chunk, offset, messages);
 			}
 		}
 		return messages;
 	}
 
 	end(): void {
-		if (this.buffered.length !== 0) {
+		if (this.headerLength !== 0 || this.payload !== undefined) {
 			throw new ProtocolFramingError('Unexpected EOF in protocol frame');
+		}
+	}
+
+	private acceptHeader(chunk: Buffer, offset: number, messages: string[]): number {
+		while (offset < chunk.length) {
+			if (this.headerLength === maximumHeaderBytes) {
+				throw new ProtocolFramingError(`Protocol headers exceed ${maximumHeaderBytes} bytes`);
+			}
+			this.header[this.headerLength++] = chunk[offset++];
+			if (this.headerLength >= headerTerminator.length
+				&& this.header.subarray(this.headerLength - headerTerminator.length, this.headerLength).equals(headerTerminator)) {
+				const payloadSize = this.readContentLength(this.header.subarray(0, this.headerLength - headerTerminator.length));
+				this.headerLength = 0;
+				this.payload = Buffer.allocUnsafe(payloadSize);
+				this.payloadLength = 0;
+				if (payloadSize === 0) {
+					this.completePayload(messages);
+				}
+				break;
+			}
+		}
+		return offset;
+	}
+
+	private acceptPayload(chunk: Buffer, offset: number, messages: string[]): number {
+		const payload = this.payload;
+		if (payload === undefined) {
+			return offset;
+		}
+		const length = Math.min(payload.length - this.payloadLength, chunk.length - offset);
+		chunk.copy(payload, this.payloadLength, offset, offset + length);
+		this.payloadLength += length;
+		offset += length;
+		if (this.payloadLength === payload.length) {
+			this.completePayload(messages);
+		}
+		return offset;
+	}
+
+	private completePayload(messages: string[]): void {
+		const payload = this.payload;
+		if (payload === undefined) {
+			return;
+		}
+		this.payload = undefined;
+		this.payloadLength = 0;
+		try {
+			messages.push(new TextDecoder('utf-8', { fatal: true }).decode(payload));
+		} catch {
+			throw new ProtocolFramingError('Protocol payload is not valid UTF-8');
 		}
 	}
 

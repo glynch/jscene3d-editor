@@ -37,6 +37,17 @@ suite('JScene3D Content-Length framing', () => {
 		assert.deepStrictEqual(new ContentLengthDecoder().accept(encodeContentLengthFrame(message)), [message]);
 	});
 
+	test('decodes a large frame fragmented into small chunks', () => {
+		const message = JSON.stringify({ text: 'x'.repeat(512 * 1024) });
+		const frame = encodeContentLengthFrame(message);
+		const decoder = new ContentLengthDecoder();
+		const decoded: string[] = [];
+		for (let offset = 0; offset < frame.length; offset += 13) {
+			decoded.push(...decoder.accept(frame.subarray(offset, offset + 13)));
+		}
+		assert.deepStrictEqual(decoded, [message]);
+	});
+
 	test('uses UTF-8 byte length', () => {
 		const message = '{"name":"โลก"}';
 		const frame = encodeContentLengthFrame(message);

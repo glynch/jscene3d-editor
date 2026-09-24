@@ -36,13 +36,13 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 	if (snapshot.status === 'opening') {
 		return [{ label: labels.opening }];
 	}
-	if (snapshot.status === 'closing') {
+	if (snapshot.status === 'closing' || snapshot.status === 'cancellingOpen') {
 		return [{ label: labels.closing }];
 	}
-	if (snapshot.status === 'failed') {
+	if (snapshot.status === 'openFailed' || snapshot.status === 'serviceUnavailable') {
 		return [{ label: labels.unavailable, description: labels.openFailed }];
 	}
-	if (snapshot.project === null) {
+	if (snapshot.status === 'closed') {
 		return [{ label: labels.noProject }];
 	}
 

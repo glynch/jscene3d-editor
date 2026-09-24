@@ -50,7 +50,7 @@ export class StreamMessageTransport implements MessageTransport {
 		this.writeQueue = this.writeQueue.then(() => new Promise<void>((resolve, reject) => {
 			this.output.write(frame, error => error ? reject(error) : resolve());
 		}));
-		this.writeQueue.catch(error => this.close(error instanceof Error ? error : new Error(String(error))));
+		void this.writeQueue.catch(error => this.close(error instanceof Error ? error : new Error(String(error))));
 		return this.writeQueue;
 	}
 

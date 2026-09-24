@@ -25,7 +25,7 @@ export interface InitializeResultDto {
 
 /** Wire representation of one Java-owned project diagnostic. */
 export interface ProjectDiagnosticDto {
-	readonly severity: string;
+	readonly severity: 'error' | 'warning';
 	readonly code: string;
 	readonly message: string;
 	readonly source: string;
@@ -81,6 +81,10 @@ export class AuthoringProtocolClient {
 	private connectionGeneration: string | undefined;
 
 	constructor(private readonly rpc: JsonRpcClient) { }
+
+	onDidFail(listener: (error: Error) => void): { dispose(): void } {
+		return this.rpc.onDidFail(listener);
+	}
 
 	async initialize(): Promise<InitializeResultDto> {
 		const response = await this.rpc.request('initialize', {
@@ -163,9 +167,14 @@ function validateProjectOpenResult(value: JsonValue): ProjectOpenResultDto {
 /** Validates a project-close result received from Java. */
 function validateProjectCloseResult(value: JsonValue): ProjectCloseResultDto {
 	const object = requiredObject(value, 'project/close result');
+	const closed = requiredBoolean(object.closed, 'closed');
+	const invalidatedProjectGeneration = nullableInteger(object.invalidatedProjectGeneration, 'invalidatedProjectGeneration');
+	if (closed !== (invalidatedProjectGeneration !== null)) {
+		throw new Error('project/close result has an inconsistent success shape');
+	}
 	return {
-		closed: requiredBoolean(object.closed, 'closed'),
-		invalidatedProjectGeneration: nullableInteger(object.invalidatedProjectGeneration, 'invalidatedProjectGeneration')
+		closed,
+		invalidatedProjectGeneration
 	};
 }
 
@@ -210,13 +219,21 @@ function validateProjectSummary(value: JsonValue | undefined): ProjectSummaryDto
 function validateProjectDiagnostic(value: JsonValue): ProjectDiagnosticDto {
 	const object = requiredObject(value, 'diagnostic');
 	return {
-		severity: requiredString(object.severity, 'diagnostic.severity'),
+		severity: requiredDiagnosticSeverity(object.severity),
 		code: requiredString(object.code, 'diagnostic.code'),
 		message: requiredString(object.message, 'diagnostic.message'),
 		source: requiredString(object.source, 'diagnostic.source'),
 		location: requiredString(object.location, 'diagnostic.location'),
 		details: requiredStringMap(object.details, 'diagnostic.details')
 	};
+}
+
+/** Requires one of the diagnostic severities emitted by the Stage 1 Java contract. */
+function requiredDiagnosticSeverity(value: JsonValue | undefined): ProjectDiagnosticDto['severity'] {
+	if (value !== 'error' && value !== 'warning') {
+		throw new Error('diagnostic.severity must be error or warning');
+	}
+	return value;
 }
 
 /** Requires a JSON object at the named wire-contract location. */
