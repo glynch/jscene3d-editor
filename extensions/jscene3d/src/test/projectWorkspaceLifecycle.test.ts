@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { ProjectOpenResultDto } from '../protocol/authoringProtocol';
+import { ProjectOpenResultDto, ProjectReplaceResultDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
 import {
 	ProjectReopenIntent,
 	ProjectReopenIntentStore,
@@ -14,15 +14,15 @@ import {
 	isExactProjectWorkspace,
 	WorkspaceProjectState
 } from '../project/projectWorkspaceLifecycle';
-import { ProjectSnapshot } from '../project/projectState';
+import { ProjectSelectionResult, ProjectSnapshot } from '../project/projectState';
 
 suite('JScene3D project workspace lifecycle', () => {
 	test('only one folder exactly matching the Java root is the project workspace', () => {
 		assert.deepStrictEqual({
-			noWorkspace: isExactProjectWorkspace('file:///projects/small', undefined, undefined),
-			exactFolder: isExactProjectWorkspace('file:///projects/small', undefined, ['file:///projects/small']),
-			differentFolder: isExactProjectWorkspace('file:///projects/small', undefined, ['file:///projects/other']),
-			multiRoot: isExactProjectWorkspace('file:///projects/small', 'file:///projects/work.code-workspace', ['file:///projects/small'])
+			noWorkspace: isExactProjectWorkspace('file:///projects/a', undefined, undefined),
+			exactFolder: isExactProjectWorkspace('file:///projects/a', undefined, ['file:///projects/a']),
+			differentFolder: isExactProjectWorkspace('file:///projects/a', undefined, ['file:///projects/b']),
+			multiRoot: isExactProjectWorkspace('file:///projects/a', 'file:///projects/work.code-workspace', ['file:///projects/a'])
 		}, {
 			noWorkspace: false,
 			exactFolder: true,
@@ -31,523 +31,227 @@ suite('JScene3D project workspace lifecycle', () => {
 		});
 	});
 
-	test('successful open from no workspace persists intent before requesting the canonical workspace', async () => {
+	test('successful initial open persists intent before requesting the canonical workspace', async () => {
 		const state = new TestProjectState();
 		const workspace = new TestWorkspaceHost();
 		const store = new TestIntentStore();
 		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
-		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/selected/small.j3d' });
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/selected/a.j3d' });
 
-		assert.deepStrictEqual({
-			opened: result.project.opened,
-			workspace: result.workspace,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			opened: true,
-			workspace: 'transitionRequested',
-			intent: {
-				version: 1,
-				descriptorUri: 'file:///projects/small/small.j3d',
-				projectRootUri: 'file:///projects/small'
-			},
-			openedWorkspace: resource('/projects/small')
-		});
+		assert.strictEqual(result.project.operation, 'open');
+		assert.strictEqual(result.workspace, 'transitionRequested');
+		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
+		assert.deepStrictEqual(workspace.openedResource, resource('/projects/a'));
 	});
 
-	test('successful open in the canonical workspace does not request another transition', async () => {
+	test('failed initial open leaves workspace unchanged and clears stale intent', async () => {
 		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		workspace.matches = true;
-		const store = new TestIntentStore();
-		store.value = intent();
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/small/small.j3d' });
-
-		assert.deepStrictEqual({
-			workspace: result.workspace,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			workspace: 'unchanged',
-			intent: undefined,
-			openedWorkspace: undefined,
-			log: ['Workspace already matches project root: /projects/small']
-		});
-	});
-
-	test('failed Java open leaves the workspace unchanged and clears stale reopen intent', async () => {
-		const state = new TestProjectState();
-		state.nextOpen = failedOpenResult();
+		state.nextSelection = openSelection(failedOpenResult());
 		const workspace = new TestWorkspaceHost();
 		const store = new TestIntentStore();
 		store.value = intent();
 		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
-		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/broken/broken.j3d' });
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/bad/bad.j3d' });
 
-		assert.deepStrictEqual({
-			opened: result.project.opened,
-			workspace: result.workspace,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			opened: false,
-			workspace: 'unchanged',
-			intent: undefined,
-			openedWorkspace: undefined
-		});
+		assert.strictEqual(result.workspace, 'unchanged');
+		assert.strictEqual(store.value, undefined);
+		assert.strictEqual(workspace.openedResource, undefined);
 	});
 
-	test('activation reopens valid intent in the matching workspace with fresh Java state', async () => {
+	test('rejected replacement preserves A workspace and requests no transition', async () => {
 		const state = new TestProjectState();
-		state.nextOpen = openResult(12);
+		state.snapshot = openSnapshot(summaryA, 7);
+		state.nextSelection = replaceSelection(candidateRejectedResult());
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
+
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/bad/bad.j3d' });
+
+		assert.strictEqual(result.workspace, 'unchanged');
+		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
+		assert.strictEqual(workspace.openedResource, undefined);
+	});
+
+	test('successful replacement with a different root persists B intent and opens B workspace', async () => {
+		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		state.nextSelection = replaceSelection(replacedResult(summaryB, 8));
+		const workspace = new TestWorkspaceHost();
 		const store = new TestIntentStore();
-		store.value = intent('/projects/small/small.j3d', '/projects/small');
 		const logger = new TestLogger();
 		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
 
-		const result = await lifecycle.reopenPendingProject();
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
 
-		assert.deepStrictEqual({
-			result,
-			projectGeneration: state.snapshot.status === 'open' ? state.snapshot.generation : undefined,
-			openCalls: state.openCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			result: { status: 'reopened' },
-			projectGeneration: 12,
-			openCalls: ['/projects/small/small.j3d'],
-			intent: undefined,
-			openedWorkspace: undefined,
-			log: [
-				'Reopening JScene3D project after workspace activation: /projects/small/small.j3d',
-				'Project reopened: Small Authoring Project'
-			]
-		});
+		assert.strictEqual(result.workspace, 'transitionRequested');
+		assert.deepStrictEqual(store.value, intent('/projects/b/b.j3d', '/projects/b'));
+		assert.deepStrictEqual(workspace.openedResource, resource('/projects/b'));
+		assert.ok(logger.lines.includes('Opening replacement workspace: /projects/b'));
 	});
 
-	test('Java validation failure during reopen clears intent without changing workspace', async () => {
+	test('successful replacement with the current root updates B without reload or intent', async () => {
 		const state = new TestProjectState();
-		state.nextOpen = failedOpenResult();
+		state.snapshot = openSnapshot(summaryA, 7);
+		const sameRootB = { ...summaryB, root: summaryA.root };
+		state.nextSelection = replaceSelection(replacedResult(sameRootB, 8));
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
 		const store = new TestIntentStore();
-		store.value = intent('/projects/broken/broken.j3d', '/projects/broken');
+		store.value = intent();
 		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
-		const result = await lifecycle.reopenPendingProject();
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/a/b.j3d' });
 
-		assert.deepStrictEqual({
-			result,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			result: { status: 'failed', reason: 'project.invalid' },
-			intent: undefined,
-			openedWorkspace: undefined
-		});
+		assert.strictEqual(result.workspace, 'unchanged');
+		assert.strictEqual(store.value, undefined);
+		assert.strictEqual(workspace.openedResource, undefined);
+		assert.deepStrictEqual(state.snapshot, openSnapshot(sameRootB, 8));
 	});
 
-	test('activation rejects and clears malformed persisted intent without opening Java', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		store.value = { version: 1, descriptorUri: 'file:///projects/small/small.j3d' };
+	test('close waits for Java state, clears intent, then closes the workspace', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.snapshot = openSnapshot(summaryA, 7);
+		const workspace = new TestWorkspaceHost(events);
+		const store = new TestIntentStore(events);
+		store.value = intent('/projects/a/a.j3d', '/projects/a');
 		const logger = new TestLogger();
 		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({
-			result,
-			openCalls: state.openCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			result: { status: 'failed', reason: 'Pending project reopen intent is invalid' },
-			openCalls: [],
-			intent: undefined,
-			openedWorkspace: undefined,
-			log: ['Project reopen failed: Pending project reopen intent is invalid']
-		});
-	});
-
-	test('persisted Java generation is rejected rather than restored as authority', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		workspace.matches = true;
-		const store = new TestIntentStore();
-		store.value = { ...intent('/projects/small/small.j3d', '/projects/small'), projectGeneration: 7 };
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({
-			result,
-			openCalls: state.openCalls,
-			intent: store.value
-		}, {
-			result: { status: 'failed', reason: 'Pending project reopen intent is invalid' },
-			openCalls: [],
-			intent: undefined
-		});
-	});
-
-	test('stale intent in another workspace is cleared without opening Java or another workspace', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		store.value = intent('/projects/small/small.j3d', '/projects/small');
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({
-			result,
-			openCalls: state.openCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			result: { status: 'failed', reason: 'Pending project intent does not match the current local workspace' },
-			openCalls: [],
-			intent: undefined,
-			openedWorkspace: undefined,
-			log: ['Project reopen failed: Pending project intent does not match the current local workspace']
-		});
-	});
-
-	test('non-local persisted intent is cleared without opening Java', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		workspace.matches = true;
-		const store = new TestIntentStore();
-		store.value = {
-			version: 1,
-			descriptorUri: 'vscode-remote://ssh-remote/projects/small/small.j3d',
-			projectRootUri: 'vscode-remote://ssh-remote/projects/small'
-		};
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({ result, openCalls: state.openCalls, intent: store.value }, {
-			result: { status: 'failed', reason: 'Pending project intent does not match the current local workspace' },
-			openCalls: [],
-			intent: undefined
-		});
-	});
-
-	test('explicit project close clears reopen intent while leaving the workspace in place', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		store.value = intent('/projects/small/small.j3d', '/projects/small');
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
 		await lifecycle.closeProject();
 
-		assert.deepStrictEqual({
-			closeCalls: state.closeCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			closeCalls: 1,
-			intent: undefined,
-			openedWorkspace: undefined
-		});
+		assert.deepStrictEqual(events, ['java-close', 'intent-clear', 'workspace-close']);
+		assert.strictEqual(workspace.closeCalls, 1);
+		assert.deepStrictEqual(state.snapshot, closedSnapshot());
+		assert.ok(logger.lines.includes('Closing project workspace'));
 	});
 
-	test('explicit close still closes Java when intent cleanup fails', async () => {
+	test('close failure leaves workspace open and intent intact', async () => {
 		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		state.closeError = new Error('close failed');
+		const workspace = new TestWorkspaceHost();
 		const store = new TestIntentStore();
-		store.writeError = new Error('storage failed');
-		const lifecycle = new ProjectWorkspaceLifecycle(state, new TestWorkspaceHost(), store, new TestLogger());
+		store.value = intent('/projects/a/a.j3d', '/projects/a');
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
-		await assert.rejects(lifecycle.closeProject(), /storage failed/);
+		await assert.rejects(lifecycle.closeProject(), /close failed/);
 
-		assert.strictEqual(state.closeCalls, 1);
+		assert.strictEqual(workspace.closeCalls, 0);
+		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
 	});
 
-	test('external workspace change closes Java state that no longer matches', async () => {
+	test('workspace close failure is reported after Java state closes', async () => {
 		const state = new TestProjectState();
-		state.snapshot = openSnapshot();
+		state.snapshot = openSnapshot(summaryA, 7);
+		const workspace = new TestWorkspaceHost();
+		workspace.closeError = new Error('host close failed');
+		const logger = new TestLogger();
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), logger);
+
+		await assert.rejects(lifecycle.closeProject(), /host close failed/);
+
+		assert.deepStrictEqual(state.snapshot, closedSnapshot());
+		assert.strictEqual(workspace.closeCalls, 1);
+		assert.deepStrictEqual(logger.lines.slice(-2), [
+			'Closing project workspace',
+			'Project workspace close failed: host close failed'
+		]);
+	});
+
+	test('activation reopens persisted B with fresh ordinary-open authority', async () => {
+		const state = new TestProjectState();
+		state.nextSelection = openSelection(openResult(summaryB, 12));
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
 		const store = new TestIntentStore();
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
+		store.value = intent('/projects/b/b.j3d', '/projects/b');
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
+
+		const result = await lifecycle.reopenPendingProject();
+
+		assert.deepStrictEqual(result, { status: 'reopened' });
+		assert.deepStrictEqual(state.openCalls, ['/projects/b/b.j3d']);
+		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 12));
+		assert.strictEqual(store.value, undefined);
+	});
+
+	test('invalid persisted intent is cleared without Java or workspace work', async () => {
+		const state = new TestProjectState();
+		const workspace = new TestWorkspaceHost();
+		const store = new TestIntentStore();
+		store.value = { version: 1, descriptorUri: 'file:///projects/a/a.j3d' };
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
+
+		const result = await lifecycle.reopenPendingProject();
+
+		assert.deepStrictEqual(result, { status: 'failed', reason: 'Pending project reopen intent is invalid' });
+		assert.deepStrictEqual(state.openCalls, []);
+		assert.strictEqual(store.value, undefined);
+	});
+
+	test('workspace transition failure clears intent and closes accepted Java project', async () => {
+		const state = new TestProjectState();
+		const workspace = new TestWorkspaceHost();
+		workspace.openError = new Error('workspace failed');
+		const store = new TestIntentStore();
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
+
+		await assert.rejects(lifecycle.openProject({ scheme: 'file', fsPath: '/projects/a/a.j3d' }), /workspace failed/);
+
+		assert.strictEqual(state.closeCalls, 1);
+		assert.strictEqual(store.value, undefined);
+	});
+
+	test('external workspace change closes Java project without recursively closing workspace', async () => {
+		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		const workspace = new TestWorkspaceHost();
+		workspace.matches = true;
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
 		workspace.matches = false;
 
 		workspace.fireChange();
 		await state.closeStarted;
 
-		assert.deepStrictEqual({
-			closeCalls: state.closeCalls,
-			intent: store.value,
-			log: logger.lines
-		}, {
-			closeCalls: 1,
-			intent: undefined,
-			log: ['Workspace no longer matches open project; closing Java project: Small Authoring Project']
-		});
-		lifecycle.dispose();
-	});
-
-	test('external workspace invalidation still closes Java when intent cleanup fails', async () => {
-		const state = new TestProjectState();
-		state.snapshot = openSnapshot();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		store.writeError = new Error('storage failed');
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-
-		workspace.fireChange();
-		await state.closeStarted;
-
 		assert.strictEqual(state.closeCalls, 1);
+		assert.strictEqual(workspace.closeCalls, 0);
 		lifecycle.dispose();
-	});
-
-	test('workspace establishment failure clears intent and closes the Java project', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		workspace.openError = new Error('workspace failed');
-		const store = new TestIntentStore();
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		await assert.rejects(
-			lifecycle.openProject({ scheme: 'file', fsPath: '/selected/small.j3d' }),
-			/workspace failed/
-		);
-
-		assert.deepStrictEqual({
-			closeCalls: state.closeCalls,
-			intent: store.value,
-			log: logger.lines
-		}, {
-			closeCalls: 1,
-			intent: undefined,
-			log: [
-				'Persisting project reopen intent',
-				'Opening project workspace: /projects/small',
-				'Project workspace open failed: workspace failed'
-			]
-		});
-	});
-
-	test('reopen-intent persistence failure closes Java before any workspace transition', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		store.writeError = new Error('storage failed');
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		await assert.rejects(
-			lifecycle.openProject({ scheme: 'file', fsPath: '/selected/small.j3d' }),
-			/storage failed/
-		);
-
-		assert.deepStrictEqual({
-			closeCalls: state.closeCalls,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			closeCalls: 1,
-			openedWorkspace: undefined,
-			log: [
-				'Persisting project reopen intent',
-				'Project reopen intent persistence failed: storage failed'
-			]
-		});
-	});
-
-	test('service failure during activation reopen is one-shot and leaves no pending intent', async () => {
-		const state = new TestProjectState();
-		state.openError = new Error('service unavailable');
-		const workspace = new TestWorkspaceHost();
-		workspace.matches = true;
-		const store = new TestIntentStore();
-		store.value = intent('/projects/small/small.j3d', '/projects/small');
-		const logger = new TestLogger();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, logger);
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({
-			result,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource,
-			log: logger.lines
-		}, {
-			result: { status: 'failed', reason: 'service unavailable' },
-			intent: undefined,
-			openedWorkspace: undefined,
-			log: [
-				'Reopening JScene3D project after workspace activation: /projects/small/small.j3d',
-				'Project reopen failed: service unavailable'
-			]
-		});
-	});
-
-	test('unsupported selected URI starts neither Java nor a workspace transition', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-
-		await assert.rejects(
-			lifecycle.openProject({ scheme: 'vscode-remote', fsPath: '/projects/small/small.j3d' }),
-			/local file system/
-		);
-
-		assert.deepStrictEqual({
-			openCalls: state.openCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			openCalls: [],
-			intent: undefined,
-			openedWorkspace: undefined
-		});
-	});
-
-	test('changed Java root during reopen closes fresh state without causing a reload loop', async () => {
-		const state = new TestProjectState();
-		state.nextOpen = openResult(12, '/projects/moved');
-		const workspace = new TestWorkspaceHost();
-		workspace.matchingUris = new Set(['file:///projects/small']);
-		const store = new TestIntentStore();
-		store.value = intent('/projects/small/small.j3d', '/projects/small');
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-
-		const result = await lifecycle.reopenPendingProject();
-
-		assert.deepStrictEqual({
-			result,
-			closeCalls: state.closeCalls,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			result: { status: 'failed', reason: 'Java project root does not match the current workspace' },
-			closeCalls: 1,
-			intent: undefined,
-			openedWorkspace: undefined
-		});
-	});
-
-	test('disposal prevents later project work', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
-		lifecycle.dispose();
-
-		await assert.rejects(
-			lifecycle.openProject({ scheme: 'file', fsPath: '/projects/small/small.j3d' }),
-			/has been disposed/
-		);
-		assert.deepStrictEqual(state.openCalls, []);
-	});
-
-	test('in-flight open result after disposal cannot persist intent or open a workspace', async () => {
-		const state = new TestProjectState();
-		let completeOpen: ((result: ProjectOpenResultDto) => void) | undefined;
-		state.nextOpenPromise = new Promise(resolve => completeOpen = resolve);
-		const workspace = new TestWorkspaceHost();
-		const store = new TestIntentStore();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-		const opening = lifecycle.openProject({ scheme: 'file', fsPath: '/projects/small/small.j3d' });
-		await state.openStarted;
-
-		lifecycle.dispose();
-		completeOpen?.(openResult());
-		const result = await opening;
-
-		assert.deepStrictEqual({
-			workspace: result.workspace,
-			intent: store.value,
-			openedWorkspace: workspace.openedResource
-		}, {
-			workspace: 'unchanged',
-			intent: undefined,
-			openedWorkspace: undefined
-		});
-	});
-
-	test('deactivation during an accepted workspace transition preserves reopen intent', async () => {
-		const state = new TestProjectState();
-		const workspace = new TestWorkspaceHost();
-		let failWorkspaceOpen: ((error: Error) => void) | undefined;
-		workspace.openPromise = new Promise((_resolve, reject) => failWorkspaceOpen = reject);
-		const store = new TestIntentStore();
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
-		const opening = lifecycle.openProject({ scheme: 'file', fsPath: '/projects/small/small.j3d' });
-		await workspace.openStarted;
-
-		lifecycle.dispose();
-		failWorkspaceOpen?.(new Error('extension host stopped'));
-		const result = await opening;
-
-		assert.deepStrictEqual({
-			workspace: result.workspace,
-			intent: store.value,
-			closeCalls: state.closeCalls
-		}, {
-			workspace: 'transitionRequested',
-			intent: intent('/projects/small/small.j3d', '/projects/small'),
-			closeCalls: 0
-		});
 	});
 });
 
 class TestProjectState implements WorkspaceProjectState {
-	snapshot: ProjectSnapshot = { status: 'closed', diagnostics: [] };
-	openCalls: string[] = [];
-	nextOpen: ProjectOpenResultDto = openResult();
-	nextOpenPromise: Promise<ProjectOpenResultDto> | undefined;
-	openError: Error | undefined;
+	snapshot: ProjectSnapshot = closedSnapshot();
+	nextSelection: ProjectSelectionResult = openSelection(openResult(summaryA, 7));
+	readonly openCalls: string[] = [];
 	closeCalls = 0;
+	closeError: Error | undefined;
 	private closeStartedResolve: (() => void) | undefined;
 	readonly closeStarted = new Promise<void>(resolve => this.closeStartedResolve = resolve);
-	private openStartedResolve: (() => void) | undefined;
-	readonly openStarted = new Promise<void>(resolve => this.openStartedResolve = resolve);
 
-	open(path: string): Promise<ProjectOpenResultDto> {
+	constructor(private readonly events: string[] = []) { }
+
+	open(path: string): Promise<ProjectSelectionResult> {
 		this.openCalls.push(path);
-		this.openStartedResolve?.();
-		if (this.openError !== undefined) {
-			return Promise.reject(this.openError);
+		const selection = this.nextSelection;
+		const project = acceptedProject(selection);
+		if (project !== undefined) {
+			this.snapshot = openSnapshot(project.summary, project.generation);
 		}
-		const opening = this.nextOpenPromise ?? Promise.resolve(this.nextOpen);
-		return opening.then(result => {
-			if (result.opened && result.project !== null && result.projectGeneration !== null) {
-				this.snapshot = {
-					status: 'open',
-					generation: result.projectGeneration,
-					project: result.project,
-					diagnostics: result.diagnostics
-				};
-			}
-			return result;
-		});
+		return Promise.resolve(selection);
 	}
 
 	close(): Promise<void> {
 		this.closeCalls++;
 		this.closeStartedResolve?.();
+		this.events.push('java-close');
+		if (this.closeError !== undefined) {
+			return Promise.reject(this.closeError);
+		}
+		this.snapshot = closedSnapshot();
 		return Promise.resolve();
 	}
 }
@@ -555,12 +259,12 @@ class TestProjectState implements WorkspaceProjectState {
 class TestWorkspaceHost implements ProjectWorkspaceHost {
 	openedResource: ProjectWorkspaceResource | undefined;
 	matches = false;
-	matchingUris: ReadonlySet<string> | undefined;
 	openError: Error | undefined;
-	openPromise: Promise<void> | undefined;
+	closeError: Error | undefined;
+	closeCalls = 0;
 	private changeListener: (() => void) | undefined;
-	private openStartedResolve: (() => void) | undefined;
-	readonly openStarted = new Promise<void>(resolve => this.openStartedResolve = resolve);
+
+	constructor(private readonly events: string[] = []) { }
 
 	resourceForLocalPath(path: string): ProjectWorkspaceResource {
 		return resource(path);
@@ -570,17 +274,19 @@ class TestWorkspaceHost implements ProjectWorkspaceHost {
 		return uri.startsWith('file://') ? { uri, fsPath: uri.slice('file://'.length) } : undefined;
 	}
 
-	matchesProjectRoot(resource: ProjectWorkspaceResource): boolean {
-		return this.matchingUris?.has(resource.uri) ?? this.matches;
+	matchesProjectRoot(): boolean {
+		return this.matches;
 	}
 
 	openProjectRoot(resource: ProjectWorkspaceResource): Promise<void> {
 		this.openedResource = resource;
-		this.openStartedResolve?.();
-		if (this.openError !== undefined) {
-			return Promise.reject(this.openError);
-		}
-		return this.openPromise ?? Promise.resolve();
+		return this.openError === undefined ? Promise.resolve() : Promise.reject(this.openError);
+	}
+
+	closeProjectWorkspace(): Promise<void> {
+		this.closeCalls++;
+		this.events.push('workspace-close');
+		return this.closeError === undefined ? Promise.resolve() : Promise.reject(this.closeError);
 	}
 
 	onDidChangeWorkspace(listener: () => void): { dispose(): void } {
@@ -595,17 +301,18 @@ class TestWorkspaceHost implements ProjectWorkspaceHost {
 
 class TestIntentStore implements ProjectReopenIntentStore {
 	value: unknown;
-	writeError: Error | undefined;
+
+	constructor(private readonly events: string[] = []) { }
 
 	read(): unknown {
 		return this.value;
 	}
 
 	write(value: ProjectReopenIntent | undefined): Promise<void> {
-		if (this.writeError !== undefined) {
-			return Promise.reject(this.writeError);
-		}
 		this.value = value;
+		if (value === undefined) {
+			this.events.push('intent-clear');
+		}
 		return Promise.resolve();
 	}
 }
@@ -622,51 +329,67 @@ function resource(fsPath: string): ProjectWorkspaceResource {
 	return { uri: `file://${fsPath}`, fsPath };
 }
 
-function openResult(generation = 7, root = '/projects/small'): ProjectOpenResultDto {
-	return {
-		opened: true,
-		projectGeneration: generation,
-		project: {
-			id: 'small-project',
-			name: 'Small Authoring Project',
-			version: '1.0.0',
-			root,
-			descriptor: '/projects/small/small.j3d',
-			startupWorld: { id: 'world:main', name: 'Main World' },
-			assetCounts: { authored: 3, projected: 4 }
-		},
-		diagnostics: [],
-		failureCode: null
-	};
+function openSelection(result: ProjectOpenResultDto): ProjectSelectionResult {
+	return { operation: 'open', result };
+}
+
+function replaceSelection(result: ProjectReplaceResultDto): ProjectSelectionResult {
+	return { operation: 'replace', result };
+}
+
+function acceptedProject(selection: ProjectSelectionResult): { summary: ProjectSummaryDto; generation: number } | undefined {
+	if (selection.operation === 'open') {
+		return selection.result.opened && selection.result.project !== null && selection.result.projectGeneration !== null
+			? { summary: selection.result.project, generation: selection.result.projectGeneration }
+			: undefined;
+	}
+	return selection.result.outcome === 'replaced'
+		? { summary: selection.result.project, generation: selection.result.projectGeneration }
+		: undefined;
+}
+
+function openResult(project: ProjectSummaryDto, generation: number): ProjectOpenResultDto {
+	return { opened: true, projectGeneration: generation, project, diagnostics: [], failureCode: null };
 }
 
 function failedOpenResult(): ProjectOpenResultDto {
-	return {
-		opened: false,
-		projectGeneration: null,
-		project: null,
-		diagnostics: [],
-		failureCode: 'project.invalid'
-	};
+	return { opened: false, projectGeneration: null, project: null, diagnostics: [], failureCode: 'project.invalid' };
 }
 
-function openSnapshot(): ProjectSnapshot {
-	const result = openResult();
-	if (result.project === null || result.projectGeneration === null) {
-		throw new Error('Expected an opened project fixture');
-	}
-	return {
-		status: 'open',
-		generation: result.projectGeneration,
-		project: result.project,
-		diagnostics: result.diagnostics
-	};
+function replacedResult(project: ProjectSummaryDto, generation: number): ProjectReplaceResultDto {
+	return { outcome: 'replaced', projectGeneration: generation, project, diagnostics: [], failureCode: null };
+}
+
+function candidateRejectedResult(): ProjectReplaceResultDto {
+	return { outcome: 'candidateRejected', projectGeneration: null, project: null, diagnostics: [], failureCode: null };
+}
+
+function openSnapshot(project: ProjectSummaryDto, generation: number): ProjectSnapshot {
+	return { status: 'open', generation, project, activeDiagnostics: [], attemptDiagnostics: [] };
+}
+
+function closedSnapshot(): ProjectSnapshot {
+	return { status: 'closed', activeDiagnostics: [], attemptDiagnostics: [] };
 }
 
 function intent(descriptor = '/projects/old/old.j3d', root = '/projects/old'): ProjectReopenIntent {
-	return {
-		version: 1,
-		descriptorUri: `file://${descriptor}`,
-		projectRootUri: `file://${root}`
-	};
+	return { version: 1, descriptorUri: `file://${descriptor}`, projectRootUri: `file://${root}` };
 }
+
+const summaryA: ProjectSummaryDto = {
+	id: 'project-a',
+	name: 'Project A',
+	version: '1.0.0',
+	root: '/projects/a',
+	descriptor: '/projects/a/a.j3d',
+	startupWorld: { id: 'world:a', name: 'World A' },
+	assetCounts: { authored: 1, projected: 0 }
+};
+
+const summaryB: ProjectSummaryDto = {
+	...summaryA,
+	id: 'project-b',
+	name: 'Project B',
+	root: '/projects/b',
+	descriptor: '/projects/b/b.j3d'
+};

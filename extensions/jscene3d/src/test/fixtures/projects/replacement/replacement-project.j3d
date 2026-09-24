@@ -1,0 +1,22 @@
+{
+	"$schema": "https://jscene3d.org/schemas/project-1.json",
+	"schemaVersion": 1,
+	"identity": {
+		"id": "example.replacement-test",
+		"name": "Replacement Authoring Project",
+		"version": "2.0.0"
+	},
+	"engine": {
+		"requires": ">=0.1.0-SNAPSHOT <0.2.0"
+	},
+	"runtime": {
+		"applicationExtension": "example.replacement-test",
+		"entryScene": "worlds/replacement.world.json"
+	},
+	"extensions": [
+		{
+			"id": "example.replacement-test",
+			"requires": ">=2.0.0 <3.0.0"
+		}
+	]
+}

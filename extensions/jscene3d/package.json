@@ -47,7 +47,7 @@
 				"title": "%command.openProject%",
 				"category": "JScene3D",
 				"icon": "$(folder-opened)",
-				"enablement": "!jscene3d.projectOpen && !jscene3d.projectBusy"
+				"enablement": "!jscene3d.projectBusy"
 			},
 			{
 				"command": "jscene3d.closeProject",
@@ -66,7 +66,7 @@
 			"view/title": [
 				{
 					"command": "jscene3d.openProject",
-					"when": "view == jscene3d.project && !jscene3d.projectOpen",
+					"when": "view == jscene3d.project && !jscene3d.projectBusy",
 					"group": "navigation"
 				},
 				{

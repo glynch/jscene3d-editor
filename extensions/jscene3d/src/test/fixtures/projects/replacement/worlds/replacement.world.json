@@ -1,0 +1,9 @@
+{
+	"$schema": "https://jscene3d.org/schemas/world-definition-1.json",
+	"assetId": "d7319691-da5f-4423-9843-7f16440fe8f6",
+	"assetType": "world-definition",
+	"formatVersion": 1,
+	"name": "Replacement World",
+	"connections": [],
+	"roots": []
+}

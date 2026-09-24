@@ -21,7 +21,7 @@ suite('JScene3D authoring protocol client', () => {
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
-			capabilities: ['project/open', 'project/close', 'service/shutdown']
+			capabilities: ['project/open', 'project/replace', 'project/close', 'service/shutdown']
 		});
 		assert.deepStrictEqual(transport.sent[0], {
 			jsonrpc: '2.0',
@@ -48,7 +48,82 @@ suite('JScene3D authoring protocol client', () => {
 		const response = fixture('initialize-response.json');
 		const result = object(response.result);
 		transport.respond({ ...response, result: { ...result, capabilities: ['project/open'] } });
-		await assert.rejects(initialization, /required capability project\/close/);
+		await assert.rejects(initialization, /required capability project\/replace/);
+	});
+
+	test('sends typed replacement parameters and accepts replaced result', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const replacement = client.replaceProject(7, '/projects/b/b.j3d');
+		transport.respond(fixture('project-replace-replaced-response.json'));
+
+		const result = await replacement;
+
+		assert.strictEqual(result.outcome, 'replaced');
+		assert.strictEqual(result.projectGeneration, 8);
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0',
+			id: 2,
+			method: 'project/replace',
+			params: { expectedProjectGeneration: 7, path: '/projects/b/b.j3d' }
+		});
+	});
+
+	test('accepts candidateRejected and conflict replacement outcomes', async () => {
+		const candidateTransport = new TestTransport();
+		const candidateClient = await initializedClient(candidateTransport);
+		const candidate = candidateClient.replaceProject(7, '/projects/bad/bad.j3d');
+		const candidateResponse = fixture('project-replace-candidate-rejected-response.json');
+		candidateTransport.respond(candidateResponse);
+		assert.deepStrictEqual(await candidate, object(candidateResponse.result));
+
+		const conflictTransport = new TestTransport();
+		const conflictClient = await initializedClient(conflictTransport);
+		const conflict = conflictClient.replaceProject(7, '/projects/b/b.j3d');
+		const conflictResponse = fixture('project-replace-conflict-response.json');
+		conflictTransport.respond(conflictResponse);
+		assert.deepStrictEqual(await conflict, object(conflictResponse.result));
+	});
+
+	test('rejects malformed replacement outcomes and outcome-specific shapes', async () => {
+		const invalidResults: readonly JsonObject[] = [
+			{ ...replacementResult('replaced'), outcome: 'accepted' },
+			{ ...replacementResult('replaced'), projectGeneration: null },
+			{ outcome: 'replaced', projectGeneration: 8, diagnostics: [], failureCode: null },
+			{
+				outcome: 'replaced',
+				projectGeneration: 8,
+				project: replacementResult('replaced').project,
+				diagnostics: []
+			},
+			{ ...replacementResult('candidateRejected'), projectGeneration: 8 },
+			{ ...replacementResult('conflict'), failureCode: null }
+		];
+		for (const invalid of invalidResults) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const replacement = client.replaceProject(7, '/projects/b/b.j3d');
+			transport.respond(success(2, invalid));
+			await assert.rejects(replacement, /outcome is invalid|inconsistent shape|project must be an object|failureCode must be a string/);
+		}
+	});
+
+	test('rejects invalid replacement generations and diagnostics', async () => {
+		const inputTransport = new TestTransport();
+		const inputClient = await initializedClient(inputTransport);
+		await assert.rejects(inputClient.replaceProject(0, '/projects/b/b.j3d'), /positive integer/);
+		assert.strictEqual(inputTransport.sent.length, 1);
+
+		for (const invalid of [
+			{ ...replacementResult('replaced'), projectGeneration: 0 },
+			{ ...replacementResult('candidateRejected'), diagnostics: [{ invalid: true }] }
+		]) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const replacement = client.replaceProject(7, '/projects/b/b.j3d');
+			transport.respond(success(2, invalid));
+			await assert.rejects(replacement, /positive integer|diagnostic.severity/);
+		}
 	});
 
 	test('correlates responses received out of request order', async () => {
@@ -273,6 +348,29 @@ async function initializedClient(transport: TestTransport): Promise<AuthoringPro
 
 function success(id: number, result: JsonValue): JsonObject {
 	return { jsonrpc: '2.0', id, connectionGeneration: 'connection-1', result };
+}
+
+function replacementResult(outcome: 'replaced' | 'candidateRejected' | 'conflict'): JsonObject {
+	if (outcome === 'replaced') {
+		const openedProject = object(fixture('project-open-response.json').result).project;
+		if (openedProject === undefined) {
+			throw new Error('Expected a project fixture');
+		}
+		return {
+			outcome,
+			projectGeneration: 8,
+			project: openedProject,
+			diagnostics: [],
+			failureCode: null
+		};
+	}
+	return {
+		outcome,
+		projectGeneration: null,
+		project: null,
+		diagnostics: [],
+		failureCode: outcome === 'conflict' ? 'authoring.project.generationConflict' : null
+	};
 }
 
 function stringValue(value: JsonValue): string {

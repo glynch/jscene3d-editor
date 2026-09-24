@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ProjectOpenResultDto } from '../protocol/authoringProtocol';
+import { ProjectSummaryDto } from '../protocol/authoringProtocol';
 import { ProjectLocation, localProjectPath } from './projectLocation';
-import { ProjectSnapshot } from './projectState';
+import { ProjectSelectionResult, ProjectSnapshot } from './projectState';
 
 /** Stable local resource representation used at the workspace boundary. */
 export interface ProjectWorkspaceResource {
@@ -30,13 +30,14 @@ export interface ProjectWorkspaceHost {
 	parseLocalResource(uri: string): ProjectWorkspaceResource | undefined;
 	matchesProjectRoot(root: ProjectWorkspaceResource): boolean;
 	openProjectRoot(root: ProjectWorkspaceResource): Promise<void>;
+	closeProjectWorkspace(): Promise<void>;
 	onDidChangeWorkspace(listener: () => void): { dispose(): void };
 }
 
 /** Narrow project-state operations coordinated with workspace lifecycle. */
 export interface WorkspaceProjectState {
 	readonly snapshot: ProjectSnapshot;
-	open(path: string): Promise<ProjectOpenResultDto>;
+	open(path: string): Promise<ProjectSelectionResult>;
 	close(): Promise<void>;
 }
 
@@ -60,7 +61,7 @@ export interface ProjectWorkspaceLogger {
 
 /** Result of opening Java state and reconciling the Code OSS workspace. */
 export interface ProjectWorkspaceOpenResult {
-	readonly project: ProjectOpenResultDto;
+	readonly project: ProjectSelectionResult;
 	readonly workspace: 'unchanged' | 'transitionRequested';
 }
 
@@ -91,25 +92,26 @@ export class ProjectWorkspaceLifecycle {
 
 	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult> {
 		return this.runExclusive(async () => {
-			const result = await this.projectState.open(localProjectPath(location));
-			if (!result.opened || result.project === null) {
+			const selection = await this.projectState.open(localProjectPath(location));
+			const project = acceptedProject(selection);
+			if (project === undefined) {
 				await this.intentStore.write(undefined);
-				return { project: result, workspace: 'unchanged' };
+				return { project: selection, workspace: 'unchanged' };
 			}
 			if (this.disposed) {
-				return { project: result, workspace: 'unchanged' };
+				return { project: selection, workspace: 'unchanged' };
 			}
 
-			const projectRoot = this.workspace.resourceForLocalPath(result.project.root);
+			const projectRoot = this.workspace.resourceForLocalPath(project.root);
 			if (this.workspace.matchesProjectRoot(projectRoot)) {
 				await this.intentStore.write(undefined);
-				this.logger.appendLine(`Workspace already matches project root: ${result.project.root}`);
-				return { project: result, workspace: 'unchanged' };
+				this.logger.appendLine(`Workspace already matches project root: ${project.root}`);
+				return { project: selection, workspace: 'unchanged' };
 			}
 
 			const intent: ProjectReopenIntent = {
 				version: 1,
-				descriptorUri: this.workspace.resourceForLocalPath(result.project.descriptor).uri,
+				descriptorUri: this.workspace.resourceForLocalPath(project.descriptor).uri,
 				projectRootUri: projectRoot.uri
 			};
 			this.logger.appendLine('Persisting project reopen intent');
@@ -120,12 +122,13 @@ export class ProjectWorkspaceLifecycle {
 				await this.projectState.close();
 				throw error;
 			}
-			this.logger.appendLine(`Opening project workspace: ${result.project.root}`);
+			const action = selection.operation === 'replace' ? 'Opening replacement workspace' : 'Opening project workspace';
+			this.logger.appendLine(`${action}: ${project.root}`);
 			try {
 				await this.workspace.openProjectRoot(projectRoot);
 			} catch (error) {
 				if (this.disposed) {
-					return { project: result, workspace: 'transitionRequested' };
+					return { project: selection, workspace: 'transitionRequested' };
 				}
 				this.logger.appendLine(`Project workspace open failed: ${errorMessage(error)}`);
 				await Promise.all([
@@ -134,7 +137,7 @@ export class ProjectWorkspaceLifecycle {
 				]);
 				throw error;
 			}
-			return { project: result, workspace: 'transitionRequested' };
+			return { project: selection, workspace: 'transitionRequested' };
 		});
 	}
 
@@ -162,7 +165,11 @@ export class ProjectWorkspaceLifecycle {
 
 			this.logger.appendLine(`Reopening JScene3D project after workspace activation: ${descriptor.fsPath}`);
 			try {
-				const result = await this.projectState.open(descriptor.fsPath);
+				const selection = await this.projectState.open(descriptor.fsPath);
+				if (selection.operation !== 'open') {
+					throw new Error('Pending project reopen unexpectedly attempted replacement');
+				}
+				const result = selection.result;
 				if (!result.opened || result.project === null || result.projectGeneration === null) {
 					await this.intentStore.write(undefined);
 					this.logger.appendLine(`Project reopen failed: ${result.failureCode ?? 'Java project validation failed'}`);
@@ -189,10 +196,18 @@ export class ProjectWorkspaceLifecycle {
 
 	closeProject(): Promise<void> {
 		return this.runExclusive(async () => {
-			await Promise.all([
-				this.intentStore.write(undefined),
-				this.projectState.close()
-			]);
+			if (this.projectState.snapshot.status !== 'open') {
+				return;
+			}
+			await this.projectState.close();
+			await this.intentStore.write(undefined);
+			this.logger.appendLine('Closing project workspace');
+			try {
+				await this.workspace.closeProjectWorkspace();
+			} catch (error) {
+				this.logger.appendLine(`Project workspace close failed: ${errorMessage(error)}`);
+				throw error;
+			}
 		});
 	}
 
@@ -251,6 +266,13 @@ function projectReopenIntent(value: unknown): ProjectReopenIntent | undefined {
 		descriptorUri: value.descriptorUri,
 		projectRootUri: value.projectRootUri
 	};
+}
+
+function acceptedProject(selection: ProjectSelectionResult): ProjectSummaryDto | undefined {
+	if (selection.operation === 'open') {
+		return selection.result.opened ? selection.result.project ?? undefined : undefined;
+	}
+	return selection.result.outcome === 'replaced' ? selection.result.project : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

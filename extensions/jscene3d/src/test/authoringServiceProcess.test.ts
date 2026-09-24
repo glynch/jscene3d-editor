@@ -8,7 +8,7 @@ import * as path from 'path';
 import { AuthoringService, NodeAuthoringProcessLauncher } from '../authoring/authoringService';
 
 suite('JScene3D authoring service process', () => {
-	test('initializes and exercises valid, malformed, and semantic project opens', async function () {
+	test('opens A, rejects invalid B, replaces with valid B, closes, and shuts down', async function () {
 		this.timeout(15000);
 		const modulePath = process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH;
 		if (modulePath === undefined || modulePath.trim().length === 0) {
@@ -21,13 +21,13 @@ suite('JScene3D authoring service process', () => {
 		}), new NodeAuthoringProcessLauncher(), logger);
 		try {
 			const validDescriptor = fixture('valid', 'small-authoring-project.j3d');
-			const valid = await service.openProject(validDescriptor);
+			const projectA = await service.openProject(validDescriptor);
 			assert.deepStrictEqual({
-				opened: valid.opened,
-				name: valid.project?.name,
-				root: valid.project?.root,
-				descriptor: valid.project?.descriptor,
-				diagnostics: valid.diagnostics
+				opened: projectA.opened,
+				name: projectA.project?.name,
+				root: projectA.project?.root,
+				descriptor: projectA.project?.descriptor,
+				diagnostics: projectA.diagnostics
 			}, {
 				opened: true,
 				name: 'Small Authoring Project',
@@ -35,15 +35,28 @@ suite('JScene3D authoring service process', () => {
 				descriptor: validDescriptor,
 				diagnostics: []
 			});
-			await service.closeProject();
+			assert.notStrictEqual(projectA.projectGeneration, null);
+			const generationA = projectA.projectGeneration ?? 0;
 
-			const malformed = await service.openProject(fixture('malformed', 'malformed.j3d'));
-			assert.strictEqual(malformed.opened, false);
-			assert.ok(malformed.diagnostics.length > 0);
+			const invalidB = await service.replaceProject(generationA, fixture('malformed', 'malformed.j3d'));
+			assert.strictEqual(invalidB.outcome, 'candidateRejected');
+			assert.ok(invalidB.diagnostics.length > 0);
 
-			const semantic = await service.openProject(fixture('semantic-invalid', 'semantic-invalid.j3d'));
-			assert.strictEqual(semantic.opened, false);
-			assert.ok(semantic.diagnostics.length > 0);
+			const validBDescriptor = fixture('replacement', 'replacement-project.j3d');
+			const projectB = await service.replaceProject(generationA, validBDescriptor);
+			assert.strictEqual(projectB.outcome, 'replaced');
+			if (projectB.outcome !== 'replaced') {
+				throw new Error('Expected valid B to replace A');
+			}
+			assert.strictEqual(projectB.project.name, 'Replacement Authoring Project');
+			assert.strictEqual(projectB.project.descriptor, validBDescriptor);
+			assert.ok(projectB.projectGeneration > generationA);
+
+			const closed = await service.closeProject();
+			assert.deepStrictEqual(closed, {
+				closed: true,
+				invalidatedProjectGeneration: projectB.projectGeneration
+			});
 		} finally {
 			await service.shutdown();
 		}

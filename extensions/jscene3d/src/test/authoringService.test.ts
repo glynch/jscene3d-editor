@@ -255,7 +255,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						processKind: 'authoring',
 						serviceVersion: 'test',
 						engineVersion: 'test',
-						capabilities: ['project/open', 'project/close', 'service/shutdown']
+						capabilities: ['project/open', 'project/replace', 'project/close', 'service/shutdown']
 					});
 					this.initializedResolve?.();
 				}
@@ -282,6 +282,23 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						failureCode: null
 					});
 				}
+				break;
+			case 'project/replace':
+				this.respond(id, {
+					outcome: 'replaced',
+					projectGeneration: 8,
+					project: {
+						id: 'replacement',
+						name: 'Replacement',
+						version: '1.0.0',
+						root: '/projects/replacement',
+						descriptor: '/projects/replacement/replacement.j3d',
+						startupWorld: { id: 'world:main', name: 'Main' },
+						assetCounts: { authored: 1, projected: 1 }
+					},
+					diagnostics: [],
+					failureCode: null
+				});
 				break;
 			case 'service/shutdown':
 				this.shutdownRequests++;

@@ -45,7 +45,6 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 	if (snapshot.status === 'closed') {
 		return [{ label: labels.noProject }];
 	}
-
 	const project = snapshot.project;
 	return [{
 		label: project.name,

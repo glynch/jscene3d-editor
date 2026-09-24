@@ -6,7 +6,13 @@
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { Readable, Writable } from 'stream';
-import { AuthoringProtocolClient, InitializeResultDto, ProjectCloseResultDto, ProjectOpenResultDto } from '../protocol/authoringProtocol';
+import {
+	AuthoringProtocolClient,
+	InitializeResultDto,
+	ProjectCloseResultDto,
+	ProjectOpenResultDto,
+	ProjectReplaceResultDto
+} from '../protocol/authoringProtocol';
 import { JsonRpcClient } from '../protocol/jsonRpcClient';
 import { StreamMessageTransport } from '../protocol/messageTransport';
 
@@ -110,6 +116,15 @@ export class AuthoringService implements Disposable {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().openProject(path);
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
+		}
+	}
+
+	async replaceProject(expectedProjectGeneration: number, path: string): Promise<ProjectReplaceResultDto> {
+		await this.ensureReady();
+		try {
+			return await this.requireClient().replaceProject(expectedProjectGeneration, path);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}

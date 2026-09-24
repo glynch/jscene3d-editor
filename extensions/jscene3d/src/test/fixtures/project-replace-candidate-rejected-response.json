@@ -1,0 +1,21 @@
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"outcome": "candidateRejected",
+		"projectGeneration": null,
+		"project": null,
+		"diagnostics": [
+			{
+				"severity": "error",
+				"code": "project.invalid",
+				"message": "Selected project is invalid",
+				"source": "file:///projects/bad/bad.j3d",
+				"location": "/identity",
+				"details": {}
+			}
+		],
+		"failureCode": null
+	}
+}

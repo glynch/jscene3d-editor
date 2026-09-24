@@ -3,11 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ProjectCloseResultDto, ProjectDiagnosticDto, ProjectOpenResultDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
+import {
+	ProjectCloseResultDto,
+	ProjectDiagnosticDto,
+	ProjectOpenResultDto,
+	ProjectReplaceResultDto,
+	ProjectSummaryDto
+} from '../protocol/authoringProtocol';
 
 /** Project lifecycle operations consumed by the editor-side state cache. */
 export interface ProjectAuthoringClient {
 	openProject(path: string): Promise<ProjectOpenResultDto>;
+	replaceProject(expectedProjectGeneration: number, path: string): Promise<ProjectReplaceResultDto>;
 	closeProject(): Promise<ProjectCloseResultDto>;
 	onDidFail(listener: (error: Error) => void): { dispose(): void };
 }
@@ -17,39 +24,47 @@ export interface ProjectStateLogger {
 	appendLine(message: string): void;
 }
 
-type EmptyProjectSnapshot =
-	| { readonly status: 'closed'; readonly diagnostics: readonly ProjectDiagnosticDto[] }
-	| { readonly status: 'opening'; readonly diagnostics: readonly ProjectDiagnosticDto[] }
-	| { readonly status: 'cancellingOpen'; readonly diagnostics: readonly ProjectDiagnosticDto[] };
-
-interface OpenProjectSnapshot {
-	readonly status: 'open' | 'closing';
-	readonly generation: number;
-	readonly project: ProjectSummaryDto;
-	readonly diagnostics: readonly ProjectDiagnosticDto[];
+interface ProjectDiagnosticScopes {
+	readonly activeDiagnostics: readonly ProjectDiagnosticDto[];
+	readonly attemptDiagnostics: readonly ProjectDiagnosticDto[];
 }
 
-interface OpenFailedProjectSnapshot {
+type EmptyProjectSnapshot = ProjectDiagnosticScopes & (
+	| { readonly status: 'closed' }
+	| { readonly status: 'opening' }
+	| { readonly status: 'cancellingOpen' }
+);
+
+interface OpenProjectSnapshot extends ProjectDiagnosticScopes {
+	readonly status: 'open' | 'replacing' | 'closing';
+	readonly generation: number;
+	readonly project: ProjectSummaryDto;
+}
+
+interface OpenFailedProjectSnapshot extends ProjectDiagnosticScopes {
 	readonly status: 'openFailed';
-	readonly diagnostics: readonly ProjectDiagnosticDto[];
 	readonly failure: string;
 }
 
-interface ServiceUnavailableProjectSnapshot {
+interface ServiceUnavailableProjectSnapshot extends ProjectDiagnosticScopes {
 	readonly status: 'serviceUnavailable';
-	readonly diagnostics: readonly ProjectDiagnosticDto[];
 	readonly failure: string;
 }
 
 /** Immutable editor-side projection of the current Java project-session lifecycle. */
 export type ProjectSnapshot = EmptyProjectSnapshot | OpenProjectSnapshot | OpenFailedProjectSnapshot | ServiceUnavailableProjectSnapshot;
 
+/** Identifies which Java operation handled an explicit project selection. */
+export type ProjectSelectionResult =
+	| { readonly operation: 'open'; readonly result: ProjectOpenResultDto }
+	| { readonly operation: 'replace'; readonly result: ProjectReplaceResultDto };
+
 /** Owns the one editor-side cache of the retained Java project session. */
 export class ProjectState implements Disposable {
 	private readonly listeners = new Set<() => void>();
 	private readonly serviceFailureSubscription: { dispose(): void };
 	private snapshotValue: ProjectSnapshot = closedSnapshot();
-	private pendingOpen: Promise<ProjectOpenResultDto> | undefined;
+	private pendingSelection: Promise<ProjectSelectionResult> | undefined;
 	private pendingClose: Promise<void> | undefined;
 	private disposed = false;
 
@@ -72,26 +87,20 @@ export class ProjectState implements Disposable {
 		return { dispose: () => this.listeners.delete(listener) };
 	}
 
-	async open(path: string): Promise<ProjectOpenResultDto> {
+	async open(path: string): Promise<ProjectSelectionResult> {
 		if (this.disposed) {
 			throw new Error('JScene3D project state has been disposed');
 		}
+		if (this.snapshotValue.status === 'open') {
+			return this.startReplacement(this.snapshotValue, path);
+		}
 		if (!canOpen(this.snapshotValue)) {
-			throw new Error('A JScene3D project is already open or changing state');
+			throw new Error('A JScene3D project is already changing state');
 		}
 
 		this.snapshotValue = emptySnapshot('opening');
 		this.logger.appendLine(`Opening project: ${path}`);
-		const pending = this.performOpen(path);
-		this.pendingOpen = pending;
-		this.emit();
-		try {
-			return await pending;
-		} finally {
-			if (this.pendingOpen === pending) {
-				this.pendingOpen = undefined;
-			}
-		}
+		return this.trackSelection(this.performOpen(path));
 	}
 
 	async close(): Promise<void> {
@@ -102,21 +111,14 @@ export class ProjectState implements Disposable {
 		switch (this.snapshotValue.status) {
 			case 'opening': {
 				this.snapshotValue = emptySnapshot('cancellingOpen');
-				const pending = this.pendingOpen;
+				const pending = this.pendingSelection;
 				if (pending === undefined) {
 					throw new Error('Project open reconciliation is unavailable');
 				}
-				const closing = pending.then(() => undefined);
-				this.pendingClose = closing;
-				this.emit();
-				try {
-					await closing;
-				} finally {
-					if (this.pendingClose === closing) {
-						this.pendingClose = undefined;
-					}
-				}
-				return;
+				return this.trackClose(pending.then(() => undefined));
+			}
+			case 'replacing': {
+				throw new Error('A JScene3D project replacement is already in progress');
 			}
 			case 'cancellingOpen':
 			case 'closing': {
@@ -128,18 +130,10 @@ export class ProjectState implements Disposable {
 			}
 			case 'open': {
 				const project = this.snapshotValue;
+				this.logger.appendLine(`Closing project: ${project.project.name}`);
 				this.snapshotValue = { ...project, status: 'closing' };
-				const closing = this.performClose(project);
-				this.pendingClose = closing;
 				this.emit();
-				try {
-					await closing;
-				} finally {
-					if (this.pendingClose === closing) {
-						this.pendingClose = undefined;
-					}
-				}
-				return;
+				return this.trackClose(this.performClose(project));
 			}
 			case 'closed':
 			case 'openFailed':
@@ -158,22 +152,54 @@ export class ProjectState implements Disposable {
 		this.snapshotValue = closedSnapshot();
 	}
 
-	private async performOpen(path: string): Promise<ProjectOpenResultDto> {
+	private startReplacement(current: OpenProjectSnapshot, path: string): Promise<ProjectSelectionResult> {
+		this.snapshotValue = { ...current, status: 'replacing', attemptDiagnostics: [] };
+		this.logger.appendLine(`Replacing project: ${current.project.name} → ${path}`);
+		const pending = this.performReplacement(current, path);
+		this.emit();
+		return this.trackSelection(pending);
+	}
+
+	private async trackSelection(pending: Promise<ProjectSelectionResult>): Promise<ProjectSelectionResult> {
+		this.pendingSelection = pending;
+		this.emit();
+		try {
+			return await pending;
+		} finally {
+			if (this.pendingSelection === pending) {
+				this.pendingSelection = undefined;
+			}
+		}
+	}
+
+	private async trackClose(closing: Promise<void>): Promise<void> {
+		this.pendingClose = closing;
+		this.emit();
+		try {
+			await closing;
+		} finally {
+			if (this.pendingClose === closing) {
+				this.pendingClose = undefined;
+			}
+		}
+	}
+
+	private async performOpen(path: string): Promise<ProjectSelectionResult> {
 		let result: ProjectOpenResultDto;
 		try {
 			result = await this.client.openProject(path);
 		} catch (error) {
-			this.acceptOpenFailure(error);
+			this.acceptOperationFailure('Project open failed', error);
 			throw error;
 		}
 
 		if (this.disposed) {
-			return result;
+			return { operation: 'open', result };
 		}
 		if (this.snapshotValue.status === 'cancellingOpen') {
 			if (result.opened) {
 				try {
-					await this.closeJavaSession(requiredGeneration(result));
+					await this.closeJavaSession(requiredOpenGeneration(result));
 				} catch (error) {
 					this.acceptAuthorityFailure(error);
 					throw error;
@@ -183,31 +209,57 @@ export class ProjectState implements Disposable {
 				this.snapshotValue = closedSnapshot();
 				this.emit();
 			}
-			return result;
+			return { operation: 'open', result };
 		}
 		if (this.snapshotValue.status !== 'opening') {
-			return result;
+			return { operation: 'open', result };
 		}
 
 		if (result.opened) {
-			const project = requiredProject(result);
-			this.snapshotValue = {
-				status: 'open',
-				generation: requiredGeneration(result),
-				project,
-				diagnostics: result.diagnostics
-			};
+			const project = requiredOpenProject(result);
+			this.snapshotValue = openSnapshot(requiredOpenGeneration(result), project, result.diagnostics);
 			this.logger.appendLine(`Project opened: ${project.name}`);
 		} else {
 			this.snapshotValue = {
 				status: 'openFailed',
-				diagnostics: result.diagnostics,
+				activeDiagnostics: [],
+				attemptDiagnostics: result.diagnostics,
 				failure: result.failureCode ?? 'Project validation failed'
 			};
 			this.logger.appendLine(`Project open failed: ${result.failureCode ?? 'Java project validation failed'}`);
 		}
 		this.emit();
-		return result;
+		return { operation: 'open', result };
+	}
+
+	private async performReplacement(current: OpenProjectSnapshot, path: string): Promise<ProjectSelectionResult> {
+		let result: ProjectReplaceResultDto;
+		try {
+			result = await this.client.replaceProject(current.generation, path);
+		} catch (error) {
+			this.acceptOperationFailure('Project replacement failed', error);
+			throw error;
+		}
+
+		if (this.disposed || this.snapshotValue.status !== 'replacing') {
+			return { operation: 'replace', result };
+		}
+		switch (result.outcome) {
+			case 'replaced':
+				this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
+				this.logger.appendLine(`Project replaced: ${result.project.name}`);
+				break;
+			case 'candidateRejected':
+				this.snapshotValue = { ...current, status: 'open', attemptDiagnostics: result.diagnostics };
+				this.logger.appendLine('Project replacement rejected: Java project validation failed');
+				break;
+			case 'conflict':
+				this.snapshotValue = serviceUnavailableSnapshot(result.failureCode, result.diagnostics);
+				this.logger.appendLine(`Project replacement conflict: ${result.failureCode}`);
+				break;
+		}
+		this.emit();
+		return { operation: 'replace', result };
 	}
 
 	private async performClose(project: OpenProjectSnapshot): Promise<void> {
@@ -239,13 +291,13 @@ export class ProjectState implements Disposable {
 		}
 	}
 
-	private acceptOpenFailure(error: unknown): void {
+	private acceptOperationFailure(prefix: string, error: unknown): void {
 		if (this.disposed || this.snapshotValue.status === 'serviceUnavailable') {
 			return;
 		}
 		const failure = errorMessage(error);
 		this.snapshotValue = serviceUnavailableSnapshot(failure);
-		this.logger.appendLine(`Project open failed: ${failure}`);
+		this.logger.appendLine(`${prefix}: ${failure}`);
 		this.emit();
 	}
 
@@ -276,25 +328,42 @@ function canOpen(snapshot: ProjectSnapshot): boolean {
 }
 
 function emptySnapshot(status: EmptyProjectSnapshot['status']): EmptyProjectSnapshot {
-	return { status, diagnostics: [] };
+	return { status, activeDiagnostics: [], attemptDiagnostics: [] };
 }
 
 function closedSnapshot(): EmptyProjectSnapshot {
 	return emptySnapshot('closed');
 }
 
-function serviceUnavailableSnapshot(failure: string): ServiceUnavailableProjectSnapshot {
-	return { status: 'serviceUnavailable', diagnostics: [], failure };
+function openSnapshot(
+	generation: number,
+	project: ProjectSummaryDto,
+	diagnostics: readonly ProjectDiagnosticDto[]
+): OpenProjectSnapshot {
+	return {
+		status: 'open',
+		generation,
+		project,
+		activeDiagnostics: diagnostics,
+		attemptDiagnostics: []
+	};
 }
 
-function requiredProject(result: ProjectOpenResultDto): ProjectSummaryDto {
+function serviceUnavailableSnapshot(
+	failure: string,
+	attemptDiagnostics: readonly ProjectDiagnosticDto[] = []
+): ServiceUnavailableProjectSnapshot {
+	return { status: 'serviceUnavailable', activeDiagnostics: [], attemptDiagnostics, failure };
+}
+
+function requiredOpenProject(result: ProjectOpenResultDto): ProjectSummaryDto {
 	if (result.project === null) {
 		throw new Error('Opened project result is missing its project summary');
 	}
 	return result.project;
 }
 
-function requiredGeneration(result: ProjectOpenResultDto): number {
+function requiredOpenGeneration(result: ProjectOpenResultDto): number {
 	if (result.projectGeneration === null) {
 		throw new Error('Opened project result is missing its project generation');
 	}

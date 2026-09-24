@@ -1,0 +1,20 @@
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"outcome": "replaced",
+		"projectGeneration": 8,
+		"project": {
+			"id": "replacement-project",
+			"name": "Replacement Project",
+			"version": "2.0.0",
+			"root": "/projects/replacement",
+			"descriptor": "/projects/replacement/replacement.j3d",
+			"startupWorld": { "id": "world:replacement", "name": "Replacement World" },
+			"assetCounts": { "authored": 2, "projected": 1 }
+		},
+		"diagnostics": [],
+		"failureCode": null
+	}
+}

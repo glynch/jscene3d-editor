@@ -65,6 +65,36 @@ export interface ProjectOpenResultDto {
 	readonly failureCode: string | null;
 }
 
+/** Wire parameters for atomically replacing the retained Java project. */
+export interface ProjectReplaceParamsDto {
+	readonly expectedProjectGeneration: number;
+	readonly path: string;
+}
+
+/** Wire result for an atomic replacement; a successful generation identifies the newly retained Java project session. */
+export type ProjectReplaceResultDto =
+	| {
+		readonly outcome: 'replaced';
+		readonly projectGeneration: number;
+		readonly project: ProjectSummaryDto;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: null;
+	}
+	| {
+		readonly outcome: 'candidateRejected';
+		readonly projectGeneration: null;
+		readonly project: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: null;
+	}
+	| {
+		readonly outcome: 'conflict';
+		readonly projectGeneration: null;
+		readonly project: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: string;
+	};
+
 /** Wire result for invalidating the active Java project session. */
 export interface ProjectCloseResultDto {
 	readonly closed: boolean;
@@ -97,7 +127,7 @@ export class AuthoringProtocolClient {
 		if (result.processKind !== 'authoring') {
 			throw new Error(`Expected an authoring service but received process kind ${result.processKind}`);
 		}
-		for (const capability of ['project/open', 'project/close', 'service/shutdown']) {
+		for (const capability of ['project/open', 'project/replace', 'project/close', 'service/shutdown']) {
 			if (!result.capabilities.includes(capability)) {
 				throw new Error(`Authoring service does not provide required capability ${capability}`);
 			}
@@ -108,6 +138,17 @@ export class AuthoringProtocolClient {
 
 	async openProject(path: string): Promise<ProjectOpenResultDto> {
 		return (await this.request('project/open', { path }, validateProjectOpenResult)).result;
+	}
+
+	async replaceProject(expectedProjectGeneration: number, path: string): Promise<ProjectReplaceResultDto> {
+		const params: ProjectReplaceParamsDto = {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			path
+		};
+		return (await this.request('project/replace', {
+			expectedProjectGeneration: params.expectedProjectGeneration,
+			path: params.path
+		}, validateProjectReplaceResult)).result;
 	}
 
 	async closeProject(): Promise<ProjectCloseResultDto> {
@@ -162,6 +203,35 @@ function validateProjectOpenResult(value: JsonValue): ProjectOpenResultDto {
 		diagnostics: requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic),
 		failureCode: nullableString(object.failureCode, 'failureCode')
 	};
+}
+
+/** Validates all mutually exclusive project-replacement result shapes. */
+function validateProjectReplaceResult(value: JsonValue): ProjectReplaceResultDto {
+	const object = requiredObject(value, 'project/replace result');
+	const outcome = requiredReplaceOutcome(object.outcome);
+	const generation = object.projectGeneration === null
+		? null
+		: requiredPositiveInteger(object.projectGeneration, 'projectGeneration');
+	const project = object.project === null ? null : validateProjectSummary(object.project);
+	const diagnostics = requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic);
+	const failureCode = nullableString(object.failureCode, 'failureCode');
+
+	if (outcome === 'replaced') {
+		if (generation === null || project === null || failureCode !== null) {
+			throw new Error('project/replace replaced result has an inconsistent shape');
+		}
+		return { outcome, projectGeneration: generation, project, diagnostics, failureCode };
+	}
+	if (outcome === 'candidateRejected') {
+		if (generation !== null || project !== null || failureCode !== null) {
+			throw new Error('project/replace candidateRejected result has an inconsistent shape');
+		}
+		return { outcome, projectGeneration: null, project: null, diagnostics, failureCode: null };
+	}
+	if (generation !== null || project !== null || failureCode === null) {
+		throw new Error('project/replace conflict result has an inconsistent shape');
+	}
+	return { outcome, projectGeneration: null, project: null, diagnostics, failureCode };
 }
 
 /** Validates a project-close result received from Java. */
@@ -236,6 +306,14 @@ function requiredDiagnosticSeverity(value: JsonValue | undefined): ProjectDiagno
 	return value;
 }
 
+/** Requires one of the outcomes defined by the Java replacement contract. */
+function requiredReplaceOutcome(value: JsonValue | undefined): ProjectReplaceResultDto['outcome'] {
+	if (value !== 'replaced' && value !== 'candidateRejected' && value !== 'conflict') {
+		throw new Error('project/replace outcome is invalid');
+	}
+	return value;
+}
+
 /** Requires a JSON object at the named wire-contract location. */
 function requiredObject(value: JsonValue | undefined, name: string): JsonObject {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -277,6 +355,14 @@ function requiredBoolean(value: JsonValue | undefined, name: string): boolean {
 function requiredInteger(value: JsonValue | undefined, name: string): number {
 	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
 		throw new Error(`${name} must be a non-negative integer`);
+	}
+	return value;
+}
+
+/** Requires a positive safe integer at the named wire-contract location. */
+function requiredPositiveInteger(value: JsonValue | undefined, name: string): number {
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+		throw new Error(`${name} must be a positive integer`);
 	}
 	return value;
 }

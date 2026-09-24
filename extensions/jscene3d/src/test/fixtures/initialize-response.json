@@ -7,6 +7,6 @@
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",
-		"capabilities": ["project/open", "project/close", "service/shutdown"]
+		"capabilities": ["project/open", "project/replace", "project/close", "service/shutdown"]
 	}
 }

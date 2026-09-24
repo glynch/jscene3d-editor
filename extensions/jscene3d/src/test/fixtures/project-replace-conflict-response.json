@@ -1,0 +1,12 @@
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"outcome": "conflict",
+		"projectGeneration": null,
+		"project": null,
+		"diagnostics": [],
+		"failureCode": "authoring.project.generationConflict"
+	}
+}

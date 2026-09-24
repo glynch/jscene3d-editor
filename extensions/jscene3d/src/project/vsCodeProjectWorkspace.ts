@@ -11,6 +11,7 @@ import {
 	ProjectWorkspaceHost,
 	ProjectWorkspaceResource
 } from './projectWorkspaceLifecycle';
+import { closeCodeOssWorkspace } from './projectWorkspaceCommands';
 
 const reopenIntentKey = 'pendingProjectReopen';
 
@@ -40,6 +41,10 @@ export class VsCodeProjectWorkspace implements ProjectWorkspaceHost {
 
 	async openProjectRoot(root: ProjectWorkspaceResource): Promise<void> {
 		await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.parse(root.uri, true), { forceReuseWindow: true });
+	}
+
+	async closeProjectWorkspace(): Promise<void> {
+		await closeCodeOssWorkspace(vscode.commands);
 	}
 
 	onDidChangeWorkspace(listener: () => void): vscode.Disposable {

@@ -28,7 +28,8 @@ let activeRuntime: ActiveExtensionRuntime | undefined;
 /** Activates and wires the built-in JScene3D authoring extension. */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	const output = vscode.window.createOutputChannel('JScene3D');
-	const diagnostics = vscode.languages.createDiagnosticCollection('jscene3d');
+	const activeDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.activeProject');
+	const attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
 	const workspaceLifecycle = new ProjectWorkspaceLifecycle(
@@ -43,17 +44,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const stateSubscription = projectState.onDidChange(() => {
 		const snapshot = projectState.snapshot;
-		publishProjectDiagnostics(diagnostics, snapshot.diagnostics);
+		publishProjectDiagnostics(activeDiagnostics, snapshot.activeDiagnostics);
+		publishProjectDiagnostics(attemptDiagnostics, snapshot.attemptDiagnostics);
+		const projectOpen = snapshot.status === 'open' || snapshot.status === 'replacing' || snapshot.status === 'closing';
 		void Promise.all([
-			vscode.commands.executeCommand('setContext', projectOpenContext, snapshot.status === 'open'),
+			vscode.commands.executeCommand('setContext', projectOpenContext, projectOpen),
 			vscode.commands.executeCommand('setContext', projectBusyContext,
-				snapshot.status === 'opening' || snapshot.status === 'cancellingOpen' || snapshot.status === 'closing')
+				snapshot.status === 'opening' || snapshot.status === 'cancellingOpen'
+					|| snapshot.status === 'replacing' || snapshot.status === 'closing')
 		]).catch(error => output.appendLine(`Failed to update JScene3D context keys: ${error instanceof Error ? error.message : String(error)}`));
 	});
 
 	context.subscriptions.push(
 		output,
-		diagnostics,
+		activeDiagnostics,
+		attemptDiagnostics,
 		service,
 		projectState,
 		workspaceLifecycle,
@@ -84,8 +89,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 			try {
 				const result = await workspaceLifecycle.openProject(selections[0]);
-				if (!result.project.opened) {
+				if (result.project.operation === 'open' && !result.project.result.opened) {
 					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See Problems and JScene3D Output for details.'));
+				} else if (result.project.operation === 'replace' && result.project.result.outcome === 'candidateRejected') {
+					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the selected project. See Problems for details.'));
+				} else if (result.project.operation === 'replace' && result.project.result.outcome === 'conflict') {
+					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not replace the current project because the authoring session changed. See JScene3D Output for details.'));
 				}
 			} catch (error) {
 				output.appendLine(`Open Project command failed: ${error instanceof Error ? error.message : String(error)}`);
