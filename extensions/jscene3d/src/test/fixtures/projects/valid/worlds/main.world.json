@@ -1,0 +1,9 @@
+{
+	"$schema": "https://jscene3d.org/schemas/world-definition-1.json",
+	"assetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
+	"assetType": "world-definition",
+	"formatVersion": 1,
+	"name": "Opening World",
+	"connections": [],
+	"roots": []
+}

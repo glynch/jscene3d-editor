@@ -1,10 +1,11 @@
 {
 	"displayName": "JScene3D",
 	"description": "JScene3D editor shell contributions",
-	"command.showProjectPlaceholder": "Show Project Placeholder",
 	"command.createProject": "Create Project",
 	"command.openProject": "Open Project...",
+	"command.closeProject": "Close Project",
 	"command.gettingStarted": "Getting Started",
 	"view.project": "JScene3D Project",
-	"configuration.placeholderLabel": "Text shown in the JScene3D Project view during this proof of concept."
+	"configuration.authoring.javaExecutable": "Java executable used to launch the development authoring service. The JSCENE3D_JAVA_EXECUTABLE environment variable takes precedence.",
+	"configuration.authoring.modulePath": "Development JPMS module path containing the JScene3D authoring service and its dependencies. The JSCENE3D_AUTHORING_SERVICE_MODULE_PATH environment variable takes precedence. Production service discovery is not yet implemented."
 }

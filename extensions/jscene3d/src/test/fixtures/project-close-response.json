@@ -1,0 +1,9 @@
+{
+	"jsonrpc": "2.0",
+	"id": 3,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"closed": true,
+		"invalidatedProjectGeneration": 1
+	}
+}

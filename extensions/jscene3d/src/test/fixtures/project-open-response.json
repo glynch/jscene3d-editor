@@ -1,0 +1,29 @@
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"opened": true,
+		"projectGeneration": 1,
+		"project": {
+			"id": "small-project",
+			"name": "Small Authoring Project",
+			"version": "1.0.0",
+			"root": "/projects/small",
+			"descriptor": "/projects/small/small.j3d",
+			"startupWorld": { "id": "world:main", "name": "Main World" },
+			"assetCounts": { "authored": 3, "projected": 4 }
+		},
+		"diagnostics": [
+			{
+				"severity": "warning",
+				"code": "project.example",
+				"message": "Example warning",
+				"source": "file:///projects/small/small.j3d",
+				"location": "/assets/0",
+				"details": { "asset": "example" }
+			}
+		],
+		"failureCode": null
+	}
+}

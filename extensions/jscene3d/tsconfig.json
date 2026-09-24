@@ -2,7 +2,11 @@
 	"extends": "../tsconfig.base.json",
 	"compilerOptions": {
 		"rootDir": "./src",
-		"outDir": "./out"
+		"outDir": "./out",
+		"types": [
+			"node",
+			"mocha"
+		]
 	},
 	"include": [
 		"src/**/*",

@@ -38,12 +38,6 @@
 		],
 		"commands": [
 			{
-				"command": "jscene3d.showProjectPlaceholder",
-				"title": "%command.showProjectPlaceholder%",
-				"category": "JScene3D",
-				"icon": "$(info)"
-			},
-			{
 				"command": "jscene3d.createProject",
 				"title": "%command.createProject%",
 				"category": "JScene3D"
@@ -51,7 +45,16 @@
 			{
 				"command": "jscene3d.openProject",
 				"title": "%command.openProject%",
-				"category": "JScene3D"
+				"category": "JScene3D",
+				"icon": "$(folder-opened)",
+				"enablement": "!jscene3d.projectOpen && !jscene3d.projectBusy"
+			},
+			{
+				"command": "jscene3d.closeProject",
+				"title": "%command.closeProject%",
+				"category": "JScene3D",
+				"icon": "$(close)",
+				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
 			},
 			{
 				"command": "jscene3d.gettingStarted",
@@ -62,8 +65,13 @@
 		"menus": {
 			"view/title": [
 				{
-					"command": "jscene3d.showProjectPlaceholder",
-					"when": "view == jscene3d.project",
+					"command": "jscene3d.openProject",
+					"when": "view == jscene3d.project && !jscene3d.projectOpen",
+					"group": "navigation"
+				},
+				{
+					"command": "jscene3d.closeProject",
+					"when": "view == jscene3d.project && jscene3d.projectOpen",
 					"group": "navigation"
 				}
 			]
@@ -81,10 +89,17 @@
 		"configuration": {
 			"title": "JScene3D",
 			"properties": {
-				"jscene3d.project.placeholderLabel": {
+				"jscene3d.authoring.javaExecutable": {
 					"type": "string",
-					"default": "Project integration is a Stage 3 placeholder",
-					"description": "%configuration.placeholderLabel%"
+					"default": "java",
+					"scope": "machine",
+					"description": "%configuration.authoring.javaExecutable%"
+				},
+				"jscene3d.authoring.modulePath": {
+					"type": "string",
+					"default": "",
+					"scope": "machine",
+					"description": "%configuration.authoring.modulePath%"
 				}
 			}
 		},

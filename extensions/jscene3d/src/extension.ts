@@ -4,47 +4,80 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { AuthoringLaunchConfiguration, AuthoringService, NodeAuthoringProcessLauncher } from './authoring/authoringService';
+import { publishProjectDiagnostics } from './project/projectDiagnostics';
+import { ProjectState } from './project/projectState';
+import { ProjectTreeDataProvider } from './project/projectView';
 
 const viewId = 'jscene3d.project';
-const placeholderSetting = 'jscene3d.project.placeholderLabel';
 const initialLayoutKey = 'initialLayoutApplied';
+const projectOpenContext = 'jscene3d.projectOpen';
+const projectBusyContext = 'jscene3d.projectBusy';
 
-function placeholderLabel(): string {
-	return vscode.workspace.getConfiguration().get<string>(placeholderSetting, vscode.l10n.t('Project integration is a Stage 3 placeholder'));
-}
-
+/** Activates and wires the built-in JScene3D authoring extension. */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-	const changed = new vscode.EventEmitter<void>();
-	const tree = vscode.window.createTreeView(viewId, {
-		treeDataProvider: {
-			onDidChangeTreeData: changed.event,
-			getTreeItem: (item: vscode.TreeItem) => item,
-			getChildren: () => [new vscode.TreeItem(placeholderLabel())]
-		}
+	const output = vscode.window.createOutputChannel('JScene3D');
+	const diagnostics = vscode.languages.createDiagnosticCollection('jscene3d');
+	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
+	const projectState = new ProjectState(service, output);
+	const projectProvider = new ProjectTreeDataProvider(projectState);
+	const tree = vscode.window.createTreeView(viewId, { treeDataProvider: projectProvider });
+
+	const stateSubscription = projectState.onDidChange(() => {
+		const snapshot = projectState.snapshot;
+		publishProjectDiagnostics(diagnostics, snapshot.diagnostics);
+		void vscode.commands.executeCommand('setContext', projectOpenContext, snapshot.status === 'open');
+		void vscode.commands.executeCommand('setContext', projectBusyContext, snapshot.status === 'opening' || snapshot.status === 'closing');
 	});
 
 	context.subscriptions.push(
-		changed,
+		output,
+		diagnostics,
+		service,
+		projectState,
+		projectProvider,
 		tree,
-		vscode.workspace.onDidChangeConfiguration(event => {
-			if (event.affectsConfiguration(placeholderSetting)) {
-				changed.fire();
+		stateSubscription,
+		vscode.commands.registerCommand('jscene3d.createProject', () => {
+			return vscode.window.showInformationMessage(vscode.l10n.t('Project creation will be added in a later authoring milestone.'));
+		}),
+		vscode.commands.registerCommand('jscene3d.openProject', async () => {
+			const selections = await vscode.window.showOpenDialog({
+				canSelectFiles: true,
+				canSelectFolders: false,
+				canSelectMany: false,
+				filters: { [vscode.l10n.t('JScene3D Project')]: ['j3d'] },
+				openLabel: vscode.l10n.t('Open JScene3D Project'),
+				title: vscode.l10n.t('Open JScene3D Project Descriptor')
+			});
+			if (selections === undefined || selections.length === 0) {
+				return;
+			}
+			try {
+				const result = await projectState.open(selections[0].fsPath);
+				if (!result.opened) {
+					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See Problems and JScene3D Output for details.'));
+				}
+			} catch (error) {
+				output.appendLine(`Open Project command failed: ${error instanceof Error ? error.message : String(error)}`);
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See JScene3D Output for details.'));
 			}
 		}),
-		vscode.commands.registerCommand('jscene3d.showProjectPlaceholder', () => {
-			vscode.window.showInformationMessage(placeholderLabel());
-		}),
-		vscode.commands.registerCommand('jscene3d.createProject', () => {
-			return vscode.window.showInformationMessage(vscode.l10n.t('Create Project is a placeholder for the future JScene3D project workflow.'));
-		}),
-		vscode.commands.registerCommand('jscene3d.openProject', () => {
-			return vscode.window.showInformationMessage(vscode.l10n.t('Open Project is a placeholder. JScene3D projects are folders containing jscene3d.json; Java integration will load and validate them.'));
+		vscode.commands.registerCommand('jscene3d.closeProject', async () => {
+			try {
+				await projectState.close();
+			} catch (error) {
+				output.appendLine(`Close Project command failed: ${error instanceof Error ? error.message : String(error)}`);
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not close the project. See JScene3D Output for details.'));
+			}
 		}),
 		vscode.commands.registerCommand('jscene3d.gettingStarted', () => {
 			return vscode.window.showInformationMessage(vscode.l10n.t('JScene3D Getting Started content will be added in a later stage.'));
 		})
 	);
 
+	await vscode.commands.executeCommand('setContext', projectOpenContext, false);
+	await vscode.commands.executeCommand('setContext', projectBusyContext, false);
 	if (!context.globalState.get(initialLayoutKey, false)) {
 		await vscode.commands.executeCommand(`${viewId}.focus`);
 		const secondarySideBar = vscode.workspace.getConfiguration('workbench.secondarySideBar');
@@ -54,4 +87,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		await context.globalState.update(initialLayoutKey, true);
 	}
+}
+
+/** Resolves the isolated development launch configuration from environment and settings. */
+function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
+	const configuration = vscode.workspace.getConfiguration('jscene3d.authoring');
+	return {
+		javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE?.trim()
+			|| configuration.get<string>('javaExecutable', 'java'),
+		modulePath: process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH?.trim()
+			|| configuration.get<string>('modulePath', '')
+	};
 }
