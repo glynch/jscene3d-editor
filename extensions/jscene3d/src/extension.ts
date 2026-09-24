@@ -9,14 +9,21 @@ import { publishProjectDiagnostics } from './project/projectDiagnostics';
 import { localProjectPath } from './project/projectLocation';
 import { ProjectState } from './project/projectState';
 import { ProjectTreeDataProvider } from './project/projectView';
+import { ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
+import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './project/vsCodeProjectWorkspace';
 
 const viewId = 'jscene3d.project';
 const initialLayoutKey = 'initialLayoutApplied';
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
 
-let activeService: AuthoringService | undefined;
-let activeProjectState: ProjectState | undefined;
+interface ActiveExtensionRuntime {
+	readonly service: AuthoringService;
+	readonly projectState: ProjectState;
+	readonly workspaceLifecycle: ProjectWorkspaceLifecycle;
+}
+
+let activeRuntime: ActiveExtensionRuntime | undefined;
 
 /** Activates and wires the built-in JScene3D authoring extension. */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -24,8 +31,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const diagnostics = vscode.languages.createDiagnosticCollection('jscene3d');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
-	activeService = service;
-	activeProjectState = projectState;
+	const workspaceLifecycle = new ProjectWorkspaceLifecycle(
+		projectState,
+		new VsCodeProjectWorkspace(),
+		new ExtensionProjectReopenIntentStore(context.globalState),
+		output
+	);
+	activeRuntime = { service, projectState, workspaceLifecycle };
 	const projectProvider = new ProjectTreeDataProvider(projectState);
 	const tree = vscode.window.createTreeView(viewId, { treeDataProvider: projectProvider });
 
@@ -44,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		diagnostics,
 		service,
 		projectState,
+		workspaceLifecycle,
 		projectProvider,
 		tree,
 		stateSubscription,
@@ -62,17 +75,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (selections === undefined || selections.length === 0) {
 				return;
 			}
-			let descriptorPath: string;
 			try {
-				descriptorPath = localProjectPath(selections[0]);
+				localProjectPath(selections[0]);
 			} catch (error) {
 				output.appendLine(`Open Project command rejected the selected location: ${error instanceof Error ? error.message : String(error)}`);
 				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D projects must be selected from the local file system.'));
 				return;
 			}
 			try {
-				const result = await projectState.open(descriptorPath);
-				if (!result.opened) {
+				const result = await workspaceLifecycle.openProject(selections[0]);
+				if (!result.project.opened) {
 					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See Problems and JScene3D Output for details.'));
 				}
 			} catch (error) {
@@ -82,7 +94,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		vscode.commands.registerCommand('jscene3d.closeProject', async () => {
 			try {
-				await projectState.close();
+				await workspaceLifecycle.closeProject();
 			} catch (error) {
 				output.appendLine(`Close Project command failed: ${error instanceof Error ? error.message : String(error)}`);
 				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not close the project. See JScene3D Output for details.'));
@@ -104,16 +116,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		await context.globalState.update(initialLayoutKey, true);
 	}
+
+	const reopen = await workspaceLifecycle.reopenPendingProject();
+	if (reopen.status === 'failed') {
+		await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not reopen the project after the workspace changed. See Problems and JScene3D Output for details.'));
+	}
 }
 
 /** Stops project callbacks before awaiting termination of the owned Java service. */
 export async function deactivate(): Promise<void> {
-	const projectState = activeProjectState;
-	const service = activeService;
-	activeProjectState = undefined;
-	activeService = undefined;
-	projectState?.dispose();
-	await service?.shutdown();
+	const runtime = activeRuntime;
+	activeRuntime = undefined;
+	runtime?.workspaceLifecycle.dispose();
+	runtime?.projectState.dispose();
+	await runtime?.service.shutdown();
 }
 
 /** Resolves the isolated development launch configuration from environment and settings. */

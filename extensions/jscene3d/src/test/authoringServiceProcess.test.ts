@@ -20,16 +20,19 @@ suite('JScene3D authoring service process', () => {
 			modulePath: modulePath ?? ''
 		}), new NodeAuthoringProcessLauncher(), logger);
 		try {
-			const valid = await service.openProject(fixture('valid', 'small-authoring-project.j3d'));
+			const validDescriptor = fixture('valid', 'small-authoring-project.j3d');
+			const valid = await service.openProject(validDescriptor);
 			assert.deepStrictEqual({
 				opened: valid.opened,
 				name: valid.project?.name,
-				descriptor: path.basename(valid.project?.descriptor ?? ''),
+				root: valid.project?.root,
+				descriptor: valid.project?.descriptor,
 				diagnostics: valid.diagnostics
 			}, {
 				opened: true,
 				name: 'Small Authoring Project',
-				descriptor: 'small-authoring-project.j3d',
+				root: path.dirname(validDescriptor),
+				descriptor: validDescriptor,
 				diagnostics: []
 			});
 			await service.closeProject();
