@@ -6,19 +6,29 @@
 import * as assert from 'assert';
 import {
 	closeCodeOssWorkspace,
+	openCodeOssProjectWorkspace,
 	ProjectWorkspaceCommandExecutor
 } from '../project/projectWorkspaceCommands';
 
 suite('JScene3D project workspace commands', () => {
-	test('uses the non-interactive Code OSS Close Folder command', async () => {
+	test('opens the canonical root through the workbench transition command', async () => {
+		const executor = new TestCommandExecutor();
+		const rootUri = 'file:///projects/sample';
+
+		await openCodeOssProjectWorkspace(executor, rootUri);
+
+		assert.deepStrictEqual(executor.commands, [{ command: 'jscene3d.workbench.openProjectWorkspace', args: [rootUri] }]);
+	});
+
+	test('uses the non-interactive workbench close transition command', async () => {
 		const executor = new TestCommandExecutor();
 
 		await closeCodeOssWorkspace(executor);
 
-		assert.deepStrictEqual(executor.commands, ['workbench.action.closeFolder']);
+		assert.deepStrictEqual(executor.commands, [{ command: 'jscene3d.workbench.closeProjectWorkspace', args: [] }]);
 	});
 
-	test('propagates Close Folder command failure', async () => {
+	test('propagates workbench transition command failure', async () => {
 		const executor = new TestCommandExecutor();
 		executor.error = new Error('host close failed');
 
@@ -27,11 +37,11 @@ suite('JScene3D project workspace commands', () => {
 });
 
 class TestCommandExecutor implements ProjectWorkspaceCommandExecutor {
-	readonly commands: string[] = [];
+	readonly commands: Array<{ readonly command: string; readonly args: unknown[] }> = [];
 	error: Error | undefined;
 
-	executeCommand(command: string): PromiseLike<unknown> {
-		this.commands.push(command);
+	executeCommand(command: string, ...args: unknown[]): PromiseLike<unknown> {
+		this.commands.push({ command, args });
 		return this.error === undefined ? Promise.resolve() : Promise.reject(this.error);
 	}
 }

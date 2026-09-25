@@ -38,6 +38,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { isMouseEvent } from '../../../../base/browser/dom.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import product from '../../../../platform/product/common/product.js';
 
 const explorerViewIcon = registerIcon('explorer-view-icon', Codicon.files, localize('explorerViewIcon', 'View icon of the explorer view.'));
 const openEditorsViewIcon = registerIcon('open-editors-view-icon', Codicon.book, localize('openEditorsIcon', 'View icon of the open editors view.'));
@@ -272,87 +273,105 @@ export const VIEW_CONTAINER: ViewContainer = viewContainerRegistry.registerViewC
 	},
 }, ViewContainerLocation.Sidebar, { isDefault: true });
 
-const openFolder = localize('openFolder', "Open Folder");
-const addAFolder = localize('addAFolder', "add a folder");
-const openRecent = localize('openRecent', "Open Recent");
-
-const addRootFolderButton = `[${openFolder}](command:${AddRootFolderAction.ID})`;
-const addAFolderButton = `[${addAFolder}](command:${AddRootFolderAction.ID})`;
-const openFolderButton = `[${openFolder}](command:${OpenFolderAction.ID})`;
-const openFolderViaWorkspaceButton = `[${openFolder}](command:${OpenFolderViaWorkspaceAction.ID})`;
-const openRecentButton = `[${openRecent}](command:${OpenRecentAction.ID})`;
-
 const viewsRegistry = Registry.as<IViewsRegistry>(Extensions.ViewsRegistry);
-viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
-	content: localize({ key: 'noWorkspaceHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
-		"You have not yet added a folder to the workspace.\n{0}", addRootFolderButton),
-	when: ContextKeyExpr.and(
-		// inside a .code-workspace
-		WorkbenchStateContext.isEqualTo('workspace'),
-		// unless we cannot enter or open workspaces (e.g. web serverless)
-		OpenFolderWorkspaceSupportContext
-	),
-	group: ViewContentGroups.Open,
-	order: 1
-});
 
-viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
-	content: localize({ key: 'noFolderHelpWeb', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
-		"You have not yet opened a folder.\n{0}\n{1}", openFolderViaWorkspaceButton, openRecentButton),
-	when: ContextKeyExpr.and(
-		// inside a .code-workspace
-		WorkbenchStateContext.isEqualTo('workspace'),
-		// we cannot enter workspaces (e.g. web serverless)
-		OpenFolderWorkspaceSupportContext.toNegated()
-	),
-	group: ViewContentGroups.Open,
-	order: 1
-});
+/** Registers the product-appropriate Explorer empty-state content. */
+export function registerEmptyExplorerWelcomeContent(registry: Pick<IViewsRegistry, 'registerViewWelcomeContent'>, applicationName: string): void {
+	if (applicationName === 'jscene3d-editor') {
+		const openProject = localize('jscene3d.openProject', "Open Project...");
+		const openProjectButton = `[${openProject}](command:jscene3d.openProject)`;
+		registry.registerViewWelcomeContent(EmptyView.ID, {
+			content: localize({ key: 'jscene3d.noProjectHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+				"Open a JScene3D project to get started.\n{0}", openProjectButton),
+			group: ViewContentGroups.Open,
+			order: 1
+		});
+		return;
+	}
 
-viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
-	content: localize({ key: 'remoteNoFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
-		"Connected to remote.\n{0}", openFolderButton),
-	when: ContextKeyExpr.and(
-		// not inside a .code-workspace
-		WorkbenchStateContext.notEqualsTo('workspace'),
-		// connected to a remote
-		RemoteNameContext.notEqualsTo(''),
-		// but not in web
-		IsWebContext.toNegated()),
-	group: ViewContentGroups.Open,
-	order: 1
-});
+	const openFolder = localize('openFolder', "Open Folder");
+	const addAFolder = localize('addAFolder', "add a folder");
+	const openRecent = localize('openRecent', "Open Recent");
 
-viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
-	content: localize({ key: 'noFolderButEditorsHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
-		"You have not yet opened a folder.\n{0}\nOpening a folder will close all currently open editors. To keep them open, {1} instead.", openFolderButton, addAFolderButton),
-	when: ContextKeyExpr.and(
-		// editors are opened
-		ContextKeyExpr.has('editorIsOpen'),
-		ContextKeyExpr.or(
-			// not inside a .code-workspace and local
-			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
-			// not inside a .code-workspace and web
-			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
-		)
-	),
-	group: ViewContentGroups.Open,
-	order: 1
-});
+	const addRootFolderButton = `[${openFolder}](command:${AddRootFolderAction.ID})`;
+	const addAFolderButton = `[${addAFolder}](command:${AddRootFolderAction.ID})`;
+	const openFolderButton = `[${openFolder}](command:${OpenFolderAction.ID})`;
+	const openFolderViaWorkspaceButton = `[${openFolder}](command:${OpenFolderViaWorkspaceAction.ID})`;
+	const openRecentButton = `[${openRecent}](command:${OpenRecentAction.ID})`;
 
-viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
-	content: localize({ key: 'noFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
-		"You have not yet opened a folder.\n{0}", openFolderButton),
-	when: ContextKeyExpr.and(
-		// no editor is open
-		ContextKeyExpr.has('editorIsOpen')?.negate(),
-		ContextKeyExpr.or(
-			// not inside a .code-workspace and local
-			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
-			// not inside a .code-workspace and web
-			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
-		)
-	),
-	group: ViewContentGroups.Open,
-	order: 1
-});
+	registry.registerViewWelcomeContent(EmptyView.ID, {
+		content: localize({ key: 'noWorkspaceHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+			"You have not yet added a folder to the workspace.\n{0}", addRootFolderButton),
+		when: ContextKeyExpr.and(
+			// inside a .code-workspace
+			WorkbenchStateContext.isEqualTo('workspace'),
+			// unless we cannot enter or open workspaces (e.g. web serverless)
+			OpenFolderWorkspaceSupportContext
+		),
+		group: ViewContentGroups.Open,
+		order: 1
+	});
+
+	registry.registerViewWelcomeContent(EmptyView.ID, {
+		content: localize({ key: 'noFolderHelpWeb', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+			"You have not yet opened a folder.\n{0}\n{1}", openFolderViaWorkspaceButton, openRecentButton),
+		when: ContextKeyExpr.and(
+			// inside a .code-workspace
+			WorkbenchStateContext.isEqualTo('workspace'),
+			// we cannot enter workspaces (e.g. web serverless)
+			OpenFolderWorkspaceSupportContext.toNegated()
+		),
+		group: ViewContentGroups.Open,
+		order: 1
+	});
+
+	registry.registerViewWelcomeContent(EmptyView.ID, {
+		content: localize({ key: 'remoteNoFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+			"Connected to remote.\n{0}", openFolderButton),
+		when: ContextKeyExpr.and(
+			// not inside a .code-workspace
+			WorkbenchStateContext.notEqualsTo('workspace'),
+			// connected to a remote
+			RemoteNameContext.notEqualsTo(''),
+			// but not in web
+			IsWebContext.toNegated()),
+		group: ViewContentGroups.Open,
+		order: 1
+	});
+
+	registry.registerViewWelcomeContent(EmptyView.ID, {
+		content: localize({ key: 'noFolderButEditorsHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+			"You have not yet opened a folder.\n{0}\nOpening a folder will close all currently open editors. To keep them open, {1} instead.", openFolderButton, addAFolderButton),
+		when: ContextKeyExpr.and(
+			// editors are opened
+			ContextKeyExpr.has('editorIsOpen'),
+			ContextKeyExpr.or(
+				// not inside a .code-workspace and local
+				ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
+				// not inside a .code-workspace and web
+				ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
+			)
+		),
+		group: ViewContentGroups.Open,
+		order: 1
+	});
+
+	registry.registerViewWelcomeContent(EmptyView.ID, {
+		content: localize({ key: 'noFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+			"You have not yet opened a folder.\n{0}", openFolderButton),
+		when: ContextKeyExpr.and(
+			// no editor is open
+			ContextKeyExpr.has('editorIsOpen')?.negate(),
+			ContextKeyExpr.or(
+				// not inside a .code-workspace and local
+				ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
+				// not inside a .code-workspace and web
+				ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
+			)
+		),
+		group: ViewContentGroups.Open,
+		order: 1
+	});
+}
+
+registerEmptyExplorerWelcomeContent(viewsRegistry, product.applicationName);

@@ -13,7 +13,6 @@ import { ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './project/vsCodeProjectWorkspace';
 
 const viewId = 'jscene3d.project';
-const initialLayoutKey = 'initialLayoutApplied';
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
 
@@ -116,15 +115,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	await vscode.commands.executeCommand('setContext', projectOpenContext, false);
 	await vscode.commands.executeCommand('setContext', projectBusyContext, false);
-	if (!context.globalState.get(initialLayoutKey, false)) {
-		await vscode.commands.executeCommand(`${viewId}.focus`);
-		const secondarySideBar = vscode.workspace.getConfiguration('workbench.secondarySideBar');
-		const visibility = secondarySideBar.inspect<string>('defaultVisibility');
-		if (visibility?.globalValue === undefined && visibility?.workspaceValue === undefined && secondarySideBar.get('defaultVisibility') === 'hidden') {
-			await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-		}
-		await context.globalState.update(initialLayoutKey, true);
-	}
 
 	const reopen = await workspaceLifecycle.reopenPendingProject();
 	if (reopen.status === 'failed') {

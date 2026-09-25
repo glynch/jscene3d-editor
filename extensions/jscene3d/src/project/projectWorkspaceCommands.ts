@@ -3,12 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/** Minimal command boundary used to invoke Code OSS's non-interactive Close Folder action. */
+const openProjectWorkspaceCommand = 'jscene3d.workbench.openProjectWorkspace';
+const closeProjectWorkspaceCommand = 'jscene3d.workbench.closeProjectWorkspace';
+
+/** Minimal command boundary used to invoke Code OSS project-workspace transitions. */
 export interface ProjectWorkspaceCommandExecutor {
-	executeCommand(command: string): PromiseLike<unknown>;
+	executeCommand(command: string, ...args: unknown[]): PromiseLike<unknown>;
 }
 
-/** Closes the current folder/workspace without invoking an open-folder picker. */
+/** Opens the canonical project root through the JScene3D workbench transition boundary. */
+export async function openCodeOssProjectWorkspace(executor: ProjectWorkspaceCommandExecutor, rootUri: string): Promise<void> {
+	await executor.executeCommand(openProjectWorkspaceCommand, rootUri);
+}
+
+/** Closes the current project workspace through the JScene3D workbench transition boundary. */
 export async function closeCodeOssWorkspace(executor: ProjectWorkspaceCommandExecutor): Promise<void> {
-	await executor.executeCommand('workbench.action.closeFolder');
+	await executor.executeCommand(closeProjectWorkspaceCommand);
 }

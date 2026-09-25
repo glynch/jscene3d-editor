@@ -12,6 +12,7 @@ import { ViewsWelcomeExtensionPoint, ViewWelcome, ViewIdentifierMap } from './vi
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { Extensions as ViewContainerExtensions, IViewContentDescriptor, IViewsRegistry } from '../../../common/views.js';
 import { isProposedApiEnabled } from '../../../services/extensions/common/extensions.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
@@ -19,7 +20,10 @@ export class ViewsWelcomeContribution extends Disposable implements IWorkbenchCo
 
 	private viewWelcomeContents = new Map<ViewWelcome, IDisposable>();
 
-	constructor(extensionPoint: IExtensionPoint<ViewsWelcomeExtensionPoint>) {
+	constructor(
+		extensionPoint: IExtensionPoint<ViewsWelcomeExtensionPoint>,
+		@IProductService private readonly productService: IProductService
+	) {
 		super();
 
 		extensionPoint.setHandler((_, { added, removed }) => {
@@ -35,10 +39,11 @@ export class ViewsWelcomeContribution extends Disposable implements IWorkbenchCo
 
 			for (const contribution of added) {
 				for (const welcome of contribution.value) {
-					const { group, order } = parseGroupAndOrder(welcome, contribution);
-					const precondition = ContextKeyExpr.deserialize(welcome.enablement);
+					const productWelcome = adaptJScene3DSourceControlWelcome(welcome, contribution.description.identifier.value, this.productService.applicationName);
+					const { group, order } = parseGroupAndOrder(productWelcome, contribution);
+					const precondition = ContextKeyExpr.deserialize(productWelcome.enablement);
 
-					const id = ViewIdentifierMap[welcome.view] ?? welcome.view;
+					const id = ViewIdentifierMap[productWelcome.view] ?? productWelcome.view;
 					let viewContentMap = welcomesByViewId.get(id);
 					if (!viewContentMap) {
 						viewContentMap = new Map();
@@ -46,8 +51,8 @@ export class ViewsWelcomeContribution extends Disposable implements IWorkbenchCo
 					}
 
 					viewContentMap.set(welcome, {
-						content: welcome.contents,
-						when: ContextKeyExpr.deserialize(welcome.when),
+						content: productWelcome.contents,
+						when: ContextKeyExpr.deserialize(productWelcome.when),
 						precondition,
 						group,
 						order
@@ -64,6 +69,29 @@ export class ViewsWelcomeContribution extends Disposable implements IWorkbenchCo
 			}
 		});
 	}
+}
+
+/** Replaces only the built-in Git no-workspace welcome content for the JScene3D product. */
+export function adaptJScene3DSourceControlWelcome(welcome: ViewWelcome, extensionId: string, applicationName: string): ViewWelcome {
+	if (applicationName !== 'jscene3d-editor'
+		|| extensionId !== 'vscode.git'
+		|| welcome.view !== 'scm'
+		|| !welcome.contents.includes('command:vscode.openFolder')
+		|| !welcome.contents.includes('command:git.cloneRecursive')) {
+		return welcome;
+	}
+
+	return {
+		...welcome,
+		contents: nls.localize({
+			key: 'jscene3d.sourceControl.empty',
+			comment: [
+				'Please do not translate the command identifiers inside the Markdown links.',
+				'{Locked="](command:jscene3d.openProject)"}',
+				'{Locked="](command:git.cloneRecursive)"}'
+			]
+		}, "In order to use Git features, open a JScene3D project containing a Git repository or clone from a URL.\n[Open Project...](command:jscene3d.openProject)\n[Clone Repository](command:git.cloneRecursive)")
+	};
 }
 
 function parseGroupAndOrder(welcome: ViewWelcome, contribution: IExtensionPointUser<ViewsWelcomeExtensionPoint>): { group: string | undefined; order: number | undefined } {

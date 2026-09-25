@@ -22,11 +22,12 @@ import { isWeb } from '../../../../../base/common/platform.js';
 import { DragAndDropObserver, getWindow } from '../../../../../base/browser/dom.js';
 import { ILocalizedString } from '../../../../../platform/action/common/action.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import product from '../../../../../platform/product/common/product.js';
 
 export class EmptyView extends ViewPane {
 
 	static readonly ID: string = 'workbench.explorer.emptyView';
-	static readonly NAME: ILocalizedString = nls.localize2('noWorkspace', "No Folder Opened");
+	static readonly NAME: ILocalizedString = emptyViewName(product.applicationName);
 	private _disposed: boolean = false;
 
 	constructor(
@@ -98,4 +99,11 @@ export class EmptyView extends ViewPane {
 		this._disposed = true;
 		super.dispose();
 	}
+}
+
+/** Returns the localized Explorer empty-view title for the current product. */
+export function emptyViewName(applicationName: string): ILocalizedString {
+	return applicationName === 'jscene3d-editor'
+		? nls.localize2('jscene3d.noProject', "No Project Opened")
+		: nls.localize2('noWorkspace', "No Folder Opened");
 }
