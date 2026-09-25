@@ -19,11 +19,44 @@ suite('JScene3D authored definition opener', () => {
 			async (resource, viewType) => { opened.push({ resource, viewType }); }
 		);
 
-		const mapping = await opener.open(4, 'definition-a');
+		const outcome = await opener.open(4, 'definition-a');
 
-		assert.strictEqual(mapping.assetId, 'definition-a');
+		assert.strictEqual(outcome.status, 'opened');
+		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.assetId : undefined, 'definition-a');
 		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dGeneration'), '4');
+	});
+
+	test('preserves an expected rejection and its diagnostics without opening an editor', async () => {
+		const state = new AuthoredDefinitionState();
+		state.setProjectGeneration(4);
+		let openCalls = 0;
+		const diagnostics = [{
+			severity: 'error' as const,
+			code: 'definition.invalid',
+			message: 'The definition is invalid',
+			source: 'file:///projects/game/worlds/main.world.json',
+			location: '/root',
+			details: {}
+		}];
+		const opener = new AuthoredDefinitionOpener(
+			{
+				openDefinition: async () => ({
+					opened: false,
+					projectGeneration: null,
+					definition: null,
+					diagnostics,
+					failureCode: 'definition.invalid'
+				})
+			},
+			state,
+			async () => { openCalls++; }
+		);
+
+		const outcome = await opener.open(4, 'definition-a');
+
+		assert.deepStrictEqual(outcome, { status: 'rejected', diagnostics, failureCode: 'definition.invalid' });
+		assert.strictEqual(openCalls, 0);
 	});
 
 	test('does not register a response for a different generation', async () => {

@@ -4,7 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as path from 'path';
+import { openDefinitionCommandId } from '../definition/authoredDefinitionOpener';
 import { ProjectSnapshot } from './projectState';
+
+export const projectViewId = 'jscene3d.project';
 
 /** VS Code-independent node displayed in the existing Project view. */
 export interface ProjectTreeNode {
@@ -59,7 +62,7 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 			{
 				label: labels.startupWorld,
 				description: `${project.startupWorld.name} (${project.startupWorld.id})`,
-				command: { command: 'jscene3d.openDefinition', title: labels.startupWorld, arguments: [project.startupWorld.id] }
+				command: { command: openDefinitionCommandId, title: labels.startupWorld, arguments: [project.startupWorld.id] }
 			},
 			{ label: labels.authoredAssets, description: String(project.assetCounts.authored) },
 			{ label: labels.projectedAssets, description: String(project.assetCounts.projected) }

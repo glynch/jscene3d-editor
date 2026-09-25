@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AuthoringProtocolClient } from '../protocol/authoringProtocol';
+import { AuthoringProtocolClient, authoringProtocolMethods } from '../protocol/authoringProtocol';
 import { JsonRpcClient, JsonRpcError } from '../protocol/jsonRpcClient';
 import { JsonObject, JsonValue, MessageTransport } from '../protocol/messageTransport';
 
@@ -29,6 +29,18 @@ suite('JScene3D authoring protocol client', () => {
 			method: 'initialize',
 			params: { protocolVersion: { major: 1, minor: 1 }, clientLanguage: 'fr-CA' }
 		});
+	});
+
+	test('uses one protocol-method authority for required capabilities and requests', async () => {
+		const transport = new TestTransport();
+		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
+		const initialization = client.initialize('en');
+		transport.respond(fixture('initialize-response.json'));
+		const result = await initialization;
+		const { initialize, ...operationMethods } = authoringProtocolMethods;
+
+		assert.deepStrictEqual(result.capabilities, Object.values(operationMethods));
+		assert.strictEqual(transport.sent[0].method, initialize);
 	});
 
 	test('opens a definition and validates its complete semantic hierarchy snapshot', async () => {
@@ -75,6 +87,40 @@ suite('JScene3D authoring protocol client', () => {
 		});
 
 		await assert.rejects(opened, /hierarchy node.kind is invalid/);
+	});
+
+	test('accepts an exact definition-open rejection', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openDefinition(1, 'definition-a');
+		const result = {
+			opened: false,
+			projectGeneration: null,
+			definition: null,
+			diagnostics: [],
+			failureCode: 'definition.unavailable'
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await opened, result);
+	});
+
+	test('rejects partially populated definition-open failures', async () => {
+		const response = fixture('definition-open-response.json');
+		const valid = object(response.result);
+		const invalidResults: readonly JsonObject[] = [
+			{ ...valid, opened: false, definition: null, failureCode: 'definition.unavailable' },
+			{ ...valid, opened: false, projectGeneration: null, failureCode: 'definition.unavailable' },
+			{ ...valid, opened: false, failureCode: 'definition.unavailable' },
+			{ ...valid, failureCode: 'definition.unavailable' }
+		];
+		for (const invalid of invalidResults) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const opened = client.openDefinition(1, 'definition-a');
+			transport.respond(success(2, invalid));
+			await assert.rejects(opened, /inconsistent (success|failure) shape/);
+		}
 	});
 
 	test('rejects an incompatible initialization', async () => {
@@ -272,6 +318,40 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(opened, /diagnostic.severity/);
 	});
 
+	test('accepts an exact project-open failure with diagnostic-owned rejection', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openProject('/projects/invalid/invalid.j3d');
+		const result = {
+			opened: false,
+			projectGeneration: null,
+			project: null,
+			diagnostics: [],
+			failureCode: null
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await opened, result);
+	});
+
+	test('rejects partially populated project-open failures', async () => {
+		const response = fixture('project-open-response.json');
+		const valid = object(response.result);
+		const invalidResults: readonly JsonObject[] = [
+			{ ...valid, opened: false, project: null, failureCode: 'project.invalid' },
+			{ ...valid, opened: false, projectGeneration: null, failureCode: 'project.invalid' },
+			{ ...valid, opened: false, failureCode: 'project.invalid' },
+			{ ...valid, failureCode: 'project.invalid' }
+		];
+		for (const invalid of invalidResults) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const opened = client.openProject('/projects/invalid/invalid.j3d');
+			transport.respond(success(2, invalid));
+			await assert.rejects(opened, /inconsistent (success|failure) shape/);
+		}
+	});
+
 	test('rejects malformed nested project data', async () => {
 		const transport = new TestTransport();
 		const client = await initializedClient(transport);
@@ -300,17 +380,30 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(opened, /assetCounts.authored must be a non-negative integer/);
 	});
 
-	test('rejects an inconsistent project-close result', async () => {
-		const transport = new TestTransport();
-		const client = await initializedClient(transport);
-		const closed = client.closeProject();
-		transport.respond({
-			jsonrpc: '2.0',
-			id: 2,
-			connectionGeneration: 'connection-1',
-			result: { closed: false, invalidatedProjectGeneration: 7 }
-		});
-		await assert.rejects(closed, /inconsistent success shape/);
+	test('accepts exact project-close success and failure results', async () => {
+		for (const result of [
+			{ closed: true, invalidatedProjectGeneration: 7 },
+			{ closed: false, invalidatedProjectGeneration: null }
+		]) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const closed = client.closeProject();
+			transport.respond(success(2, result));
+			assert.deepStrictEqual(await closed, result);
+		}
+	});
+
+	test('rejects inconsistent project-close results', async () => {
+		for (const result of [
+			{ closed: false, invalidatedProjectGeneration: 7 },
+			{ closed: true, invalidatedProjectGeneration: null }
+		]) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const closed = client.closeProject();
+			transport.respond(success(2, result));
+			await assert.rejects(closed, /inconsistent (success|failure) shape/);
+		}
 	});
 
 	test('opens, closes, and shuts down using the Stage 1 DTOs', async () => {

@@ -5,12 +5,12 @@
 
 import * as assert from 'assert';
 import {
+	ProjectCloseResultDto,
 	ProjectDiagnosticDto,
 	ProjectOpenResultDto,
 	ProjectReplaceResultDto,
 	ProjectSummaryDto
 } from '../protocol/authoringProtocol';
-import { projectDiagnosticPresentations } from '../project/projectDiagnosticModel';
 import { ProjectAuthoringClient, ProjectState } from '../project/projectState';
 import { projectTree, ProjectViewLabels } from '../project/projectViewModel';
 
@@ -198,21 +198,12 @@ suite('JScene3D project state', () => {
 		await replacing;
 	});
 
-	test('preserves diagnostic severity, code, source, and JSON location', () => {
-		assert.deepStrictEqual(projectDiagnosticPresentations([activeDiagnostic]), [{
-			source: 'file:///projects/a/a.j3d',
-			severity: 'warning',
-			code: 'project.a.warning',
-			message: 'A warning',
-			location: '/assets/0'
-		}]);
-	});
 });
 
 class TestProjectClient implements ProjectAuthoringClient {
 	nextOpen: Promise<ProjectOpenResultDto> = Promise.resolve(openResult());
 	nextReplace: Promise<ProjectReplaceResultDto> = Promise.resolve(replacedResult());
-	nextClose: Promise<{ readonly closed: boolean; readonly invalidatedProjectGeneration: number | null }> = Promise.resolve({
+	nextClose: Promise<ProjectCloseResultDto> = Promise.resolve({
 		closed: true,
 		invalidatedProjectGeneration: 7
 	});
@@ -231,7 +222,7 @@ class TestProjectClient implements ProjectAuthoringClient {
 		return this.nextReplace;
 	}
 
-	closeProject(): Promise<{ readonly closed: boolean; readonly invalidatedProjectGeneration: number | null }> {
+	closeProject(): Promise<ProjectCloseResultDto> {
 		this.closeCalls++;
 		return this.nextClose;
 	}

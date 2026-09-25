@@ -5,13 +5,12 @@
 
 import * as vscode from 'vscode';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
-import { projectDiagnosticPresentations, ProjectDiagnosticSeverity } from './projectDiagnosticModel';
 
 /** Replaces the native Problems entries for the current Java project result. */
 export function publishProjectDiagnostics(collection: vscode.DiagnosticCollection, diagnostics: readonly ProjectDiagnosticDto[]): void {
 	collection.clear();
 	const grouped = new Map<string, { uri: vscode.Uri; diagnostics: vscode.Diagnostic[] }>();
-	for (const source of projectDiagnosticPresentations(diagnostics)) {
+	for (const source of diagnostics) {
 		const uri = diagnosticUri(source.source);
 		const key = uri.toString();
 		let group = grouped.get(key);
@@ -44,7 +43,7 @@ function diagnosticUri(source: string): vscode.Uri {
 }
 
 /** Maps the presentation severity onto VS Code's native severity. */
-function diagnosticSeverity(severity: ProjectDiagnosticSeverity): vscode.DiagnosticSeverity {
+function diagnosticSeverity(severity: ProjectDiagnosticDto['severity']): vscode.DiagnosticSeverity {
 	switch (severity) {
 		case 'error': return vscode.DiagnosticSeverity.Error;
 		case 'warning': return vscode.DiagnosticSeverity.Warning;

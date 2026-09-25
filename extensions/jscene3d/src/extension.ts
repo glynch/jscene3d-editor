@@ -5,20 +5,32 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import {
+	AuthoringWorkflow,
+	closeProjectCommandId,
+	createProjectCommandId,
+	gettingStartedCommandId,
+	openProjectCommandId
+} from './authoring/authoringWorkflow';
 import { AuthoringLaunchConfiguration, AuthoringService, NodeAuthoringProcessLauncher } from './authoring/authoringService';
+import { VsCodeAuthoringWorkflowHost } from './authoring/vsCodeAuthoringWorkflow';
 import { AuthoredDefinitionEditorProvider } from './definition/authoredDefinitionEditor';
-import { AuthoredDefinitionOpener, authoredDefinitionViewType } from './definition/authoredDefinitionOpener';
+import {
+	AuthoredDefinitionOpener,
+	authoredDefinitionViewType,
+	openDefinitionCommandId
+} from './definition/authoredDefinitionOpener';
 import { AuthoredDefinitionState } from './definition/authoredDefinitionState';
 import { definitionResourceKey } from './definition/definitionResource';
 import { HierarchyTreeDataProvider } from './hierarchy/hierarchyView';
+import { hierarchyViewId } from './hierarchy/hierarchyViewModel';
 import { publishProjectDiagnostics } from './project/projectDiagnostics';
-import { localProjectPath } from './project/projectLocation';
 import { ProjectState } from './project/projectState';
 import { ProjectTreeDataProvider } from './project/projectView';
+import { projectViewId } from './project/projectViewModel';
 import { ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './project/vsCodeProjectWorkspace';
 
-const viewId = 'jscene3d.project';
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
 const definitionActiveContext = 'jscene3d.definitionActive';
@@ -37,6 +49,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const output = vscode.window.createOutputChannel('JScene3D');
 	const activeDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.activeProject');
 	const attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
+	const definitionDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.definitionAttempt');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
 	const workspaceLifecycle = new ProjectWorkspaceLifecycle(
@@ -51,11 +64,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		definitionState,
 		(resource, viewType) => Promise.resolve(vscode.commands.executeCommand('vscode.openWith', vscode.Uri.parse(resource), viewType))
 	);
+	const workflow = new AuthoringWorkflow(
+		projectState,
+		workspaceLifecycle,
+		definitionOpener,
+		new VsCodeAuthoringWorkflowHost(definitionDiagnostics),
+		output
+	);
 	activeRuntime = { service, projectState, workspaceLifecycle, definitionState };
 	const projectProvider = new ProjectTreeDataProvider(projectState);
-	const tree = vscode.window.createTreeView(viewId, { treeDataProvider: projectProvider });
+	const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: projectProvider });
 	const hierarchyProvider = new HierarchyTreeDataProvider(definitionState);
-	const hierarchyTree = vscode.window.createTreeView('jscene3d.hierarchy', { treeDataProvider: hierarchyProvider });
+	const hierarchyTree = vscode.window.createTreeView(hierarchyViewId, { treeDataProvider: hierarchyProvider });
 	const definitionEditorProvider = new AuthoredDefinitionEditorProvider(definitionState);
 
 	const updateActiveDefinition = () => {
@@ -89,9 +109,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		output,
 		activeDiagnostics,
 		attemptDiagnostics,
+		definitionDiagnostics,
 		service,
 		projectState,
 		workspaceLifecycle,
+		workflow,
 		projectProvider,
 		tree,
 		definitionState,
@@ -110,67 +132,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				definitionState.select(selected);
 			}
 		}),
-		vscode.commands.registerCommand('jscene3d.createProject', () => {
-			return vscode.window.showInformationMessage(vscode.l10n.t('Project creation will be added in a later authoring milestone.'));
-		}),
-		vscode.commands.registerCommand('jscene3d.openProject', async () => {
-			const selections = await vscode.window.showOpenDialog({
-				canSelectFiles: true,
-				canSelectFolders: false,
-				canSelectMany: false,
-				filters: { [vscode.l10n.t('JScene3D Project')]: ['j3d'] },
-				openLabel: vscode.l10n.t('Open JScene3D Project'),
-				title: vscode.l10n.t('Open JScene3D Project Descriptor')
-			});
-			if (selections === undefined || selections.length === 0) {
-				return;
-			}
-			try {
-				localProjectPath(selections[0]);
-			} catch (error) {
-				output.appendLine(`Open Project command rejected the selected location: ${error instanceof Error ? error.message : String(error)}`);
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D projects must be selected from the local file system.'));
-				return;
-			}
-			try {
-				const result = await workspaceLifecycle.openProject(selections[0]);
-				if (result.project.operation === 'open' && !result.project.result.opened) {
-					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See Problems and JScene3D Output for details.'));
-				} else if (result.project.operation === 'replace' && result.project.result.outcome === 'candidateRejected') {
-					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the selected project. See Problems for details.'));
-				} else if (result.project.operation === 'replace' && result.project.result.outcome === 'conflict') {
-					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not replace the current project because the authoring session changed. See JScene3D Output for details.'));
-				}
-			} catch (error) {
-				output.appendLine(`Open Project command failed: ${error instanceof Error ? error.message : String(error)}`);
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the project. See JScene3D Output for details.'));
-			}
-		}),
-		vscode.commands.registerCommand('jscene3d.closeProject', async () => {
-			try {
-				await workspaceLifecycle.closeProject();
-			} catch (error) {
-				output.appendLine(`Close Project command failed: ${error instanceof Error ? error.message : String(error)}`);
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not close the project. See JScene3D Output for details.'));
-			}
-		}),
-		vscode.commands.registerCommand('jscene3d.openDefinition', async (requestedAssetId?: string) => {
-			const snapshot = projectState.snapshot;
-			if (snapshot.status !== 'open') {
-				await vscode.window.showErrorMessage(vscode.l10n.t('Open a JScene3D project before opening a definition.'));
-				return;
-			}
-			const assetId = requestedAssetId ?? snapshot.project.startupWorld.id;
-			try {
-				await definitionOpener.open(snapshot.generation, assetId);
-			} catch (error) {
-				output.appendLine(`Open Definition command failed: ${error instanceof Error ? error.message : String(error)}`);
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the definition. See JScene3D Output for details.'));
-			}
-		}),
-		vscode.commands.registerCommand('jscene3d.gettingStarted', () => {
-			return vscode.window.showInformationMessage(vscode.l10n.t('JScene3D Getting Started content will be added in a later stage.'));
-		})
+		vscode.commands.registerCommand(createProjectCommandId, () => workflow.createProject()),
+		vscode.commands.registerCommand(openProjectCommandId, () => workflow.openProject()),
+		vscode.commands.registerCommand(closeProjectCommandId, () => workflow.closeProject()),
+		vscode.commands.registerCommand(openDefinitionCommandId,
+			(requestedAssetId?: string) => workflow.openDefinition(requestedAssetId)),
+		vscode.commands.registerCommand(gettingStartedCommandId, () => workflow.gettingStarted())
 	);
 
 	await vscode.commands.executeCommand('setContext', projectOpenContext, false);
@@ -178,10 +145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	await vscode.commands.executeCommand('setContext', definitionActiveContext, false);
 	updateActiveDefinition();
 
-	const reopen = await workspaceLifecycle.reopenPendingProject();
-	if (reopen.status === 'failed') {
-		await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not reopen the project after the workspace changed. See Problems and JScene3D Output for details.'));
-	}
+	await workflow.reopenPendingProject();
 }
 
 /** Stops project callbacks before awaiting termination of the owned Java service. */

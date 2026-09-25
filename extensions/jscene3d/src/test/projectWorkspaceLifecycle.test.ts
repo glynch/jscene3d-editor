@@ -39,7 +39,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/selected/a.j3d' });
 
-		assert.strictEqual(result.project.operation, 'open');
+		assert.strictEqual(result.status, 'opened');
 		assert.strictEqual(result.workspace, 'transitionRequested');
 		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
 		assert.deepStrictEqual(workspace.openedResource, resource('/projects/a'));
@@ -55,6 +55,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/bad/bad.j3d' });
 
+		assert.strictEqual(result.status, 'openRejected');
 		assert.strictEqual(result.workspace, 'unchanged');
 		assert.strictEqual(store.value, undefined);
 		assert.strictEqual(workspace.openedResource, undefined);
@@ -70,8 +71,29 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/bad/bad.j3d' });
 
+		assert.strictEqual(result.status, 'candidateRejected');
 		assert.strictEqual(result.workspace, 'unchanged');
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
+		assert.strictEqual(workspace.openedResource, undefined);
+	});
+
+	test('normalizes a replacement generation conflict without changing the workspace', async () => {
+		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		state.nextSelection = replaceSelection({
+			outcome: 'conflict',
+			projectGeneration: null,
+			project: null,
+			diagnostics: [],
+			failureCode: 'authoring.project.generationConflict'
+		});
+		const workspace = new TestWorkspaceHost();
+		workspace.matches = true;
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
+
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
+
+		assert.deepStrictEqual(result, { status: 'conflict', workspace: 'unchanged' });
 		assert.strictEqual(workspace.openedResource, undefined);
 	});
 
@@ -86,6 +108,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
 
+		assert.strictEqual(result.status, 'replaced');
 		assert.strictEqual(result.workspace, 'transitionRequested');
 		assert.deepStrictEqual(store.value, intent('/projects/b/b.j3d', '/projects/b'));
 		assert.deepStrictEqual(workspace.openedResource, resource('/projects/b'));
@@ -105,6 +128,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/a/b.j3d' });
 
+		assert.strictEqual(result.status, 'replaced');
 		assert.strictEqual(result.workspace, 'unchanged');
 		assert.strictEqual(store.value, undefined);
 		assert.strictEqual(workspace.openedResource, undefined);
@@ -339,7 +363,7 @@ function replaceSelection(result: ProjectReplaceResultDto): ProjectSelectionResu
 
 function acceptedProject(selection: ProjectSelectionResult): { summary: ProjectSummaryDto; generation: number } | undefined {
 	if (selection.operation === 'open') {
-		return selection.result.opened && selection.result.project !== null && selection.result.projectGeneration !== null
+		return selection.result.opened
 			? { summary: selection.result.project, generation: selection.result.projectGeneration }
 			: undefined;
 	}

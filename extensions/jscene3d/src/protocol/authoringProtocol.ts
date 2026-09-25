@@ -8,6 +8,22 @@ import { JsonObject, JsonValue } from './messageTransport';
 
 export const authoringProtocolVersion = { major: 1, minor: 1 } as const;
 
+/** Single authority for method and capability names in the authoring protocol. */
+export const authoringProtocolMethods = {
+	initialize: 'initialize',
+	openProject: 'project/open',
+	replaceProject: 'project/replace',
+	closeProject: 'project/close',
+	openDefinition: 'definition/open',
+	shutdown: 'service/shutdown'
+} as const;
+
+type AuthoringProtocolMethod = typeof authoringProtocolMethods[keyof typeof authoringProtocolMethods];
+type AuthoringOperationMethod = Exclude<AuthoringProtocolMethod, typeof authoringProtocolMethods.initialize>;
+
+const requiredAuthoringCapabilities = Object.values(authoringProtocolMethods)
+	.filter((method): method is AuthoringOperationMethod => method !== authoringProtocolMethods.initialize);
+
 /** Wire representation of the negotiated authoring protocol version. */
 export interface ProtocolVersionDto {
 	readonly major: number;
@@ -56,14 +72,22 @@ export interface ProjectSummaryDto {
 	readonly assetCounts: AssetCountsDto;
 }
 
-/** Wire result for a project-open attempt, including validation diagnostics. */
-export interface ProjectOpenResultDto {
-	readonly opened: boolean;
-	readonly projectGeneration: number | null;
-	readonly project: ProjectSummaryDto | null;
-	readonly diagnostics: readonly ProjectDiagnosticDto[];
-	readonly failureCode: string | null;
-}
+/** Exact validated result for a project-open attempt, including validation diagnostics. */
+export type ProjectOpenResultDto =
+	| {
+		readonly opened: true;
+		readonly projectGeneration: number;
+		readonly project: ProjectSummaryDto;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: null;
+	}
+	| {
+		readonly opened: false;
+		readonly projectGeneration: null;
+		readonly project: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: string | null;
+	};
 
 /** Wire parameters for atomically replacing the retained Java project. */
 export interface ProjectReplaceParamsDto {
@@ -95,11 +119,10 @@ export type ProjectReplaceResultDto =
 		readonly failureCode: string;
 	};
 
-/** Wire result for invalidating the active Java project session. */
-export interface ProjectCloseResultDto {
-	readonly closed: boolean;
-	readonly invalidatedProjectGeneration: number | null;
-}
+/** Exact validated result for invalidating the active Java project session. */
+export type ProjectCloseResultDto =
+	| { readonly closed: true; readonly invalidatedProjectGeneration: number }
+	| { readonly closed: false; readonly invalidatedProjectGeneration: null };
 
 /** Authored literal or Java-owned localizable semantic text. */
 export interface AuthoringTextDto {
@@ -154,14 +177,22 @@ export interface DefinitionSnapshotDto {
 	readonly roots: readonly HierarchyNodeDto[];
 }
 
-/** Generation-scoped result for opening one structural definition by AssetId. */
-export interface DefinitionOpenResultDto {
-	readonly opened: boolean;
-	readonly projectGeneration: number | null;
-	readonly definition: DefinitionSnapshotDto | null;
-	readonly diagnostics: readonly ProjectDiagnosticDto[];
-	readonly failureCode: string | null;
-}
+/** Exact generation-scoped result for opening one structural definition by AssetId. */
+export type DefinitionOpenResultDto =
+	| {
+		readonly opened: true;
+		readonly projectGeneration: number;
+		readonly definition: DefinitionSnapshotDto;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: null;
+	}
+	| {
+		readonly opened: false;
+		readonly projectGeneration: null;
+		readonly definition: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: string | null;
+	};
 
 /** Wire acknowledgement of process shutdown. */
 export interface ShutdownResultDto {
@@ -179,7 +210,7 @@ export class AuthoringProtocolClient {
 	}
 
 	async initialize(clientLanguage: string): Promise<InitializeResultDto> {
-		const response = await this.rpc.request('initialize', {
+		const response = await this.rpc.request(authoringProtocolMethods.initialize, {
 			protocolVersion: authoringProtocolVersion,
 			clientLanguage: requiredLanguageTag(clientLanguage)
 		}, validateInitializeResult);
@@ -190,7 +221,7 @@ export class AuthoringProtocolClient {
 		if (result.processKind !== 'authoring') {
 			throw new Error(`Expected an authoring service but received process kind ${result.processKind}`);
 		}
-		for (const capability of ['project/open', 'project/replace', 'project/close', 'definition/open', 'service/shutdown']) {
+		for (const capability of requiredAuthoringCapabilities) {
 			if (!result.capabilities.includes(capability)) {
 				throw new Error(`Authoring service does not provide required capability ${capability}`);
 			}
@@ -200,7 +231,7 @@ export class AuthoringProtocolClient {
 	}
 
 	async openProject(path: string): Promise<ProjectOpenResultDto> {
-		return (await this.request('project/open', { path }, validateProjectOpenResult)).result;
+		return (await this.request(authoringProtocolMethods.openProject, { path }, validateProjectOpenResult)).result;
 	}
 
 	async replaceProject(expectedProjectGeneration: number, path: string): Promise<ProjectReplaceResultDto> {
@@ -208,32 +239,32 @@ export class AuthoringProtocolClient {
 			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
 			path
 		};
-		return (await this.request('project/replace', {
+		return (await this.request(authoringProtocolMethods.replaceProject, {
 			expectedProjectGeneration: params.expectedProjectGeneration,
 			path: params.path
 		}, validateProjectReplaceResult)).result;
 	}
 
 	async closeProject(): Promise<ProjectCloseResultDto> {
-		return (await this.request('project/close', {}, validateProjectCloseResult)).result;
+		return (await this.request(authoringProtocolMethods.closeProject, {}, validateProjectCloseResult)).result;
 	}
 
 	async openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto> {
-		return (await this.request('definition/open', {
+		return (await this.request(authoringProtocolMethods.openDefinition, {
 			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
 			assetId: requiredNonEmptyString(assetId, 'assetId')
 		}, validateDefinitionOpenResult)).result;
 	}
 
 	async shutdown(): Promise<ShutdownResultDto> {
-		return (await this.request('service/shutdown', {}, validateShutdownResult)).result;
+		return (await this.request(authoringProtocolMethods.shutdown, {}, validateShutdownResult)).result;
 	}
 
 	dispose(): void {
 		this.rpc.dispose();
 	}
 
-	private async request<T>(method: string, params: JsonObject, validate: (value: JsonValue) => T) {
+	private async request<T>(method: AuthoringOperationMethod, params: JsonObject, validate: (value: JsonValue) => T) {
 		if (this.connectionGeneration === undefined) {
 			throw new Error('Authoring service has not been initialized');
 		}
@@ -263,16 +294,18 @@ function validateProjectOpenResult(value: JsonValue): ProjectOpenResultDto {
 	const opened = requiredBoolean(object.opened, 'opened');
 	const generation = nullableInteger(object.projectGeneration, 'projectGeneration');
 	const project = object.project === null ? null : validateProjectSummary(object.project);
-	if (opened !== (generation !== null && project !== null)) {
-		throw new Error('project/open result has an inconsistent success shape');
+	const diagnostics = requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic);
+	const failureCode = nullableString(object.failureCode, 'failureCode');
+	if (opened) {
+		if (generation === null || project === null || failureCode !== null) {
+			throw new Error('project/open result has an inconsistent success shape');
+		}
+		return { opened: true, projectGeneration: generation, project, diagnostics, failureCode: null };
 	}
-	return {
-		opened,
-		projectGeneration: generation,
-		project,
-		diagnostics: requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic),
-		failureCode: nullableString(object.failureCode, 'failureCode')
-	};
+	if (generation !== null || project !== null) {
+		throw new Error('project/open result has an inconsistent failure shape');
+	}
+	return { opened: false, projectGeneration: null, project: null, diagnostics, failureCode };
 }
 
 /** Validates all mutually exclusive project-replacement result shapes. */
@@ -309,13 +342,16 @@ function validateProjectCloseResult(value: JsonValue): ProjectCloseResultDto {
 	const object = requiredObject(value, 'project/close result');
 	const closed = requiredBoolean(object.closed, 'closed');
 	const invalidatedProjectGeneration = nullableInteger(object.invalidatedProjectGeneration, 'invalidatedProjectGeneration');
-	if (closed !== (invalidatedProjectGeneration !== null)) {
-		throw new Error('project/close result has an inconsistent success shape');
+	if (closed) {
+		if (invalidatedProjectGeneration === null) {
+			throw new Error('project/close result has an inconsistent success shape');
+		}
+		return { closed: true, invalidatedProjectGeneration };
 	}
-	return {
-		closed,
-		invalidatedProjectGeneration
-	};
+	if (invalidatedProjectGeneration !== null) {
+		throw new Error('project/close result has an inconsistent failure shape');
+	}
+	return { closed: false, invalidatedProjectGeneration: null };
 }
 
 /** Validates a complete generation-scoped retained-definition snapshot. */
@@ -325,16 +361,17 @@ function validateDefinitionOpenResult(value: JsonValue): DefinitionOpenResultDto
 	const generation = nullableInteger(object.projectGeneration, 'projectGeneration');
 	const definition = object.definition === null ? null : validateDefinitionSnapshot(object.definition);
 	const failureCode = nullableString(object.failureCode, 'failureCode');
-	if (opened !== (generation !== null && definition !== null && failureCode === null)) {
-		throw new Error('definition/open result has an inconsistent success shape');
+	const diagnostics = requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic);
+	if (opened) {
+		if (generation === null || definition === null || failureCode !== null) {
+			throw new Error('definition/open result has an inconsistent success shape');
+		}
+		return { opened: true, projectGeneration: generation, definition, diagnostics, failureCode: null };
 	}
-	return {
-		opened,
-		projectGeneration: generation,
-		definition,
-		diagnostics: requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic),
-		failureCode
-	};
+	if (generation !== null || definition !== null) {
+		throw new Error('definition/open result has an inconsistent failure shape');
+	}
+	return { opened: false, projectGeneration: null, definition: null, diagnostics, failureCode };
 }
 
 /** Validates one complete structural-definition snapshot. */

@@ -26,6 +26,14 @@ suite('JScene3D definition resources', () => {
 		assert.strictEqual(resource.searchParams.get('jscene3dGeneration'), '8');
 	});
 
+	test('maps every current definition kind to an explicit generated suffix', () => {
+		const world = new URL(definitionResourceUri(8, definition('generated', 'world-definition')));
+		const entity = new URL(definitionResourceUri(8, definition('generated', 'entity-definition')));
+
+		assert.match(world.pathname, /definition-a\.world\.json$/);
+		assert.match(entity.pathname, /definition-a\.entity\.json$/);
+	});
+
 	test('uses the unencoded Code OSS URI form for resource-state lookup', () => {
 		const raw = 'file:///projects/game/worlds/main.world.json?generation=1';
 		const encoded = 'file:///projects/game/worlds/main.world.json?generation%3D1';
@@ -43,12 +51,15 @@ suite('JScene3D definition resources', () => {
 	});
 });
 
-function definition(origin: 'authored' | 'generated'): DefinitionSnapshotDto {
+function definition(
+	origin: 'authored' | 'generated',
+	kind: DefinitionSnapshotDto['context']['kind'] = 'world-definition'
+): DefinitionSnapshotDto {
 	return {
 		revision: 0,
 		context: {
 			assetId: 'definition-a',
-			kind: 'world-definition',
+			kind,
 			origin,
 			editable: origin === 'authored',
 			source: 'file:///projects/game/worlds/main.world.json',

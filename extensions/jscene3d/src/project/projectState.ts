@@ -196,10 +196,10 @@ export class ProjectState implements Disposable {
 		if (this.disposed) {
 			return { operation: 'open', result };
 		}
-		if (this.snapshotValue.status === 'cancellingOpen') {
-			if (result.opened) {
-				try {
-					await this.closeJavaSession(requiredOpenGeneration(result));
+			if (this.snapshotValue.status === 'cancellingOpen') {
+				if (result.opened) {
+					try {
+						await this.closeJavaSession(result.projectGeneration);
 				} catch (error) {
 					this.acceptAuthorityFailure(error);
 					throw error;
@@ -216,9 +216,8 @@ export class ProjectState implements Disposable {
 		}
 
 		if (result.opened) {
-			const project = requiredOpenProject(result);
-			this.snapshotValue = openSnapshot(requiredOpenGeneration(result), project, result.diagnostics);
-			this.logger.appendLine(`Project opened: ${project.name}`);
+			this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
+			this.logger.appendLine(`Project opened: ${result.project.name}`);
 		} else {
 			this.snapshotValue = {
 				status: 'openFailed',
@@ -284,9 +283,12 @@ export class ProjectState implements Disposable {
 
 	private async closeJavaSession(expectedGeneration: number): Promise<void> {
 		const result = await this.client.closeProject();
-		if (!result.closed || result.invalidatedProjectGeneration !== expectedGeneration) {
+		if (!result.closed) {
+			throw new ProjectAuthorityError('Java did not close the active project session');
+		}
+		if (result.invalidatedProjectGeneration !== expectedGeneration) {
 			throw new ProjectAuthorityError(
-				`Java closed project generation ${result.invalidatedProjectGeneration ?? 'none'}; expected ${expectedGeneration}`
+				`Java closed project generation ${result.invalidatedProjectGeneration}; expected ${expectedGeneration}`
 			);
 		}
 	}
@@ -354,20 +356,6 @@ function serviceUnavailableSnapshot(
 	attemptDiagnostics: readonly ProjectDiagnosticDto[] = []
 ): ServiceUnavailableProjectSnapshot {
 	return { status: 'serviceUnavailable', activeDiagnostics: [], attemptDiagnostics, failure };
-}
-
-function requiredOpenProject(result: ProjectOpenResultDto): ProjectSummaryDto {
-	if (result.project === null) {
-		throw new Error('Opened project result is missing its project summary');
-	}
-	return result.project;
-}
-
-function requiredOpenGeneration(result: ProjectOpenResultDto): number {
-	if (result.projectGeneration === null) {
-		throw new Error('Opened project result is missing its project generation');
-	}
-	return result.projectGeneration;
 }
 
 function errorMessage(error: unknown): string {

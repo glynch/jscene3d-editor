@@ -5,6 +5,8 @@
 
 import { HierarchyNodeDto, HierarchyOccurrenceDto } from '../protocol/authoringProtocol';
 
+export const hierarchyViewId = 'jscene3d.hierarchy';
+
 /** VS Code-independent presentation model for one authoritative hierarchy occurrence. */
 export interface HierarchyTreeItemModel {
 	readonly id: string;

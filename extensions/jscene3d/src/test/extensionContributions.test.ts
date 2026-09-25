@@ -6,6 +6,15 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+	closeProjectCommandId,
+	createProjectCommandId,
+	gettingStartedCommandId,
+	openProjectCommandId
+} from '../authoring/authoringWorkflow';
+import { authoredDefinitionViewType, openDefinitionCommandId } from '../definition/authoredDefinitionOpener';
+import { hierarchyViewId } from '../hierarchy/hierarchyViewModel';
+import { projectViewId } from '../project/projectViewModel';
 
 suite('JScene3D extension contributions', () => {
 	test('does not misplace project commands under File New File', () => {
@@ -15,8 +24,8 @@ suite('JScene3D extension contributions', () => {
 
 	test('keeps Open Project enabled with or without an active project', () => {
 		const commands = extensionManifest().contributes.commands;
-		const open = commands.find(command => command.command === 'jscene3d.openProject');
-		const close = commands.find(command => command.command === 'jscene3d.closeProject');
+		const open = commands.find(command => command.command === openProjectCommandId);
+		const close = commands.find(command => command.command === closeProjectCommandId);
 
 		assert.strictEqual(open?.enablement, '!jscene3d.projectBusy');
 		assert.strictEqual(close?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
@@ -24,8 +33,8 @@ suite('JScene3D extension contributions', () => {
 
 	test('registers the read-only authored-definition editor and native Hierarchy view', () => {
 		const contributions = extensionManifest().contributes;
-		const editor = contributions.customEditors.find(candidate => candidate.viewType === 'jscene3d.authoredDefinition');
-		const openDefinition = contributions.commands.find(command => command.command === 'jscene3d.openDefinition');
+		const editor = contributions.customEditors.find(candidate => candidate.viewType === authoredDefinitionViewType);
+		const openDefinition = contributions.commands.find(command => command.command === openDefinitionCommandId);
 
 		assert.strictEqual(editor?.priority, 'option');
 		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.world.json', '*.entity.json']);
@@ -45,8 +54,8 @@ suite('JScene3D extension contributions', () => {
 		});
 		assert.strictEqual(localizedMessage(messages['viewsContainer.jscene3d']), 'JScene3D');
 		assert.deepStrictEqual(contributions.views.jscene3d.map(view => view.id), [
-			'jscene3d.hierarchy',
-			'jscene3d.project'
+			hierarchyViewId,
+			projectViewId
 		]);
 		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
 		assert.strictEqual(path.extname(icon), '.svg');
@@ -54,7 +63,7 @@ suite('JScene3D extension contributions', () => {
 	});
 
 	test('localizes the complete Hierarchy welcome content and preserves its action', () => {
-		const welcome = extensionManifest().contributes.viewsWelcome.find(entry => entry.view === 'jscene3d.hierarchy');
+		const welcome = extensionManifest().contributes.viewsWelcome.find(entry => entry.view === hierarchyViewId);
 		const messages = extensionMessages();
 
 		assert.strictEqual(welcome?.contents, '%view.hierarchy.noActive%');
@@ -67,6 +76,18 @@ suite('JScene3D extension contributions', () => {
 			messageComments(messages['view.hierarchy.noActive']),
 			['{Locked="](command:jscene3d.openDefinition)"}']
 		);
+	});
+
+	test('keeps runtime-owned command identifiers aligned with contributions', () => {
+		const contributed = extensionManifest().contributes.commands.map(command => command.command);
+
+		assert.deepStrictEqual(contributed, [
+			createProjectCommandId,
+			openProjectCommandId,
+			closeProjectCommandId,
+			openDefinitionCommandId,
+			gettingStartedCommandId
+		]);
 	});
 
 	test('contributes a separate installed extension metadata artifact path', () => {

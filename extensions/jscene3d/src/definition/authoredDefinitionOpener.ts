@@ -3,11 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DefinitionOpenResultDto } from '../protocol/authoringProtocol';
+import { DefinitionOpenResultDto, ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceUri } from './definitionResource';
 
 export const authoredDefinitionViewType = 'jscene3d.authoredDefinition';
+export const openDefinitionCommandId = 'jscene3d.openDefinition';
+
+/** Expected outcome of requesting and opening one authored definition. */
+export type AuthoredDefinitionOpenOutcome =
+	| {
+		readonly status: 'opened';
+		readonly resource: AuthoredDefinitionResource;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+	}
+	| {
+		readonly status: 'rejected';
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: string | null;
+	};
 
 /** Protocol operation needed by the generic authored-definition opener. */
 export interface DefinitionOpenClient {
@@ -22,10 +36,14 @@ export class AuthoredDefinitionOpener {
 		private readonly openWith: (resource: string, viewType: string) => Promise<unknown>
 	) { }
 
-	async open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionResource> {
+	async open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
 		const result = await this.client.openDefinition(projectGeneration, assetId);
-		if (!result.opened || result.projectGeneration === null || result.definition === null) {
-			throw new Error(result.failureCode ?? 'JScene3D could not open the definition');
+		if (!result.opened) {
+			return {
+				status: 'rejected',
+				diagnostics: result.diagnostics,
+				failureCode: result.failureCode
+			};
 		}
 		if (result.projectGeneration !== projectGeneration || result.definition.context.assetId !== assetId) {
 			throw new Error('Definition response identity does not match the requested project generation and AssetId');
@@ -33,6 +51,6 @@ export class AuthoredDefinitionOpener {
 		const resource = definitionResourceUri(result.projectGeneration, result.definition);
 		const mapping = this.state.register(resource, result.projectGeneration, result.definition);
 		await this.openWith(resource, authoredDefinitionViewType);
-		return mapping;
+		return { status: 'opened', resource: mapping, diagnostics: result.diagnostics };
 	}
 }

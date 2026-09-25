@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DefinitionSnapshotDto } from '../protocol/authoringProtocol';
+import { DefinitionContextDto, DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 /** Minimal Code OSS URI surface used to derive a stable extension-owned resource key. */
 export interface DefinitionResourceUri {
@@ -20,8 +20,18 @@ export function definitionResourceUri(projectGeneration: number, definition: Def
 	const context = definition.context;
 	const source = context.origin === 'authored'
 		? new URL(context.source)
-		: new URL(`jscene3d-definition://generated/${context.assetId}.${context.kind === 'world-definition' ? 'world' : 'entity'}.json`);
+		: new URL(`jscene3d-definition://generated/${context.assetId}.${definitionKindFileExtension(context.kind)}`);
 	source.searchParams.set('jscene3dGeneration', String(projectGeneration));
 	source.searchParams.set('jscene3dAssetId', context.assetId);
 	return source.toString();
+}
+
+/** Maps every supported definition kind to its authored filename suffix. */
+export function definitionKindFileExtension(kind: DefinitionContextDto['kind']): string {
+	switch (kind) {
+		case 'world-definition':
+			return 'world.json';
+		case 'entity-definition':
+			return 'entity.json';
+	}
 }

@@ -4,9 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { AuthoringTextDto } from '../protocol/authoringProtocol';
+import { AuthoringTextDto, DefinitionContextDto } from '../protocol/authoringProtocol';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceKey } from './definitionResource';
+
+const restrictiveContentSecurityPolicy = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\';">';
 
 /** Read-only document whose lifetime does not own or discard Java retained-definition state. */
 class AuthoredDefinitionDocument implements vscode.CustomDocument {
@@ -39,17 +41,24 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomReadonlyEd
 function inactiveDocumentHtml(): string {
 	const title = escapeHtml(vscode.l10n.t('Definition unavailable'));
 	const message = escapeHtml(vscode.l10n.t('This JScene3D definition belongs to a project session that is no longer active.'));
-	return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`;
+	return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">${restrictiveContentSecurityPolicy}</head><body><main><h1>${title}</h1><p>${message}</p></main></body></html>`;
 }
 
 /** Renders intentionally minimal, script-free read-only document content. */
-function documentHtml(label: AuthoringTextDto, kind: string, editable: boolean): string {
+function documentHtml(label: AuthoringTextDto, kind: DefinitionContextDto['kind'], editable: boolean): string {
 	const title = escapeHtml(label.text);
-	const kindText = escapeHtml(kind === 'world-definition'
-		? vscode.l10n.t('World Definition')
-		: vscode.l10n.t('Entity Definition'));
+	const kindText = escapeHtml(definitionKindText(kind));
 	const mode = escapeHtml(editable ? vscode.l10n.t('Authored') : vscode.l10n.t('Generated, read-only'));
-	return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body><main><h1>${title}</h1><p>${kindText}</p><p>${mode}</p></main></body></html>`;
+	return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">${restrictiveContentSecurityPolicy}</head><body><main><h1>${title}</h1><p>${kindText}</p><p>${mode}</p></main></body></html>`;
+}
+
+function definitionKindText(kind: DefinitionContextDto['kind']): string {
+	switch (kind) {
+		case 'world-definition':
+			return vscode.l10n.t('World Definition');
+		case 'entity-definition':
+			return vscode.l10n.t('Entity Definition');
+	}
 }
 
 /** Escapes authored text before inserting it into the static custom-editor document. */

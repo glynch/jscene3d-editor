@@ -59,11 +59,16 @@ export interface ProjectWorkspaceLogger {
 	appendLine(message: string): void;
 }
 
-/** Result of opening Java state and reconciling the Code OSS workspace. */
-export interface ProjectWorkspaceOpenResult {
-	readonly project: ProjectSelectionResult;
-	readonly workspace: 'unchanged' | 'transitionRequested';
-}
+/** Application-level result of opening Java state and reconciling the Code OSS workspace. */
+export type ProjectWorkspaceOpenResult =
+	| {
+		readonly status: 'opened' | 'replaced';
+		readonly workspace: 'unchanged' | 'transitionRequested';
+	}
+	| {
+		readonly status: 'openRejected' | 'candidateRejected' | 'conflict';
+		readonly workspace: 'unchanged';
+	};
 
 /** Outcome of reconciling a persisted project intent during activation. */
 export type ProjectReopenOutcome =
@@ -93,20 +98,21 @@ export class ProjectWorkspaceLifecycle {
 	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult> {
 		return this.runExclusive(async () => {
 			const selection = await this.projectState.open(localProjectPath(location));
-			const project = acceptedProject(selection);
-			if (project === undefined) {
+			const outcome = projectSelectionOutcome(selection);
+			if (outcome.status !== 'opened' && outcome.status !== 'replaced') {
 				await this.intentStore.write(undefined);
-				return { project: selection, workspace: 'unchanged' };
+				return { status: outcome.status, workspace: 'unchanged' };
 			}
 			if (this.disposed) {
-				return { project: selection, workspace: 'unchanged' };
+				return { status: outcome.status, workspace: 'unchanged' };
 			}
 
+			const project = outcome.project;
 			const projectRoot = this.workspace.resourceForLocalPath(project.root);
 			if (this.workspace.matchesProjectRoot(projectRoot)) {
 				await this.intentStore.write(undefined);
 				this.logger.appendLine(`Workspace already matches project root: ${project.root}`);
-				return { project: selection, workspace: 'unchanged' };
+				return { status: outcome.status, workspace: 'unchanged' };
 			}
 
 			const intent: ProjectReopenIntent = {
@@ -122,13 +128,13 @@ export class ProjectWorkspaceLifecycle {
 				await this.projectState.close();
 				throw error;
 			}
-			const action = selection.operation === 'replace' ? 'Opening replacement workspace' : 'Opening project workspace';
+			const action = outcome.status === 'replaced' ? 'Opening replacement workspace' : 'Opening project workspace';
 			this.logger.appendLine(`${action}: ${project.root}`);
 			try {
 				await this.workspace.openProjectRoot(projectRoot);
 			} catch (error) {
 				if (this.disposed) {
-					return { project: selection, workspace: 'transitionRequested' };
+					return { status: outcome.status, workspace: 'transitionRequested' };
 				}
 				this.logger.appendLine(`Project workspace open failed: ${errorMessage(error)}`);
 				await Promise.all([
@@ -137,7 +143,7 @@ export class ProjectWorkspaceLifecycle {
 				]);
 				throw error;
 			}
-			return { project: selection, workspace: 'transitionRequested' };
+			return { status: outcome.status, workspace: 'transitionRequested' };
 		});
 	}
 
@@ -170,7 +176,7 @@ export class ProjectWorkspaceLifecycle {
 					throw new Error('Pending project reopen unexpectedly attempted replacement');
 				}
 				const result = selection.result;
-				if (!result.opened || result.project === null || result.projectGeneration === null) {
+				if (!result.opened) {
 					await this.intentStore.write(undefined);
 					this.logger.appendLine(`Project reopen failed: ${result.failureCode ?? 'Java project validation failed'}`);
 					return { status: 'failed', reason: result.failureCode ?? 'Java project validation failed' };
@@ -268,11 +274,24 @@ function projectReopenIntent(value: unknown): ProjectReopenIntent | undefined {
 	};
 }
 
-function acceptedProject(selection: ProjectSelectionResult): ProjectSummaryDto | undefined {
+type ProjectSelectionOutcome =
+	| { readonly status: 'opened' | 'replaced'; readonly project: ProjectSummaryDto }
+	| { readonly status: 'openRejected' | 'candidateRejected' | 'conflict' };
+
+function projectSelectionOutcome(selection: ProjectSelectionResult): ProjectSelectionOutcome {
 	if (selection.operation === 'open') {
-		return selection.result.opened ? selection.result.project ?? undefined : undefined;
+		return selection.result.opened
+			? { status: 'opened', project: selection.result.project }
+			: { status: 'openRejected' };
 	}
-	return selection.result.outcome === 'replaced' ? selection.result.project : undefined;
+	switch (selection.result.outcome) {
+		case 'replaced':
+			return { status: 'replaced', project: selection.result.project };
+		case 'candidateRejected':
+			return { status: 'candidateRejected' };
+		case 'conflict':
+			return { status: 'conflict' };
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
