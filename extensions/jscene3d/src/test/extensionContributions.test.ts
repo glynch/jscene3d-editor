@@ -25,21 +25,47 @@ suite('JScene3D extension contributions', () => {
 	test('registers the read-only authored-definition editor and native Hierarchy view', () => {
 		const contributions = extensionManifest().contributes;
 		const editor = contributions.customEditors.find(candidate => candidate.viewType === 'jscene3d.authoredDefinition');
+		const openDefinition = contributions.commands.find(command => command.command === 'jscene3d.openDefinition');
 
 		assert.strictEqual(editor?.priority, 'option');
 		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.world.json', '*.entity.json']);
-		assert.ok(contributions.views.explorer.some(view => view.id === 'jscene3d.hierarchy'));
-		assert.ok(contributions.commands.some(command => command.command === 'jscene3d.openDefinition'));
+		assert.strictEqual(openDefinition?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
 	});
 
-	test('externalizes the complete Hierarchy welcome content', () => {
+	test('places both JScene3D views in one localized Activity Bar container', () => {
+		const contributions = extensionManifest().contributes;
+		const container = contributions.viewsContainers.activitybar.find(candidate => candidate.id === 'jscene3d');
+		const messages = extensionMessages();
+		const icon = path.join(__dirname, '..', '..', container?.icon ?? '');
+
+		assert.deepStrictEqual(container, {
+			id: 'jscene3d',
+			title: '%viewsContainer.jscene3d%',
+			icon: 'resources/jscene3d-mark.svg'
+		});
+		assert.strictEqual(localizedMessage(messages['viewsContainer.jscene3d']), 'JScene3D');
+		assert.deepStrictEqual(contributions.views.jscene3d.map(view => view.id), [
+			'jscene3d.hierarchy',
+			'jscene3d.project'
+		]);
+		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
+		assert.strictEqual(path.extname(icon), '.svg');
+		assert.ok(fs.statSync(icon).isFile());
+	});
+
+	test('localizes the complete Hierarchy welcome content and preserves its action', () => {
 		const welcome = extensionManifest().contributes.viewsWelcome.find(entry => entry.view === 'jscene3d.hierarchy');
 		const messages = extensionMessages();
 
 		assert.strictEqual(welcome?.contents, '%view.hierarchy.noActive%');
+		assert.strictEqual(welcome?.when, '!jscene3d.definitionActive');
 		assert.strictEqual(
-			messages['view.hierarchy.noActive'],
+			localizedContribution(welcome?.contents, messages),
 			'Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)'
+		);
+		assert.deepStrictEqual(
+			messageComments(messages['view.hierarchy.noActive']),
+			['{Locked="](command:jscene3d.openDefinition)"}']
 		);
 	});
 
@@ -53,7 +79,7 @@ suite('JScene3D extension contributions', () => {
 		assert.deepStrictEqual(metadata.default, []);
 		assert.strictEqual(metadata.scope, 'machine');
 		assert.strictEqual(metadata.description, '%configuration.authoring.installedExtensionMetadata%');
-		assert.match(messages['configuration.authoring.installedExtensionMetadata'], /separate from the Java module path/);
+		assert.match(localizedMessage(messages['configuration.authoring.installedExtensionMetadata']), /separate from the Java module path/);
 	});
 });
 
@@ -61,13 +87,18 @@ interface ExtensionManifest {
 	readonly contributes: {
 		readonly commands: readonly { readonly command: string; readonly enablement?: string }[];
 		readonly menus: Readonly<Record<string, readonly { readonly command: string; readonly when?: string }[]>>;
+		readonly viewsContainers: {
+			readonly activitybar: readonly { readonly id: string; readonly title: string; readonly icon: string }[];
+		};
 		readonly customEditors: readonly {
 			readonly viewType: string;
 			readonly priority: string;
 			readonly selector: readonly { readonly filenamePattern: string }[];
 		}[];
-		readonly views: { readonly explorer: readonly { readonly id: string }[] };
-		readonly viewsWelcome: readonly { readonly view: string; readonly contents: string }[];
+		readonly views: Readonly<Record<string, readonly { readonly id: string }[] | undefined>> & {
+			readonly jscene3d: readonly { readonly id: string }[];
+		};
+		readonly viewsWelcome: readonly { readonly view: string; readonly contents: string; readonly when?: string }[];
 		readonly configuration: {
 			readonly properties: Readonly<Record<string, {
 				readonly type: string;
@@ -80,12 +111,27 @@ interface ExtensionManifest {
 	};
 }
 
-function extensionMessages(): Readonly<Record<string, string>> {
+type ExtensionMessage = string | { readonly message: string; readonly comment: readonly string[] };
+
+function extensionMessages(): Readonly<Record<string, ExtensionMessage>> {
 	const parsed: unknown = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.nls.json'), 'utf8'));
 	if (!isRecord(parsed)) {
 		throw new Error('Expected extension localization messages');
 	}
-	return parsed as Readonly<Record<string, string>>;
+	return parsed as Readonly<Record<string, ExtensionMessage>>;
+}
+
+function localizedMessage(message: ExtensionMessage): string {
+	return typeof message === 'string' ? message : message.message;
+}
+
+function messageComments(message: ExtensionMessage): readonly string[] {
+	return typeof message === 'string' ? [] : message.comment;
+}
+
+function localizedContribution(value: string | undefined, messages: Readonly<Record<string, ExtensionMessage>>): string | undefined {
+	const match = value?.match(/^%(.+)%$/);
+	return match === undefined || match === null ? value : localizedMessage(messages[match[1]]);
 }
 
 function extensionManifest(): ExtensionManifest {

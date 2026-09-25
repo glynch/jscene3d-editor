@@ -83,18 +83,27 @@
 				}
 			]
 		},
-		"views": {
-			"explorer": [
+		"viewsContainers": {
+			"activitybar": [
 				{
-					"id": "jscene3d.project",
-					"name": "%view.project%",
-					"icon": "$(folder)",
-					"visibility": "visible"
-				},
+					"id": "jscene3d",
+					"title": "%viewsContainer.jscene3d%",
+					"icon": "resources/jscene3d-mark.svg"
+				}
+			]
+		},
+		"views": {
+			"jscene3d": [
 				{
 					"id": "jscene3d.hierarchy",
 					"name": "%view.hierarchy%",
 					"icon": "$(list-tree)",
+					"visibility": "visible"
+				},
+				{
+					"id": "jscene3d.project",
+					"name": "%view.project%",
+					"icon": "$(folder)",
 					"visibility": "visible"
 				}
 			]

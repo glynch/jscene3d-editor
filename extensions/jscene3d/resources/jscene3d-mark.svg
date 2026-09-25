@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title description">
+  <title id="title">JScene3D geometric mark</title>
+  <desc id="description">Three violet facets form an open triangular spatial mark.</desc>
+  <defs>
+    <linearGradient id="violet" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#7562f3"/>
+      <stop offset="1" stop-color="#b2a7ff"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#violet)" stroke-linejoin="round">
+    <path d="M48 7 70 44H56L48 30 39 45H24Z"/>
+    <path d="M22 48H42L24 80H5Z"/>
+    <path d="M72 47 91 80H31L41 63H61L53 48Z"/>
+  </g>
+</svg>

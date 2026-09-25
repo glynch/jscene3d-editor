@@ -6,9 +6,15 @@
 	"command.closeProject": "Close Project",
 	"command.openStartupWorld": "Open Startup World",
 	"command.gettingStarted": "Getting Started",
+	"viewsContainer.jscene3d": "JScene3D",
 	"view.project": "JScene3D Project",
 	"view.hierarchy": "Hierarchy",
-	"view.hierarchy.noActive": "Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)",
+	"view.hierarchy.noActive": {
+		"message": "Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)",
+		"comment": [
+			"{Locked=\"](command:jscene3d.openDefinition)\"}"
+		]
+	},
 	"customEditor.authoredDefinition": "JScene3D Authored Definition",
 	"configuration.authoring.javaExecutable": "Java executable used to launch the development authoring service. The JSCENE3D_JAVA_EXECUTABLE environment variable takes precedence.",
 	"configuration.authoring.modulePath": "Development JPMS module path containing the JScene3D authoring service and its dependencies. The JSCENE3D_AUTHORING_SERVICE_MODULE_PATH environment variable takes precedence. Production service discovery is not yet implemented.",
