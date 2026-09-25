@@ -138,6 +138,7 @@ function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
 		javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE?.trim()
 			|| configuration.get<string>('javaExecutable', 'java'),
 		modulePath: process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH?.trim()
-			|| configuration.get<string>('modulePath', '')
+			|| configuration.get<string>('modulePath', ''),
+		clientLanguage: vscode.env.language
 	};
 }

@@ -25,13 +25,29 @@ const timeouts: AuthoringServiceTimeouts = {
 };
 
 suite('JScene3D authoring service lifecycle', () => {
+	test('sends the configured Code OSS UI language during initialization', async () => {
+		const process = new TestAuthoringProcess();
+		process.exitAfterShutdown = true;
+		const service = new AuthoringService(
+			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'fr-CA' }),
+			new SingleProcessLauncher(process),
+			new TestLogger(),
+			timeouts
+		);
+
+		await service.openProject('/projects/sample/sample.j3d');
+		await service.shutdown();
+
+		assert.deepStrictEqual(process.initializationLanguages, ['fr-CA']);
+	});
+
 	test('shares concurrent startup without launching another process', async () => {
 		const process = new TestAuthoringProcess();
 		process.respondToInitialize = false;
 		process.exitOnSignal.add('SIGTERM');
 		const launcher = new SingleProcessLauncher(process);
 		const service = new AuthoringService(
-			() => ({ javaExecutable: 'java', modulePath: 'test-module-path' }),
+			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'fr-CA' }),
 			launcher,
 			new TestLogger(),
 			timeouts
@@ -200,6 +216,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 	readonly stderr = new PassThrough();
 	readonly killSignals: NodeJS.Signals[] = [];
 	readonly exitOnSignal = new Set<NodeJS.Signals>();
+	readonly initializationLanguages: string[] = [];
 	respondToInitialize = true;
 	respondToOpen = true;
 	openErrorCode: number | undefined;
@@ -249,6 +266,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 		}
 		switch (message.method) {
 			case 'initialize':
+				this.initializationLanguages.push(requiredString(jsonObject(message.params).clientLanguage));
 				if (this.respondToInitialize) {
 					this.respond(id, {
 						protocolVersion: { major: 1, minor: 0 },
@@ -352,7 +370,7 @@ class TestLogger {
 
 function createService(process: TestAuthoringProcess, logger = new TestLogger()): AuthoringService {
 	return new AuthoringService(
-		() => ({ javaExecutable: 'java', modulePath: 'test-module-path' }),
+		() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'en' }),
 		new SingleProcessLauncher(process),
 		logger,
 		timeouts
@@ -364,4 +382,11 @@ function jsonObject(value: unknown): JsonObject {
 		throw new Error('Expected a JSON object');
 	}
 	return value as JsonObject;
+}
+
+function requiredString(value: unknown): string {
+	if (typeof value !== 'string') {
+		throw new Error('Expected a string');
+	}
+	return value;
 }

@@ -116,9 +116,10 @@ export class AuthoringProtocolClient {
 		return this.rpc.onDidFail(listener);
 	}
 
-	async initialize(): Promise<InitializeResultDto> {
+	async initialize(clientLanguage: string): Promise<InitializeResultDto> {
 		const response = await this.rpc.request('initialize', {
-			protocolVersion: authoringProtocolVersion
+			protocolVersion: authoringProtocolVersion,
+			clientLanguage: requiredLanguageTag(clientLanguage)
 		}, validateInitializeResult);
 		const result = response.result;
 		if (result.protocolVersion.major !== authoringProtocolVersion.major) {
@@ -336,6 +337,22 @@ function requiredString(value: JsonValue | undefined, name: string): string {
 		throw new Error(`${name} must be a string`);
 	}
 	return value;
+}
+
+/** Requires and canonicalizes a non-empty BCP 47 language tag. */
+function requiredLanguageTag(value: string): string {
+	if (value.length === 0 || value.trim() !== value) {
+		throw new Error('clientLanguage must be a non-empty BCP 47 language tag');
+	}
+	try {
+		const locale = new Intl.Locale(value);
+		if (locale.language === 'und') {
+			throw new Error('clientLanguage must identify a language');
+		}
+		return locale.toString();
+	} catch (error) {
+		throw new Error('clientLanguage must be a valid BCP 47 language tag', { cause: error });
+	}
 }
 
 /** Requires either a string or explicit null at the named wire-contract location. */

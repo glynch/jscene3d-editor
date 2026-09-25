@@ -17,7 +17,8 @@ suite('JScene3D authoring service process', () => {
 		const logger = new TestLogger();
 		const service = new AuthoringService(() => ({
 			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
-			modulePath: modulePath ?? ''
+			modulePath: modulePath ?? '',
+			clientLanguage: 'fr'
 		}), new NodeAuthoringProcessLauncher(), logger);
 		try {
 			const validDescriptor = fixture('valid', 'small-authoring-project.j3d');
@@ -40,7 +41,9 @@ suite('JScene3D authoring service process', () => {
 
 			const invalidB = await service.replaceProject(generationA, fixture('malformed', 'malformed.j3d'));
 			assert.strictEqual(invalidB.outcome, 'candidateRejected');
-			assert.ok(invalidB.diagnostics.length > 0);
+			assert.ok(invalidB.diagnostics.some(diagnostic =>
+				diagnostic.code === 'project.manifest.json'
+				&& diagnostic.message === 'Le manifeste du projet n’est pas un manifeste JScene3D valide au format JSON'));
 
 			const validBDescriptor = fixture('replacement', 'replacement-project.j3d');
 			const projectB = await service.replaceProject(generationA, validBDescriptor);

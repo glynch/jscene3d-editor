@@ -14,7 +14,7 @@ suite('JScene3D authoring protocol client', () => {
 	test('initializes with the compatible Java contract fixture', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-		const initialization = client.initialize();
+		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
 			protocolVersion: { major: 1, minor: 0 },
@@ -27,24 +27,34 @@ suite('JScene3D authoring protocol client', () => {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 0 } }
+			params: { protocolVersion: { major: 1, minor: 0 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
 	test('rejects an incompatible initialization', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-		const initialization = client.initialize();
+		const initialization = client.initialize('en');
 		const response = fixture('initialize-response.json');
 		const result = object(response.result);
 		transport.respond({ ...response, result: { ...result, protocolVersion: { major: 2, minor: 0 } } });
 		await assert.rejects(initialization, /Incompatible authoring protocol 2.0/);
 	});
 
+	test('rejects malformed client language tags before serialization', async () => {
+		for (const language of ['', ' en', 'en_US', 'und']) {
+			const transport = new TestTransport();
+			const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
+
+			await assert.rejects(client.initialize(language), /clientLanguage/);
+			assert.deepStrictEqual(transport.sent, []);
+		}
+	});
+
 	test('rejects initialization without a required capability', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-		const initialization = client.initialize();
+		const initialization = client.initialize('en');
 		const response = fixture('initialize-response.json');
 		const result = object(response.result);
 		transport.respond({ ...response, result: { ...result, capabilities: ['project/open'] } });
@@ -198,7 +208,7 @@ suite('JScene3D authoring protocol client', () => {
 	test('rejects a project diagnostic with an unknown severity', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-		const initialization = client.initialize();
+		const initialization = client.initialize('en');
 		transport.respond(fixture('initialize-response.json'));
 		await initialization;
 
@@ -260,7 +270,7 @@ suite('JScene3D authoring protocol client', () => {
 	test('opens, closes, and shuts down using the Stage 1 DTOs', async () => {
 		const transport = new TestTransport();
 		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-		const initialization = client.initialize();
+		const initialization = client.initialize('en');
 		transport.respond(fixture('initialize-response.json'));
 		await initialization;
 
@@ -340,7 +350,7 @@ function jsonArray(value: JsonValue | undefined): readonly JsonValue[] {
 
 async function initializedClient(transport: TestTransport): Promise<AuthoringProtocolClient> {
 	const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
-	const initialization = client.initialize();
+	const initialization = client.initialize('en');
 	transport.respond(fixture('initialize-response.json'));
 	await initialization;
 	return client;
