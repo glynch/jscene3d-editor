@@ -21,13 +21,71 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(open?.enablement, '!jscene3d.projectBusy');
 		assert.strictEqual(close?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
 	});
+
+	test('registers the read-only authored-definition editor and native Hierarchy view', () => {
+		const contributions = extensionManifest().contributes;
+		const editor = contributions.customEditors.find(candidate => candidate.viewType === 'jscene3d.authoredDefinition');
+
+		assert.strictEqual(editor?.priority, 'option');
+		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.world.json', '*.entity.json']);
+		assert.ok(contributions.views.explorer.some(view => view.id === 'jscene3d.hierarchy'));
+		assert.ok(contributions.commands.some(command => command.command === 'jscene3d.openDefinition'));
+	});
+
+	test('externalizes the complete Hierarchy welcome content', () => {
+		const welcome = extensionManifest().contributes.viewsWelcome.find(entry => entry.view === 'jscene3d.hierarchy');
+		const messages = extensionMessages();
+
+		assert.strictEqual(welcome?.contents, '%view.hierarchy.noActive%');
+		assert.strictEqual(
+			messages['view.hierarchy.noActive'],
+			'Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)'
+		);
+	});
+
+	test('contributes a separate installed extension metadata artifact path', () => {
+		const manifest = extensionManifest();
+		const metadata = manifest.contributes.configuration.properties['jscene3d.authoring.installedExtensionMetadata'];
+		const messages = extensionMessages();
+
+		assert.strictEqual(metadata.type, 'array');
+		assert.strictEqual(metadata.items?.type, 'string');
+		assert.deepStrictEqual(metadata.default, []);
+		assert.strictEqual(metadata.scope, 'machine');
+		assert.strictEqual(metadata.description, '%configuration.authoring.installedExtensionMetadata%');
+		assert.match(messages['configuration.authoring.installedExtensionMetadata'], /separate from the Java module path/);
+	});
 });
 
 interface ExtensionManifest {
 	readonly contributes: {
 		readonly commands: readonly { readonly command: string; readonly enablement?: string }[];
 		readonly menus: Readonly<Record<string, readonly { readonly command: string; readonly when?: string }[]>>;
+		readonly customEditors: readonly {
+			readonly viewType: string;
+			readonly priority: string;
+			readonly selector: readonly { readonly filenamePattern: string }[];
+		}[];
+		readonly views: { readonly explorer: readonly { readonly id: string }[] };
+		readonly viewsWelcome: readonly { readonly view: string; readonly contents: string }[];
+		readonly configuration: {
+			readonly properties: Readonly<Record<string, {
+				readonly type: string;
+				readonly items?: { readonly type: string };
+				readonly default: unknown;
+				readonly scope: string;
+				readonly description: string;
+			}>>;
+		};
 	};
+}
+
+function extensionMessages(): Readonly<Record<string, string>> {
+	const parsed: unknown = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.nls.json'), 'utf8'));
+	if (!isRecord(parsed)) {
+		throw new Error('Expected extension localization messages');
+	}
+	return parsed as Readonly<Record<string, string>>;
 }
 
 function extensionManifest(): ExtensionManifest {

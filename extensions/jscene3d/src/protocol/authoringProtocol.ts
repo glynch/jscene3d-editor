@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 1, minor: 0 } as const;
+export const authoringProtocolVersion = { major: 1, minor: 1 } as const;
 
 /** Wire representation of the negotiated authoring protocol version. */
 export interface ProtocolVersionDto {
@@ -101,6 +101,68 @@ export interface ProjectCloseResultDto {
 	readonly invalidatedProjectGeneration: number | null;
 }
 
+/** Authored literal or Java-owned localizable semantic text. */
+export interface AuthoringTextDto {
+	readonly kind: 'literal' | 'message';
+	readonly text: string;
+	readonly messageCode: string | null;
+	readonly arguments: readonly string[];
+}
+
+/** Stable hierarchy occurrence identity within one containing definition. */
+export interface HierarchyOccurrenceDto {
+	readonly definitionAssetId: string;
+	readonly entityPath: readonly string[];
+}
+
+/** Semantic target retained for a future Inspector without transferring UI selection to Java. */
+export interface HierarchySemanticTargetDto {
+	readonly kind: 'world' | 'local-entity' | 'generated-entity' | 'placement' | 'asset';
+	readonly source: string;
+	readonly identity: string;
+	readonly occurrence: HierarchyOccurrenceDto | null;
+}
+
+/** One recursively ordered semantic hierarchy occurrence. */
+export interface HierarchyNodeDto {
+	readonly occurrence: HierarchyOccurrenceDto;
+	readonly kind: 'local-entity' | 'placement' | 'generated-entity';
+	readonly entityId: string | null;
+	readonly definitionId: string | null;
+	readonly label: AuthoringTextDto;
+	readonly enabled: boolean;
+	readonly modified: boolean;
+	readonly editable: boolean;
+	readonly target: HierarchySemanticTargetDto;
+	readonly children: readonly HierarchyNodeDto[];
+}
+
+/** Definition/document context kept separate from actual hierarchy roots. */
+export interface DefinitionContextDto {
+	readonly assetId: string;
+	readonly kind: 'world-definition' | 'entity-definition';
+	readonly origin: 'authored' | 'generated';
+	readonly editable: boolean;
+	readonly source: string;
+	readonly label: AuthoringTextDto;
+}
+
+/** Complete authoritative snapshot returned when one structural definition is retained. */
+export interface DefinitionSnapshotDto {
+	readonly revision: number;
+	readonly context: DefinitionContextDto;
+	readonly roots: readonly HierarchyNodeDto[];
+}
+
+/** Generation-scoped result for opening one structural definition by AssetId. */
+export interface DefinitionOpenResultDto {
+	readonly opened: boolean;
+	readonly projectGeneration: number | null;
+	readonly definition: DefinitionSnapshotDto | null;
+	readonly diagnostics: readonly ProjectDiagnosticDto[];
+	readonly failureCode: string | null;
+}
+
 /** Wire acknowledgement of process shutdown. */
 export interface ShutdownResultDto {
 	readonly shutdown: boolean;
@@ -128,7 +190,7 @@ export class AuthoringProtocolClient {
 		if (result.processKind !== 'authoring') {
 			throw new Error(`Expected an authoring service but received process kind ${result.processKind}`);
 		}
-		for (const capability of ['project/open', 'project/replace', 'project/close', 'service/shutdown']) {
+		for (const capability of ['project/open', 'project/replace', 'project/close', 'definition/open', 'service/shutdown']) {
 			if (!result.capabilities.includes(capability)) {
 				throw new Error(`Authoring service does not provide required capability ${capability}`);
 			}
@@ -154,6 +216,13 @@ export class AuthoringProtocolClient {
 
 	async closeProject(): Promise<ProjectCloseResultDto> {
 		return (await this.request('project/close', {}, validateProjectCloseResult)).result;
+	}
+
+	async openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto> {
+		return (await this.request('definition/open', {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			assetId: requiredNonEmptyString(assetId, 'assetId')
+		}, validateDefinitionOpenResult)).result;
 	}
 
 	async shutdown(): Promise<ShutdownResultDto> {
@@ -249,6 +318,101 @@ function validateProjectCloseResult(value: JsonValue): ProjectCloseResultDto {
 	};
 }
 
+/** Validates a complete generation-scoped retained-definition snapshot. */
+function validateDefinitionOpenResult(value: JsonValue): DefinitionOpenResultDto {
+	const object = requiredObject(value, 'definition/open result');
+	const opened = requiredBoolean(object.opened, 'opened');
+	const generation = nullableInteger(object.projectGeneration, 'projectGeneration');
+	const definition = object.definition === null ? null : validateDefinitionSnapshot(object.definition);
+	const failureCode = nullableString(object.failureCode, 'failureCode');
+	if (opened !== (generation !== null && definition !== null && failureCode === null)) {
+		throw new Error('definition/open result has an inconsistent success shape');
+	}
+	return {
+		opened,
+		projectGeneration: generation,
+		definition,
+		diagnostics: requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic),
+		failureCode
+	};
+}
+
+/** Validates one complete structural-definition snapshot. */
+function validateDefinitionSnapshot(value: JsonValue | undefined): DefinitionSnapshotDto {
+	const object = requiredObject(value, 'definition');
+	const context = requiredObject(object.context, 'definition.context');
+	const origin = requiredDefinitionOrigin(context.origin);
+	const editable = requiredBoolean(context.editable, 'definition.context.editable');
+	if (editable !== (origin === 'authored')) {
+		throw new Error('definition.context editability must match origin');
+	}
+	return {
+		revision: requiredInteger(object.revision, 'definition.revision'),
+		context: {
+			assetId: requiredNonEmptyString(context.assetId, 'definition.context.assetId'),
+			kind: requiredDefinitionKind(context.kind),
+			origin,
+			editable,
+			source: requiredNonEmptyString(context.source, 'definition.context.source'),
+			label: validateAuthoringText(context.label)
+		},
+		roots: requiredArray(object.roots, 'definition.roots').map(validateHierarchyNode)
+	};
+}
+
+/** Recursively validates one hierarchy occurrence. */
+function validateHierarchyNode(value: JsonValue): HierarchyNodeDto {
+	const object = requiredObject(value, 'hierarchy node');
+	return {
+		occurrence: validateOccurrence(object.occurrence),
+		kind: requiredHierarchyKind(object.kind),
+		entityId: nullableString(object.entityId, 'hierarchy node.entityId'),
+		definitionId: nullableString(object.definitionId, 'hierarchy node.definitionId'),
+		label: validateAuthoringText(object.label),
+		enabled: requiredBoolean(object.enabled, 'hierarchy node.enabled'),
+		modified: requiredBoolean(object.modified, 'hierarchy node.modified'),
+		editable: requiredBoolean(object.editable, 'hierarchy node.editable'),
+		target: validateSemanticTarget(object.target),
+		children: requiredArray(object.children, 'hierarchy node.children').map(validateHierarchyNode)
+	};
+}
+
+/** Validates semantic occurrence identity independently of tree presentation. */
+function validateOccurrence(value: JsonValue | undefined): HierarchyOccurrenceDto {
+	const object = requiredObject(value, 'occurrence');
+	return {
+		definitionAssetId: requiredNonEmptyString(object.definitionAssetId, 'occurrence.definitionAssetId'),
+		entityPath: requiredStringArray(object.entityPath, 'occurrence.entityPath')
+	};
+}
+
+/** Validates one future-Inspector semantic target. */
+function validateSemanticTarget(value: JsonValue | undefined): HierarchySemanticTargetDto {
+	const object = requiredObject(value, 'semantic target');
+	return {
+		kind: requiredTargetKind(object.kind),
+		source: requiredNonEmptyString(object.source, 'semantic target.source'),
+		identity: requiredNonEmptyString(object.identity, 'semantic target.identity'),
+		occurrence: object.occurrence === null ? null : validateOccurrence(object.occurrence)
+	};
+}
+
+/** Validates authored or Java-owned structured presentation text. */
+function validateAuthoringText(value: JsonValue | undefined): AuthoringTextDto {
+	const object = requiredObject(value, 'authoring text');
+	const kind = requiredTextKind(object.kind);
+	const messageCode = nullableString(object.messageCode, 'authoring text.messageCode');
+	if ((kind === 'message') !== (messageCode !== null)) {
+		throw new Error('authoring text messageCode does not match kind');
+	}
+	return {
+		kind,
+		text: requiredString(object.text, 'authoring text.text'),
+		messageCode,
+		arguments: requiredStringArray(object.arguments, 'authoring text.arguments')
+	};
+}
+
 /** Validates a service-shutdown acknowledgement received from Java. */
 function validateShutdownResult(value: JsonValue): ShutdownResultDto {
 	const object = requiredObject(value, 'service/shutdown result');
@@ -315,6 +479,46 @@ function requiredReplaceOutcome(value: JsonValue | undefined): ProjectReplaceRes
 	return value;
 }
 
+/** Requires one supported structural-definition kind. */
+function requiredDefinitionKind(value: JsonValue | undefined): DefinitionContextDto['kind'] {
+	if (value !== 'world-definition' && value !== 'entity-definition') {
+		throw new Error('definition.context.kind is invalid');
+	}
+	return value;
+}
+
+/** Requires one definition-level origin. */
+function requiredDefinitionOrigin(value: JsonValue | undefined): DefinitionContextDto['origin'] {
+	if (value !== 'authored' && value !== 'generated') {
+		throw new Error('definition.context.origin is invalid');
+	}
+	return value;
+}
+
+/** Requires one semantic hierarchy kind. */
+function requiredHierarchyKind(value: JsonValue | undefined): HierarchyNodeDto['kind'] {
+	if (value !== 'local-entity' && value !== 'placement' && value !== 'generated-entity') {
+		throw new Error('hierarchy node.kind is invalid');
+	}
+	return value;
+}
+
+/** Requires one semantic target kind. */
+function requiredTargetKind(value: JsonValue | undefined): HierarchySemanticTargetDto['kind'] {
+	if (value !== 'world' && value !== 'local-entity' && value !== 'generated-entity' && value !== 'placement' && value !== 'asset') {
+		throw new Error('semantic target.kind is invalid');
+	}
+	return value;
+}
+
+/** Requires one structured presentation-text kind. */
+function requiredTextKind(value: JsonValue | undefined): AuthoringTextDto['kind'] {
+	if (value !== 'literal' && value !== 'message') {
+		throw new Error('authoring text.kind is invalid');
+	}
+	return value;
+}
+
 /** Requires a JSON object at the named wire-contract location. */
 function requiredObject(value: JsonValue | undefined, name: string): JsonObject {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -337,6 +541,15 @@ function requiredString(value: JsonValue | undefined, name: string): string {
 		throw new Error(`${name} must be a string`);
 	}
 	return value;
+}
+
+/** Requires a non-empty string without canonicalizing authored identity text. */
+function requiredNonEmptyString(value: JsonValue | undefined, name: string): string {
+	const result = requiredString(value, name);
+	if (result.length === 0) {
+		throw new Error(`${name} must not be empty`);
+	}
+	return result;
 }
 
 /** Requires and canonicalizes a non-empty BCP 47 language tag. */

@@ -1,0 +1,9 @@
+{
+	"$schema": "https://jscene3d.org/schemas/world-definition-1.json",
+	"assetId": "f706a0e1-7062-4560-83a6-7ca32805592e",
+	"assetType": "world-definition",
+	"formatVersion": 1,
+	"name": "Installed Metadata World",
+	"connections": [],
+	"roots": []
+}

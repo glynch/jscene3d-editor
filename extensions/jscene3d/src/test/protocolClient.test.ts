@@ -17,18 +17,64 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 1, minor: 0 },
+			protocolVersion: { major: 1, minor: 1 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
-			capabilities: ['project/open', 'project/replace', 'project/close', 'service/shutdown']
+			capabilities: ['project/open', 'project/replace', 'project/close', 'definition/open', 'service/shutdown']
 		});
 		assert.deepStrictEqual(transport.sent[0], {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 0 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 1, minor: 1 }, clientLanguage: 'fr-CA' }
 		});
+	});
+
+	test('opens a definition and validates its complete semantic hierarchy snapshot', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openDefinition(1, 'e890c4c3-fb32-49d8-88b8-4e04e7a29656');
+		transport.respond(fixture('definition-open-response.json'));
+
+		const result = await opened;
+
+		assert.strictEqual(result.definition?.context.kind, 'world-definition');
+		assert.strictEqual(result.definition?.roots[0].target.kind, 'local-entity');
+		assert.deepStrictEqual(result.definition?.roots[0].occurrence.entityPath, [
+			'0b295328-b5a3-4f41-9f34-e9b4abc430a7'
+		]);
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0',
+			id: 2,
+			method: 'definition/open',
+			params: {
+				expectedProjectGeneration: 1,
+				assetId: 'e890c4c3-fb32-49d8-88b8-4e04e7a29656'
+			}
+		});
+	});
+
+	test('rejects malformed definition hierarchy DTOs at runtime', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openDefinition(1, 'e890c4c3-fb32-49d8-88b8-4e04e7a29656');
+		const response = fixture('definition-open-response.json');
+		const result = object(response.result);
+		const definition = object(result.definition);
+		const roots = jsonArray(definition.roots);
+		transport.respond({
+			...response,
+			result: {
+				...result,
+				definition: {
+					...definition,
+					roots: [{ ...object(roots[0]), kind: 'synthetic-world' }]
+				}
+			}
+		});
+
+		await assert.rejects(opened, /hierarchy node.kind is invalid/);
 	});
 
 	test('rejects an incompatible initialization', async () => {

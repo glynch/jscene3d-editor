@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import { Readable, Writable } from 'stream';
 import {
 	AuthoringProtocolClient,
+	DefinitionOpenResultDto,
 	InitializeResultDto,
 	ProjectCloseResultDto,
 	ProjectOpenResultDto,
@@ -32,10 +33,11 @@ export interface AuthoringServiceLogger {
 	appendLine(message: string): void;
 }
 
-/** Supplies the development Java process executable and JPMS module path. */
+/** Supplies development Java process, JPMS, and descriptor-only extension metadata configuration. */
 export interface AuthoringLaunchConfiguration {
 	readonly javaExecutable: string;
 	readonly modulePath: string;
+	readonly installedExtensionMetadata: readonly string[];
 	readonly clientLanguage: string;
 }
 
@@ -68,7 +70,8 @@ export class NodeAuthoringProcessLauncher implements AuthoringProcessLauncher {
 	launch(configuration: AuthoringLaunchConfiguration): AuthoringProcess {
 		return spawn(configuration.javaExecutable, [
 			'--module-path', configuration.modulePath,
-			'--module', serviceModule
+			'--module', serviceModule,
+			...configuration.installedExtensionMetadata.map(artifact => `--extension-metadata=${artifact}`)
 		], {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			windowsHide: true
@@ -135,6 +138,15 @@ export class AuthoringService implements Disposable {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().closeProject();
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
+		}
+	}
+
+	async openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto> {
+		await this.ensureReady();
+		try {
+			return await this.requireClient().openDefinition(expectedProjectGeneration, assetId);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}

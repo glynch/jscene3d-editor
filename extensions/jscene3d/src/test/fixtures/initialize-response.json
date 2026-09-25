@@ -3,10 +3,10 @@
 	"id": 1,
 	"connectionGeneration": "connection-1",
 	"result": {
-		"protocolVersion": { "major": 1, "minor": 0 },
+		"protocolVersion": { "major": 1, "minor": 1 },
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",
-		"capabilities": ["project/open", "project/replace", "project/close", "service/shutdown"]
+		"capabilities": ["project/open", "project/replace", "project/close", "definition/open", "service/shutdown"]
 	}
 }

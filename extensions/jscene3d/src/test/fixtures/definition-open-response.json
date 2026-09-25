@@ -1,0 +1,57 @@
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"connectionGeneration": "connection-1",
+	"result": {
+		"opened": true,
+		"projectGeneration": 1,
+		"definition": {
+			"revision": 0,
+			"context": {
+				"assetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
+				"kind": "world-definition",
+				"origin": "authored",
+				"editable": true,
+				"source": "file:///projects/small/worlds/main.world.json",
+				"label": {
+					"kind": "literal",
+					"text": "Opening World",
+					"messageCode": null,
+					"arguments": []
+				}
+			},
+			"roots": [
+				{
+					"occurrence": {
+						"definitionAssetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
+						"entityPath": ["0b295328-b5a3-4f41-9f34-e9b4abc430a7"]
+					},
+					"kind": "local-entity",
+					"entityId": "0b295328-b5a3-4f41-9f34-e9b4abc430a7",
+					"definitionId": null,
+					"label": {
+						"kind": "literal",
+						"text": "Player",
+						"messageCode": null,
+						"arguments": []
+					},
+					"enabled": true,
+					"modified": false,
+					"editable": true,
+					"target": {
+						"kind": "local-entity",
+						"source": "file:///projects/small/worlds/main.world.json",
+						"identity": "0b295328-b5a3-4f41-9f34-e9b4abc430a7",
+						"occurrence": {
+							"definitionAssetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
+							"entityPath": ["0b295328-b5a3-4f41-9f34-e9b4abc430a7"]
+						}
+					},
+					"children": []
+				}
+			]
+		},
+		"diagnostics": [],
+		"failureCode": null
+	}
+}

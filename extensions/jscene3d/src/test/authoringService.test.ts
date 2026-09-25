@@ -29,7 +29,7 @@ suite('JScene3D authoring service lifecycle', () => {
 		const process = new TestAuthoringProcess();
 		process.exitAfterShutdown = true;
 		const service = new AuthoringService(
-			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'fr-CA' }),
+			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'fr-CA' }),
 			new SingleProcessLauncher(process),
 			new TestLogger(),
 			timeouts
@@ -47,7 +47,7 @@ suite('JScene3D authoring service lifecycle', () => {
 		process.exitOnSignal.add('SIGTERM');
 		const launcher = new SingleProcessLauncher(process);
 		const service = new AuthoringService(
-			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'fr-CA' }),
+			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'fr-CA' }),
 			launcher,
 			new TestLogger(),
 			timeouts
@@ -269,11 +269,11 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 				this.initializationLanguages.push(requiredString(jsonObject(message.params).clientLanguage));
 				if (this.respondToInitialize) {
 					this.respond(id, {
-						protocolVersion: { major: 1, minor: 0 },
+						protocolVersion: { major: 1, minor: 1 },
 						processKind: 'authoring',
 						serviceVersion: 'test',
 						engineVersion: 'test',
-						capabilities: ['project/open', 'project/replace', 'project/close', 'service/shutdown']
+						capabilities: ['project/open', 'project/replace', 'project/close', 'definition/open', 'service/shutdown']
 					});
 					this.initializedResolve?.();
 				}
@@ -370,7 +370,7 @@ class TestLogger {
 
 function createService(process: TestAuthoringProcess, logger = new TestLogger()): AuthoringService {
 	return new AuthoringService(
-		() => ({ javaExecutable: 'java', modulePath: 'test-module-path', clientLanguage: 'en' }),
+		() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'en' }),
 		new SingleProcessLauncher(process),
 		logger,
 		timeouts

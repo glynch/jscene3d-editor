@@ -12,6 +12,7 @@ export interface ProjectTreeNode {
 	readonly description?: string;
 	readonly tooltip?: string;
 	readonly children?: readonly ProjectTreeNode[];
+	readonly command?: { readonly command: string; readonly title: string; readonly arguments?: unknown[] };
 }
 
 /** Localized labels used to construct the Project view model. */
@@ -55,7 +56,11 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 			{ label: labels.version, description: project.version },
 			{ label: labels.descriptor, description: path.basename(project.descriptor), tooltip: project.descriptor },
 			{ label: labels.projectRoot, description: project.root, tooltip: project.root },
-			{ label: labels.startupWorld, description: `${project.startupWorld.name} (${project.startupWorld.id})` },
+			{
+				label: labels.startupWorld,
+				description: `${project.startupWorld.name} (${project.startupWorld.id})`,
+				command: { command: 'jscene3d.openDefinition', title: labels.startupWorld, arguments: [project.startupWorld.id] }
+			},
 			{ label: labels.authoredAssets, description: String(project.assetCounts.authored) },
 			{ label: labels.projectedAssets, description: String(project.assetCounts.projected) }
 		]

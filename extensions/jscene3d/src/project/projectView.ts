@@ -24,6 +24,7 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 		);
 		item.description = element.description;
 		item.tooltip = element.tooltip;
+		item.command = element.command;
 		return item;
 	}
 

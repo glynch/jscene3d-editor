@@ -57,6 +57,13 @@
 				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
 			},
 			{
+				"command": "jscene3d.openDefinition",
+				"title": "%command.openStartupWorld%",
+				"category": "JScene3D",
+				"icon": "$(symbol-structure)",
+				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
+			},
+			{
 				"command": "jscene3d.gettingStarted",
 				"title": "%command.gettingStarted%",
 				"category": "JScene3D"
@@ -83,9 +90,33 @@
 					"name": "%view.project%",
 					"icon": "$(folder)",
 					"visibility": "visible"
+				},
+				{
+					"id": "jscene3d.hierarchy",
+					"name": "%view.hierarchy%",
+					"icon": "$(list-tree)",
+					"visibility": "visible"
 				}
 			]
 		},
+		"viewsWelcome": [
+			{
+				"view": "jscene3d.hierarchy",
+				"contents": "%view.hierarchy.noActive%",
+				"when": "!jscene3d.definitionActive"
+			}
+		],
+		"customEditors": [
+			{
+				"viewType": "jscene3d.authoredDefinition",
+				"displayName": "%customEditor.authoredDefinition%",
+				"selector": [
+					{ "filenamePattern": "*.world.json" },
+					{ "filenamePattern": "*.entity.json" }
+				],
+				"priority": "option"
+			}
+		],
 		"configuration": {
 			"title": "JScene3D",
 			"properties": {
@@ -95,12 +126,21 @@
 					"scope": "machine",
 					"description": "%configuration.authoring.javaExecutable%"
 				},
-				"jscene3d.authoring.modulePath": {
-					"type": "string",
-					"default": "",
-					"scope": "machine",
-					"description": "%configuration.authoring.modulePath%"
-				}
+					"jscene3d.authoring.modulePath": {
+						"type": "string",
+						"default": "",
+						"scope": "machine",
+						"description": "%configuration.authoring.modulePath%"
+					},
+					"jscene3d.authoring.installedExtensionMetadata": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"default": [],
+						"scope": "machine",
+						"description": "%configuration.authoring.installedExtensionMetadata%"
+					}
 			}
 		},
 		"configurationDefaults": {

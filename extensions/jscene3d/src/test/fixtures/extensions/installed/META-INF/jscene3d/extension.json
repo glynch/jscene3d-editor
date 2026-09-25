@@ -1,0 +1,10 @@
+{
+	"$schema": "https://jscene3d.org/schemas/extension-1.json",
+	"schemaVersion": 1,
+	"id": "example.installed",
+	"version": "1.0.0",
+	"engineRequires": ">=0.1.0-SNAPSHOT <0.2.0",
+	"displayName": "Installed Authoring Test",
+	"types": [],
+	"components": []
+}

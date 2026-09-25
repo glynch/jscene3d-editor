@@ -18,6 +18,7 @@ suite('JScene3D authoring service process', () => {
 		const service = new AuthoringService(() => ({
 			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
 			modulePath: modulePath ?? '',
+			installedExtensionMetadata: [],
 			clientLanguage: 'fr'
 		}), new NodeAuthoringProcessLauncher(), logger);
 		try {
@@ -38,6 +39,10 @@ suite('JScene3D authoring service process', () => {
 			});
 			assert.notStrictEqual(projectA.projectGeneration, null);
 			const generationA = projectA.projectGeneration ?? 0;
+			const definition = await service.openDefinition(generationA, 'e890c4c3-fb32-49d8-88b8-4e04e7a29656');
+			assert.strictEqual(definition.definition?.context.kind, 'world-definition');
+			assert.strictEqual(definition.definition?.context.origin, 'authored');
+			assert.deepStrictEqual(definition.definition?.roots.map(root => root.label.text), ['Player']);
 
 			const invalidB = await service.replaceProject(generationA, fixture('malformed', 'malformed.j3d'));
 			assert.strictEqual(invalidB.outcome, 'candidateRejected');
@@ -67,6 +72,29 @@ suite('JScene3D authoring service process', () => {
 		assert.ok(logger.lines.some(line => line.startsWith('Authoring service initialized')));
 		assert.ok(logger.lines.includes('Authoring service stopped'));
 	});
+
+	test('passes installed extension metadata to the real Java service without loading runtime providers', async function () {
+		this.timeout(15000);
+		const modulePath = process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH;
+		if (modulePath === undefined || modulePath.trim().length === 0) {
+			this.skip();
+		}
+		const service = new AuthoringService(() => ({
+			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
+			modulePath: modulePath ?? '',
+			installedExtensionMetadata: [installedExtensionFixture()],
+			clientLanguage: 'en'
+		}), new NodeAuthoringProcessLauncher(), new TestLogger());
+		try {
+			const opened = await service.openProject(fixture('installed', 'installed-project.j3d'));
+
+			assert.strictEqual(opened.opened, true);
+			assert.strictEqual(opened.project?.name, 'Installed Metadata Project');
+			assert.deepStrictEqual(opened.diagnostics, []);
+		} finally {
+			await service.shutdown();
+		}
+	});
 });
 
 class TestLogger {
@@ -79,4 +107,8 @@ class TestLogger {
 
 function fixture(directory: string, name: string): string {
 	return path.join(__dirname, 'fixtures', 'projects', directory, name);
+}
+
+function installedExtensionFixture(): string {
+	return path.join(__dirname, 'fixtures', 'extensions', 'installed');
 }
