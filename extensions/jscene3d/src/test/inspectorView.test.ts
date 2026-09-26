@@ -6,7 +6,11 @@
 import * as assert from 'assert';
 import { inspectorHtml, isInspectorMessage, revealInspector } from '../inspector/inspectorView';
 import { inspectorSearchIndex, inspectorSearchResults } from '../inspector/inspectorViewModel';
-import { InspectorSnapshotDto } from '../protocol/authoringProtocol';
+import {
+	InspectorEditorSemanticsDto,
+	InspectorPropertyDto,
+	InspectorSnapshotDto
+} from '../protocol/authoringProtocol';
 
 suite('JScene3D Inspector view', () => {
 	test('reveals the Inspector through its generated view focus command', async () => {
@@ -85,7 +89,7 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /Localized: Filter components and properties…/);
 		assert.match(html, /Localized: Filter options/);
 		assert.match(html, /vscode\.getState\(\)/);
-		assert.match(html, /vscode\.setState\(\{ query: searchInput\.value \}\)/);
+		assert.match(html, /vscode\.setState\(\{ query: searchInput\.value, collapsedProperties: Array\.from\(collapsedProperties\) \}\)/);
 		assert.match(html, /selectGroup\(result\.groupId, result\.propertyId\)/);
 		assert.doesNotMatch(html, /icon-button|search-popover|⌕/);
 		assert.doesNotMatch(html, /inspector\/read/);
@@ -166,6 +170,71 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /Read-only/);
 	});
 
+	test('renders collapsible semantic properties with compact exact components', () => {
+		const base = snapshot();
+		const reference: InspectorPropertyDto = {
+			...base.groups[1].properties[0],
+			identity: 'mesh', label: 'Mesh', valueKind: 'reference',
+			state: {
+				authoredValue: {
+					kind: 'reference', referenceKind: 'asset', locator: 'mesh', label: 'Player mesh',
+					resolution: 'resolved', revealUri: 'file:///project/assets/player.glb'
+				},
+				defaultValue: null,
+				effectiveValue: {
+					kind: 'reference', referenceKind: 'asset', locator: 'mesh', label: 'Player mesh',
+					resolution: 'resolved', revealUri: 'file:///project/assets/player.glb'
+				},
+				origin: 'authored', validity: 'valid', editable: false
+			}
+		};
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], {
+				...base.groups[1],
+				properties: [
+					base.groups[1].properties[0],
+					semanticArrayProperty('size', 'Size', 'vector2', ['1.25', '-4']),
+					semanticArrayProperty('position', 'Position', 'vector3', ['-6', '0.875', '6']),
+					semanticArrayProperty('rotation', 'Rotation', 'euler-rotation', ['0', '90', '-2.5']),
+					semanticArrayProperty('orientation', 'Orientation', 'quaternion', ['0', '0', '0', '1']),
+					semanticArrayProperty('color', 'Color', 'color-linear', ['1', '0.5', '2']),
+					semanticArrayProperty('samples', 'Samples', 'default', ['1', '2', '3']),
+					reference
+				]
+			}]
+		};
+
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.ok(html.includes('"propertyEditor":{"kind":"decimal","decimal":"4.0","minimum":null,"maximum":null}'));
+		assert.ok(html.includes('"kind":"vector2","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"1.25"},{"label":"Y","decimal":"-4"}],"summary":"1.25, -4"'));
+		assert.ok(html.includes('"kind":"vector3","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"-6"},{"label":"Y","decimal":"0.875"},{"label":"Z","decimal":"6"}],"summary":"-6, 0.875, 6"'));
+		assert.ok(html.includes('"kind":"eulerRotation","collapsible":true,"unit":"degrees","components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"90"},{"label":"Z","decimal":"-2.5"}],"summary":"0°, 90°, -2.5°"'));
+		assert.ok(html.includes('"kind":"quaternion","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"0"},{"label":"Z","decimal":"0"},{"label":"W","decimal":"1"}],"summary":"0, 0, 0, 1"'));
+		assert.ok(html.includes('"kind":"linearColor","collapsible":true,"unit":null,"components":[{"label":"R","decimal":"1"},{"label":"G","decimal":"0.5"},{"label":"B","decimal":"2"}],"summary":"R 1, G 0.5, B 2"'));
+		assert.ok(html.includes('"propertyEditor":{"kind":"collectionSummary","count":3}'));
+		assert.ok(html.includes('"propertyEditor":{"kind":"reference","label":"Player mesh","resolution":"resolved","revealUri":"file:///project/assets/player.glb"}'));
+		assert.match(html, /\.property-components \{[^}]*display: flex[^}]*flex-wrap: wrap[^}]*\}/);
+		assert.match(html, /\.property-component \{[^}]*display: inline-flex[^}]*flex: 0 1 auto[^}]*\}/);
+		assert.match(html, /\.property-component-value \{[^}]*min-width: 48px[^}]*width: max-content[^}]*max-width: 24ch[^}]*\}/);
+		assert.match(html, /\.property-component-label \{[^}]*color: var\(--vscode-descriptionForeground\)[^}]*font-weight: 400[^}]*\}/);
+		assert.match(html, /\.property-component-value \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
+		assert.match(html, /label\.className = 'property-component-label'; label\.textContent = component\.label/);
+		assert.match(html, /value\.className = 'property-component-value';\s*value\.textContent = component\.decimal/);
+		assert.match(html, /item\.append\(label, value\)/);
+		assert.match(html, /component\.decimal \+ \(editor\.unit === 'degrees' \? '°' : ''\)/);
+		assert.doesNotMatch(html, /value\.textContent = component\.label/);
+		assert.doesNotMatch(html, /join\('  ·  '\)/);
+		assert.match(html, /property\.propertyEditor\.collapsible === true/);
+		assert.match(html, /document\.createElement\('button'\); disclosure\.type = 'button'/);
+		assert.match(html, /disclosure\.setAttribute\('aria-expanded', String\(expanded\)\)/);
+		assert.match(html, /summary\.hidden = expanded;\s*value\.hidden = !expanded/);
+		assert.match(html, /setExpanded\(!collapsedProperties\.has\(key\), false\)/);
+		assert.match(html, /snapshot\.target\.identity[\s\S]*groupId, propertyId/);
+		assert.match(html, /collapsedProperties: Array\.from\(collapsedProperties\)/);
+	});
+
 	test('accepts only the closed select-group webview message shape', () => {
 		assert.strictEqual(isInspectorMessage({ type: 'selectGroup', groupId: 'movement' }), true);
 		assert.strictEqual(isInspectorMessage({ type: 'selectGroup', groupId: '' }), false);
@@ -239,5 +308,26 @@ function snapshot(): InspectorSnapshotDto {
 				mutationTarget: null
 			}]
 		}]
+	};
+}
+
+function semanticArrayProperty(
+	identity: string,
+	label: string,
+	semantic: InspectorEditorSemanticsDto['semantic'],
+	decimals: readonly string[]
+): InspectorPropertyDto {
+	const value = { kind: 'array' as const, values: decimals.map(decimal => ({ kind: 'number' as const, decimal })) };
+	return {
+		identity, label, description: null, valueKind: 'array', required: false,
+		constraints: {
+			elementKind: 'number', exactElementCount: decimals.length, acceptedReferenceKinds: [],
+			editor: { semantic, minimum: null, maximum: null }
+		},
+		state: {
+			authoredValue: value, defaultValue: null, effectiveValue: value,
+			origin: 'authored', validity: 'valid', editable: false
+		},
+		mutationTarget: null
 	};
 }

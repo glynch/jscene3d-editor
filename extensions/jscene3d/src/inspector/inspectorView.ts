@@ -5,8 +5,10 @@
 
 import { randomBytes } from 'crypto';
 import type * as vscode from 'vscode';
+import { InspectorSnapshotDto } from '../protocol/authoringProtocol';
 import { InspectorState, InspectorStateSnapshot } from './inspectorState';
 import { inspectorSearchIndex } from './inspectorViewModel';
+import { resolvePropertyEditor } from './propertyEditorResolver';
 
 export const inspectorViewId = 'jscene3d.inspector';
 export const inspectorFocusCommandId = `${inspectorViewId}.focus`;
@@ -143,7 +145,7 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 	return state.status === 'ready'
 		? {
 			status: state.status,
-			snapshot: state.inspector,
+			snapshot: inspectorPresentationSnapshot(state.inspector),
 			selectedGroupId: state.selectedGroupId,
 			searchIndex: inspectorSearchIndex(state.inspector),
 			strings
@@ -151,6 +153,20 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 		: state.status === 'rejected'
 			? { status: state.status, failureCode: state.failureCode, strings }
 			: { status: state.status, strings };
+}
+
+/** Adds built-in read-only presentation models without changing the authoritative snapshot. */
+function inspectorPresentationSnapshot(snapshot: InspectorSnapshotDto): object {
+	return {
+		...snapshot,
+		groups: snapshot.groups.map(group => ({
+			...group,
+			properties: group.properties.map(property => ({
+				...property,
+				propertyEditor: resolvePropertyEditor(property)
+			}))
+		}))
+	};
 }
 
 function safeJson(value: object): string {
@@ -206,6 +222,15 @@ button, input { font: inherit; }
 .property-value { min-width: 0; text-align: right; overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); user-select: text; }
 .property.block { display: block; }
 .property.block .property-value { margin-top: 4px; text-align: left; white-space: pre-wrap; font-family: var(--vscode-editor-font-family); }
+.property-disclosure { width: 100%; display: grid; grid-template-columns: auto minmax(72px, 42%) minmax(0, 1fr); gap: 4px; align-items: center; border: 0; padding: 0; color: var(--vscode-foreground); background: transparent; text-align: left; cursor: pointer; }
+.property-disclosure:hover { background: var(--vscode-list-hoverBackground); }
+.property-disclosure:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.property-disclosure-icon { width: 1em; color: var(--vscode-icon-foreground); text-align: center; }
+.property-disclosure-summary { min-width: 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); text-align: right; overflow-wrap: anywhere; user-select: text; }
+.property-components { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.property-component { min-width: 0; max-width: 100%; display: inline-flex; flex: 0 1 auto; gap: 4px; align-items: center; }
+.property-component-label { color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: 0.9em; font-weight: 400; }
+.property-component-value { min-width: 48px; width: max-content; max-width: 24ch; box-sizing: border-box; padding: 2px 5px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); text-align: right; overflow-wrap: anywhere; }
 .badges { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .badge { padding: 1px 4px; border-radius: 2px; font-size: 0.8em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
 .badge.problem { color: var(--vscode-inputValidation-errorForeground); background: var(--vscode-inputValidation-errorBackground); }
@@ -242,7 +267,22 @@ if (bootstrap.status !== 'ready') {
 	filterMenuEmpty.textContent = bootstrap.strings.noFilterOptions;
 	const savedState = vscode.getState();
 	searchInput.value = typeof savedState?.query === 'string' ? savedState.query : '';
+	const collapsedProperties = new Set(Array.isArray(savedState?.collapsedProperties)
+		? savedState.collapsedProperties.filter(value => typeof value === 'string') : []);
 	let selectedGroupId = bootstrap.selectedGroupId;
+
+	function savePresentationState() {
+		vscode.setState({ query: searchInput.value, collapsedProperties: Array.from(collapsedProperties) });
+	}
+
+	function collapseKey(groupId, propertyId) {
+		const occurrence = snapshot.target.occurrence;
+		return JSON.stringify([
+			snapshot.target.kind, snapshot.target.source, snapshot.target.identity,
+			occurrence?.definitionAssetId ?? null, occurrence?.entityPath ?? null,
+			groupId, propertyId
+		]);
+	}
 
 	function selectGroup(groupId, propertyId, notify = true) {
 		if (!snapshot.groups.some(group => group.identity === groupId)) { return; }
@@ -281,15 +321,41 @@ if (bootstrap.status !== 'ready') {
 		if (group.description) { const description = document.createElement('p'); description.className = 'group-description'; description.textContent = group.description; properties.append(description); }
 		for (const property of group.properties) {
 			const row = document.createElement('div'); row.className = 'property'; row.tabIndex = -1; row.dataset.propertyId = property.identity;
-			if (property.valueKind === 'array' && property.constraints.editor.semantic === 'default' || property.valueKind === 'object') { row.classList.add('block'); }
-			const label = document.createElement('div'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
-			const value = document.createElement('div'); value.className = 'property-value'; value.textContent = displayValue(property.state.effectiveValue, property);
-			row.append(label, value);
+			row.dataset.editorKind = property.propertyEditor.kind;
+			if (isBlockEditor(property.propertyEditor)) { row.classList.add('block'); }
+			const value = document.createElement('div'); value.className = 'property-value'; renderPropertyEditor(value, property.propertyEditor);
+			if (property.propertyEditor.collapsible === true) {
+				renderCompoundProperty(row, value, group.identity, property);
+			} else {
+				const label = document.createElement('div'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
+				row.append(label, value);
+			}
 			const badges = propertyBadges(property);
 			if (badges.length) { const box = document.createElement('div'); box.className = 'badges'; for (const badge of badges) { const item = document.createElement('span'); item.className = 'badge' + (badge.problem ? ' problem' : ''); item.textContent = badge.text; box.append(item); } row.append(box); }
 			properties.append(row);
 		}
 		if (propertyId) { const row = Array.from(properties.querySelectorAll('.property')).find(candidate => candidate.dataset.propertyId === propertyId); if (row) { row.scrollIntoView({ block: 'center' }); row.focus(); } }
+	}
+
+	function renderCompoundProperty(row, value, groupId, property) {
+		const key = collapseKey(groupId, property.identity);
+		const disclosure = document.createElement('button'); disclosure.type = 'button'; disclosure.className = 'property-disclosure';
+		const icon = document.createElement('span'); icon.className = 'property-disclosure-icon'; icon.setAttribute('aria-hidden', 'true');
+		const label = document.createElement('span'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
+		const summary = document.createElement('span'); summary.className = 'property-disclosure-summary'; summary.textContent = property.propertyEditor.summary;
+		disclosure.append(icon, label, summary); row.append(disclosure, value);
+		function setExpanded(expanded, persist) {
+			disclosure.setAttribute('aria-expanded', String(expanded));
+			icon.textContent = expanded ? '▾' : '▸';
+			summary.hidden = expanded;
+			value.hidden = !expanded;
+			if (persist) {
+				if (expanded) { collapsedProperties.delete(key); } else { collapsedProperties.add(key); }
+				savePresentationState();
+			}
+		}
+		setExpanded(!collapsedProperties.has(key), false);
+		disclosure.addEventListener('click', () => setExpanded(disclosure.getAttribute('aria-expanded') !== 'true', true));
 	}
 
 	function propertyBadges(property) {
@@ -300,28 +366,55 @@ if (bootstrap.status !== 'ready') {
 		return badges;
 	}
 
-	function displayValue(value, property) {
-		if (value === null) { return property.state.origin === 'unset' ? '—' : 'null'; }
-		switch (value.kind) {
-			case 'null': return 'null';
-			case 'boolean': return value.value ? bootstrap.strings.trueValue : bootstrap.strings.falseValue;
-			case 'number': return value.decimal;
-			case 'text': return value.value;
-			case 'array':
-				return property.constraints.editor.semantic === 'default'
-					? bootstrap.strings.items.replace('{count}', String(value.values.length))
-					: value.values.map(entry => entry.kind === 'number' ? entry.decimal : displayValue(entry, property)).join('  ·  ');
-			case 'object': return bootstrap.strings.fields.replace('{count}', String(Object.keys(value.values).length));
-			case 'reference': return value.label + (value.resolution === 'broken' ? ' · ' + bootstrap.strings.broken : '');
-			case 'entity-target': return value.label + (value.resolution === 'broken' ? ' · ' + bootstrap.strings.broken : '');
-			case 'component-target': return value.entityLabel + ' · ' + value.componentLabel + (value.resolution === 'broken' ? ' · ' + bootstrap.strings.broken : '');
+	function isBlockEditor(editor) {
+		return editor.collapsible === true
+			|| editor.kind === 'collectionSummary' || editor.kind === 'objectSummary';
+	}
+
+	function renderPropertyEditor(container, editor) {
+		switch (editor.kind) {
+			case 'boolean': container.textContent = editor.value === null ? '—' : editor.value ? bootstrap.strings.trueValue : bootstrap.strings.falseValue; return;
+			case 'decimal':
+			case 'integer': container.textContent = editor.decimal ?? '—'; return;
+			case 'text': container.textContent = editor.value ?? '—'; return;
+			case 'vector2':
+			case 'vector3':
+			case 'eulerRotation':
+			case 'quaternion':
+			case 'linearColor': renderComponents(container, editor); return;
+			case 'reference': container.textContent = semanticLabel(editor.label, editor.resolution); return;
+			case 'entityTarget': container.textContent = semanticLabel(editor.label, editor.resolution); return;
+			case 'componentTarget': {
+				const label = editor.entityLabel === null || editor.componentLabel === null
+					? null : editor.entityLabel + ' · ' + editor.componentLabel;
+				container.textContent = semanticLabel(label, editor.resolution); return;
+			}
+			case 'collectionSummary': container.textContent = editor.count === null ? '—' : bootstrap.strings.items.replace('{count}', String(editor.count)); return;
+			case 'objectSummary': container.textContent = editor.count === null ? '—' : bootstrap.strings.fields.replace('{count}', String(editor.count)); return;
+			case 'fallback': container.textContent = editor.value === 'null' ? 'null' : '—'; return;
 		}
+	}
+
+	function renderComponents(container, editor) {
+		const components = document.createElement('div'); components.className = 'property-components';
+		for (const component of editor.components) {
+			const item = document.createElement('div'); item.className = 'property-component';
+			const label = document.createElement('span'); label.className = 'property-component-label'; label.textContent = component.label;
+			const value = document.createElement('span'); value.className = 'property-component-value';
+			value.textContent = component.decimal === null ? '—' : component.decimal + (editor.unit === 'degrees' ? '°' : '');
+			item.append(label, value); components.append(item);
+		}
+		container.append(components);
+	}
+
+	function semanticLabel(label, resolution) {
+		return label === null ? '—' : label + (resolution === 'broken' ? ' · ' + bootstrap.strings.broken : '');
 	}
 
 	function updateSearch() {
 		searchResults.replaceChildren();
 		const query = searchInput.value.trim().toLocaleLowerCase();
-		vscode.setState({ query: searchInput.value });
+		savePresentationState();
 		navigator.hidden = query.length > 0;
 		searchResults.hidden = query.length === 0;
 		if (!query) { return; }

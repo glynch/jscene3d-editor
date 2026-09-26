@@ -241,7 +241,7 @@ export interface InspectorNumericBoundDto {
 }
 
 export interface InspectorEditorSemanticsDto {
-	readonly semantic: 'default' | 'integer' | 'vector2' | 'vector3' | 'quaternion' | 'color-linear';
+	readonly semantic: 'default' | 'integer' | 'vector2' | 'vector3' | 'euler-rotation' | 'quaternion' | 'color-linear';
 	readonly minimum: InspectorNumericBoundDto | null;
 	readonly maximum: InspectorNumericBoundDto | null;
 }
@@ -1012,7 +1012,7 @@ function requiredResolution(value: JsonValue | undefined): 'resolved' | 'broken'
 
 function requiredEditorSemantic(value: JsonValue | undefined): InspectorEditorSemanticsDto['semantic'] {
 	if (value !== 'default' && value !== 'integer' && value !== 'vector2' && value !== 'vector3'
-		&& value !== 'quaternion' && value !== 'color-linear') {
+		&& value !== 'euler-rotation' && value !== 'quaternion' && value !== 'color-linear') {
 		throw new Error('Inspector editor semantic is invalid');
 	}
 	return value;
@@ -1030,6 +1030,7 @@ function validateEditorShape(
 	const counts: Partial<Record<InspectorEditorSemanticsDto['semantic'], number>> = {
 		vector2: 2,
 		vector3: 3,
+		'euler-rotation': 3,
 		quaternion: 4,
 		'color-linear': 3
 	};

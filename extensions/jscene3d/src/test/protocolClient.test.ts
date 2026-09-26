@@ -164,10 +164,58 @@ suite('JScene3D authoring protocol client', () => {
 		assert.strictEqual(result.snapshot?.groups[1].properties[0].state.effectiveValue?.kind, 'object');
 		assert.strictEqual(result.snapshot?.groups[1].properties[1].state.defaultValue?.kind, 'array');
 		assert.strictEqual(result.snapshot?.groups[1].properties[1].constraints.editor.semantic, 'vector3');
+		assert.strictEqual(result.snapshot?.groups[1].properties[2].constraints.editor.semantic, 'euler-rotation');
+		assert.deepStrictEqual(result.snapshot?.groups[1].properties[2].state.effectiveValue, {
+			kind: 'array',
+			values: [
+				{ kind: 'number', decimal: '0' },
+				{ kind: 'number', decimal: '90.0000000000000000001' },
+				{ kind: 'number', decimal: '-2.5' }
+			]
+		});
 		assert.deepStrictEqual(transport.sent[1], {
 			jsonrpc: '2.0', id: 2, method: 'inspector/read',
 			params: { expectedProjectGeneration: 1, expectedDefinitionRevision: 3, target }
 		});
+	});
+
+	test('rejects every inconsistent Euler Inspector semantic shape', async () => {
+		const valid = inspectorReadResult();
+		const snapshot = object(valid.snapshot);
+		const groups = jsonArray(snapshot.groups);
+		const component = object(groups[1]);
+		const properties = jsonArray(component.properties);
+		const euler = object(properties[2]);
+		const constraints = object(euler.constraints);
+		const invalidEulerProperties: readonly JsonObject[] = [
+			{
+				...euler,
+				valueKind: 'number',
+				constraints: { ...constraints, elementKind: null, exactElementCount: null }
+			},
+			{
+				...euler,
+				constraints: { ...constraints, exactElementCount: 2 }
+			},
+			{
+				...euler,
+				constraints: { ...constraints, elementKind: 'text' }
+			}
+		];
+		for (const invalidEuler of invalidEulerProperties) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const reading = client.readInspector(1, 3, inspectorTarget());
+			transport.respond(success(2, {
+				...valid,
+				snapshot: {
+					...snapshot,
+					groups: [groups[0], { ...component, properties: [properties[0], properties[1], invalidEuler] }]
+				}
+			}));
+
+			await assert.rejects(reading, /fixed numeric array/);
+		}
 	});
 
 	test('rejects inconsistent Inspector results, decimal values, and semantic shapes', async () => {
@@ -762,6 +810,31 @@ function inspectorReadResult(): JsonObject {
 							kind: 'array', values: [
 								{ kind: 'number', decimal: '0.0' }, { kind: 'number', decimal: '0.0' },
 								{ kind: 'number', decimal: '0.0' }
+							]
+						},
+						origin: 'default', validity: 'valid', editable: false
+					},
+					mutationTarget: null
+				}, {
+					identity: 'rotation', label: 'Rotation', description: null, valueKind: 'array', required: false,
+					constraints: {
+						elementKind: 'number', exactElementCount: 3, acceptedReferenceKinds: [],
+						editor: { semantic: 'euler-rotation', minimum: null, maximum: null }
+					},
+					state: {
+						authoredValue: null,
+						defaultValue: {
+							kind: 'array', values: [
+								{ kind: 'number', decimal: '0' },
+								{ kind: 'number', decimal: '90.0000000000000000001' },
+								{ kind: 'number', decimal: '-2.5' }
+							]
+						},
+						effectiveValue: {
+							kind: 'array', values: [
+								{ kind: 'number', decimal: '0' },
+								{ kind: 'number', decimal: '90.0000000000000000001' },
+								{ kind: 'number', decimal: '-2.5' }
 							]
 						},
 						origin: 'default', validity: 'valid', editable: false
