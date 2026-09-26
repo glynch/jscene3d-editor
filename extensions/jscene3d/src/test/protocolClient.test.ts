@@ -17,17 +17,17 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 1, minor: 1 },
+			protocolVersion: { major: 1, minor: 2 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
-			capabilities: ['project/open', 'project/replace', 'project/close', 'definition/open', 'service/shutdown']
+			capabilities: ['project/open', 'project/replace', 'project/close', 'definition/open', 'inspector/read', 'service/shutdown']
 		});
 		assert.deepStrictEqual(transport.sent[0], {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 1 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 1, minor: 2 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
@@ -89,6 +89,34 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(opened, /hierarchy node.kind is invalid/);
 	});
 
+	test('accepts authored read-only definitions and rejects editable generated definitions', async () => {
+		const response = fixture('definition-open-response.json');
+		const result = object(response.result);
+		const definition = object(result.definition);
+		const context = object(definition.context);
+		const readOnlyTransport = new TestTransport();
+		const readOnlyClient = await initializedClient(readOnlyTransport);
+		const readOnly = readOnlyClient.openDefinition(1, 'definition-a');
+		readOnlyTransport.respond({
+			...response,
+			result: { ...result, definition: { ...definition, context: { ...context, editable: false } } }
+		});
+
+		assert.strictEqual((await readOnly).definition?.context.editable, false);
+
+		const generatedTransport = new TestTransport();
+		const generatedClient = await initializedClient(generatedTransport);
+		const generated = generatedClient.openDefinition(1, 'definition-a');
+		generatedTransport.respond({
+			...response,
+			result: {
+				...result,
+				definition: { ...definition, context: { ...context, origin: 'generated', editable: true } }
+			}
+		});
+		await assert.rejects(generated, /generated definition cannot be editable/);
+	});
+
 	test('accepts an exact definition-open rejection', async () => {
 		const transport = new TestTransport();
 		const client = await initializedClient(transport);
@@ -121,6 +149,117 @@ suite('JScene3D authoring protocol client', () => {
 			transport.respond(success(2, invalid));
 			await assert.rejects(opened, /inconsistent (success|failure) shape/);
 		}
+	});
+
+	test('reads and validates a complete Inspector snapshot with every tagged value kind', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const target = inspectorTarget();
+		const reading = client.readInspector(1, 3, target);
+		transport.respond(success(2, inspectorReadResult()));
+
+		const result = await reading;
+
+		assert.strictEqual(result.read, true);
+		assert.strictEqual(result.snapshot?.groups[1].properties[0].state.effectiveValue?.kind, 'object');
+		assert.strictEqual(result.snapshot?.groups[1].properties[1].state.defaultValue?.kind, 'array');
+		assert.strictEqual(result.snapshot?.groups[1].properties[1].constraints.editor.semantic, 'vector3');
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'inspector/read',
+			params: { expectedProjectGeneration: 1, expectedDefinitionRevision: 3, target }
+		});
+	});
+
+	test('rejects inconsistent Inspector results, decimal values, and semantic shapes', async () => {
+		const valid = inspectorReadResult();
+		const snapshot = object(valid.snapshot);
+		const groups = jsonArray(snapshot.groups);
+		const component = object(groups[1]);
+		const properties = jsonArray(component.properties);
+		const vector = object(properties[1]);
+		const vectorConstraints = object(vector.constraints);
+		const vectorState = object(vector.state);
+		const vectorDefault = object(vectorState.defaultValue);
+		const invalidResults: readonly JsonObject[] = [
+			{ ...valid, read: false, failureCode: 'authoring.inspector.stale' },
+			{ ...valid, snapshot: null },
+			{ ...valid, failureCode: 'unexpected' },
+			{
+				...valid,
+				snapshot: {
+					...snapshot,
+					groups: [groups[0], {
+						...component,
+						properties: [properties[0], {
+							...vector,
+							constraints: { ...vectorConstraints, exactElementCount: 2 }
+						}]
+					}]
+				}
+			},
+			{
+				...valid,
+				snapshot: {
+					...snapshot,
+					groups: [groups[0], {
+						...component,
+						properties: [properties[0], {
+							...vector,
+							constraints: {
+								...vectorConstraints,
+								editor: {
+									...object(vectorConstraints.editor),
+									minimum: { decimal: '-100.0000000000000000001', inclusive: true }
+								}
+							}
+						}]
+					}]
+				}
+			},
+			{
+				...valid,
+				snapshot: {
+					...snapshot,
+					groups: [groups[0], {
+						...component,
+						properties: [properties[0], {
+							...vector,
+							state: { ...vectorState, defaultValue: { ...vectorDefault, values: [{ kind: 'number', decimal: 0.1 }] } }
+						}]
+					}]
+				}
+			},
+			{
+				...valid,
+				snapshot: {
+					...snapshot,
+					groups: [groups[0], {
+						...component,
+						properties: [{ ...object(properties[0]), mutationTarget: null }, properties[1]]
+					}]
+				}
+			}
+		];
+		for (const invalid of invalidResults) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const reading = client.readInspector(1, 3, inspectorTarget());
+			transport.respond(success(2, invalid));
+			await assert.rejects(reading, /inconsistent|fixed numeric array|numeric bounds|decimal must be a string|editability/);
+		}
+	});
+
+	test('accepts an exact Inspector rejection', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const reading = client.readInspector(1, 3, inspectorTarget());
+		const rejected = {
+			read: false, projectGeneration: null, snapshot: null, diagnostics: [],
+			failureCode: 'authoring.inspector.stale'
+		};
+		transport.respond(success(2, rejected));
+
+		assert.deepStrictEqual(await reading, rejected);
 	});
 
 	test('rejects an incompatible initialization', async () => {
@@ -519,6 +658,120 @@ function replacementResult(outcome: 'replaced' | 'candidateRejected' | 'conflict
 		project: null,
 		diagnostics: [],
 		failureCode: outcome === 'conflict' ? 'authoring.project.generationConflict' : null
+	};
+}
+
+function inspectorTarget(): JsonObject & {
+	readonly kind: 'local-entity'; readonly source: string; readonly identity: string;
+	readonly occurrence: { readonly definitionAssetId: string; readonly entityPath: readonly string[] };
+} {
+	return {
+		kind: 'local-entity',
+		source: 'file:///project/worlds/main.world.json',
+		identity: 'entity-a',
+		occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] }
+	};
+}
+
+function inspectorReadResult(): JsonObject {
+	const target = inspectorTarget();
+	const occurrence = target.occurrence;
+	const constraints = {
+		elementKind: null,
+		exactElementCount: null,
+		acceptedReferenceKinds: [],
+		editor: { semantic: 'default', minimum: null, maximum: null }
+	};
+	const semanticValues = {
+		none: { kind: 'null' },
+		flag: { kind: 'boolean', value: true },
+		precision: { kind: 'number', decimal: '1234567890.12345678901234567890' },
+		name: { kind: 'text', value: 'Player' },
+		list: { kind: 'array', values: [{ kind: 'number', decimal: '1.25' }] },
+		resource: {
+			kind: 'reference', referenceKind: 'asset', locator: 'mesh', label: 'Player mesh',
+			resolution: 'resolved', revealUri: 'file:///project/assets/player.glb'
+		},
+		brokenEntity: {
+			kind: 'entity-target', entityId: 'missing', label: 'missing', resolution: 'broken', occurrence: null
+		},
+		component: {
+			kind: 'component-target', entityId: 'entity-a', componentId: 'component-a',
+			entityLabel: 'Player', componentLabel: 'Transform 3D',
+			componentType: { id: 'jscene3d.spatial3d/transform-3d', version: 1 },
+			resolution: 'resolved', occurrence
+		}
+	};
+	return {
+		read: true,
+		projectGeneration: 1,
+		snapshot: {
+			revision: 3,
+			target,
+			title: 'Player',
+			definitionOrigin: 'authored',
+			provenance: 'local',
+			editable: true,
+			groups: [{
+				identity: 'entity', kind: 'entity', label: 'Entity', description: null,
+				componentId: null, componentType: null, metadataStatus: 'available', editable: true,
+				properties: [{
+					identity: 'enabled', label: 'Enabled', description: null, valueKind: 'boolean', required: false,
+					constraints,
+					state: {
+						authoredValue: { kind: 'boolean', value: true }, defaultValue: null,
+						effectiveValue: { kind: 'boolean', value: true }, origin: 'authored', validity: 'valid', editable: true
+					},
+					mutationTarget: { kind: 'entity-enabled', occurrence, entityId: 'entity-a' }
+				}]
+			}, {
+				identity: 'component-a', kind: 'component', label: 'Transform 3D', description: 'Placement transform',
+				componentId: 'component-a', componentType: { id: 'jscene3d.spatial3d/transform-3d', version: 1 },
+				metadataStatus: 'available', editable: true,
+				properties: [{
+					identity: 'semantic-values', label: 'Semantic values', description: null,
+					valueKind: 'object', required: false, constraints,
+					state: {
+						authoredValue: { kind: 'object', values: semanticValues }, defaultValue: null,
+						effectiveValue: { kind: 'object', values: semanticValues },
+						origin: 'authored', validity: 'valid', editable: true
+					},
+					mutationTarget: {
+						kind: 'component-property', occurrence, entityId: 'entity-a',
+						componentId: 'component-a', propertyId: 'semantic-values'
+					}
+				}, {
+					identity: 'position', label: 'Position', description: null, valueKind: 'array', required: false,
+					constraints: {
+						elementKind: 'number', exactElementCount: 3, acceptedReferenceKinds: [],
+						editor: {
+							semantic: 'vector3',
+							minimum: null,
+							maximum: null
+						}
+					},
+					state: {
+						authoredValue: null,
+						defaultValue: {
+							kind: 'array', values: [
+								{ kind: 'number', decimal: '0.0' }, { kind: 'number', decimal: '0.0' },
+								{ kind: 'number', decimal: '0.0' }
+							]
+						},
+						effectiveValue: {
+							kind: 'array', values: [
+								{ kind: 'number', decimal: '0.0' }, { kind: 'number', decimal: '0.0' },
+								{ kind: 'number', decimal: '0.0' }
+							]
+						},
+						origin: 'default', validity: 'valid', editable: false
+					},
+					mutationTarget: null
+				}]
+			}]
+		},
+		diagnostics: [],
+		failureCode: null
 	};
 }
 

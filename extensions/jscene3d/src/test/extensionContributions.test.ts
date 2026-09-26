@@ -14,6 +14,7 @@ import {
 } from '../authoring/authoringWorkflow';
 import { authoredDefinitionViewType, openDefinitionCommandId } from '../definition/authoredDefinitionOpener';
 import { hierarchyViewId } from '../hierarchy/hierarchyViewModel';
+import { inspectorViewId } from '../inspector/inspectorView';
 import { projectViewId } from '../project/projectViewModel';
 
 suite('JScene3D extension contributions', () => {
@@ -60,6 +61,32 @@ suite('JScene3D extension contributions', () => {
 		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
 		assert.strictEqual(path.extname(icon), '.svg');
 		assert.ok(fs.statSync(icon).isFile());
+	});
+
+	test('contributes the Inspector as a localized Secondary Side Bar webview', () => {
+		const manifest = extensionManifest();
+		const contributions = manifest.contributes;
+		const container = contributions.viewsContainers.secondarySidebar.find(
+			candidate => candidate.id === 'jscene3d-inspector'
+		);
+		const inspector = contributions.views['jscene3d-inspector']?.find(view => view.id === inspectorViewId);
+		const messages = extensionMessages();
+
+		assert.deepStrictEqual(container, {
+			id: 'jscene3d-inspector',
+			title: '%viewsContainer.inspector%',
+			icon: 'resources/jscene3d-mark.svg'
+		});
+		assert.match(container.id, /^[a-z0-9_-]+$/i);
+		assert.deepStrictEqual(inspector, {
+			id: inspectorViewId,
+			name: '%view.inspector%',
+			type: 'webview',
+			visibility: 'visible'
+		});
+		assert.strictEqual(localizedMessage(messages['viewsContainer.inspector']), 'JScene3D Inspector');
+		assert.strictEqual(localizedMessage(messages['view.inspector']), 'Inspector');
+		assert.strictEqual(manifest.contributes.configurationDefaults['workbench.secondarySideBar.defaultVisibility'], 'visibleInWorkspace');
 	});
 
 	test('localizes the complete Hierarchy welcome content and preserves its action', () => {
@@ -110,15 +137,19 @@ interface ExtensionManifest {
 		readonly menus: Readonly<Record<string, readonly { readonly command: string; readonly when?: string }[]>>;
 		readonly viewsContainers: {
 			readonly activitybar: readonly { readonly id: string; readonly title: string; readonly icon: string }[];
+			readonly secondarySidebar: readonly { readonly id: string; readonly title: string; readonly icon: string }[];
 		};
 		readonly customEditors: readonly {
 			readonly viewType: string;
 			readonly priority: string;
 			readonly selector: readonly { readonly filenamePattern: string }[];
 		}[];
-		readonly views: Readonly<Record<string, readonly { readonly id: string }[] | undefined>> & {
+		readonly views: Readonly<Record<string, readonly {
+			readonly id: string; readonly name?: string; readonly type?: string; readonly visibility?: string;
+		}[] | undefined>> & {
 			readonly jscene3d: readonly { readonly id: string }[];
 		};
+		readonly configurationDefaults: Readonly<Record<string, unknown>>;
 		readonly viewsWelcome: readonly { readonly view: string; readonly contents: string; readonly when?: string }[];
 		readonly configuration: {
 			readonly properties: Readonly<Record<string, {

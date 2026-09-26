@@ -10,6 +10,8 @@ import {
 	AuthoringProtocolClient,
 	DefinitionOpenResultDto,
 	InitializeResultDto,
+	HierarchySemanticTargetDto,
+	InspectorReadResultDto,
 	ProjectCloseResultDto,
 	ProjectOpenResultDto,
 	ProjectReplaceResultDto
@@ -147,6 +149,23 @@ export class AuthoringService implements Disposable {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().openDefinition(expectedProjectGeneration, assetId);
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
+		}
+	}
+
+	async readInspector(
+		expectedProjectGeneration: number,
+		expectedDefinitionRevision: number,
+		target: HierarchySemanticTargetDto
+	): Promise<InspectorReadResultDto> {
+		await this.ensureReady();
+		try {
+			return await this.requireClient().readInspector(
+				expectedProjectGeneration,
+				expectedDefinitionRevision,
+				target
+			);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}

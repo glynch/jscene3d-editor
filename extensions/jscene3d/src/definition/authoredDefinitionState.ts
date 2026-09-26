@@ -96,6 +96,14 @@ export class AuthoredDefinitionState {
 		this.emit();
 	}
 
+	clearSelection(): void {
+		if (this.selectionValue === undefined) {
+			return;
+		}
+		this.selectionValue = undefined;
+		this.emit();
+	}
+
 	dispose(): void {
 		this.resources.clear();
 		this.listeners.clear();

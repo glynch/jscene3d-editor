@@ -38,6 +38,19 @@ suite('JScene3D authored definition state', () => {
 		assert.strictEqual(state.selection, undefined);
 	});
 
+	test('explicitly clears semantic selection when native Hierarchy selection becomes empty', () => {
+		const state = new AuthoredDefinitionState();
+		const snapshot = definition('world-a');
+		state.setProjectGeneration(3);
+		state.register('jscene3d-definition:/world-a', 3, snapshot);
+		state.activate('jscene3d-definition:/world-a');
+		state.select(snapshot.roots[0]);
+
+		state.clearSelection();
+
+		assert.strictEqual(state.selection, undefined);
+	});
+
 	test('uses a deliberate no-active state for unrelated or stale tabs', () => {
 		const state = new AuthoredDefinitionState();
 		state.setProjectGeneration(3);

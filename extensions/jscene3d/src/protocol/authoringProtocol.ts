@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 1, minor: 1 } as const;
+export const authoringProtocolVersion = { major: 1, minor: 2 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -15,6 +15,7 @@ export const authoringProtocolMethods = {
 	replaceProject: 'project/replace',
 	closeProject: 'project/close',
 	openDefinition: 'definition/open',
+	readInspector: 'inspector/read',
 	shutdown: 'service/shutdown'
 } as const;
 
@@ -194,6 +195,116 @@ export type DefinitionOpenResultDto =
 		readonly failureCode: string | null;
 	};
 
+export type ProjectValueKindDto = 'null' | 'boolean' | 'number' | 'text' | 'array' | 'object'
+	| 'reference' | 'entity-target' | 'component-target';
+
+export interface InspectorComponentTypeDto {
+	readonly id: string;
+	readonly version: number;
+}
+
+export type InspectorValueDto =
+	| { readonly kind: 'null' }
+	| { readonly kind: 'boolean'; readonly value: boolean }
+	| { readonly kind: 'number'; readonly decimal: string }
+	| { readonly kind: 'text'; readonly value: string }
+	| { readonly kind: 'array'; readonly values: readonly InspectorValueDto[] }
+	| { readonly kind: 'object'; readonly values: Readonly<Record<string, InspectorValueDto>> }
+	| {
+		readonly kind: 'reference'; readonly referenceKind: 'project' | 'asset' | 'import';
+		readonly locator: string; readonly label: string; readonly resolution: 'resolved' | 'broken';
+		readonly revealUri: string | null;
+	}
+	| {
+		readonly kind: 'entity-target'; readonly entityId: string; readonly label: string;
+		readonly resolution: 'resolved' | 'broken'; readonly occurrence: HierarchyOccurrenceDto | null;
+	}
+	| {
+		readonly kind: 'component-target'; readonly entityId: string; readonly componentId: string;
+		readonly entityLabel: string; readonly componentLabel: string;
+		readonly componentType: InspectorComponentTypeDto | null; readonly resolution: 'resolved' | 'broken';
+		readonly occurrence: HierarchyOccurrenceDto | null;
+	};
+
+export type InspectorMutationTargetDto =
+	| {
+		readonly kind: 'entity-enabled'; readonly occurrence: HierarchyOccurrenceDto; readonly entityId: string;
+	}
+	| {
+		readonly kind: 'component-property'; readonly occurrence: HierarchyOccurrenceDto; readonly entityId: string;
+		readonly componentId: string; readonly propertyId: string;
+	};
+
+export interface InspectorNumericBoundDto {
+	readonly decimal: string;
+	readonly inclusive: boolean;
+}
+
+export interface InspectorEditorSemanticsDto {
+	readonly semantic: 'default' | 'integer' | 'vector2' | 'vector3' | 'quaternion' | 'color-linear';
+	readonly minimum: InspectorNumericBoundDto | null;
+	readonly maximum: InspectorNumericBoundDto | null;
+}
+
+export interface InspectorConstraintsDto {
+	readonly elementKind: ProjectValueKindDto | null;
+	readonly exactElementCount: number | null;
+	readonly acceptedReferenceKinds: readonly ('project' | 'asset' | 'import')[];
+	readonly editor: InspectorEditorSemanticsDto;
+}
+
+export interface InspectorPropertyStateDto {
+	readonly authoredValue: InspectorValueDto | null;
+	readonly defaultValue: InspectorValueDto | null;
+	readonly effectiveValue: InspectorValueDto | null;
+	readonly origin: 'authored' | 'default' | 'unset';
+	readonly validity: 'valid' | 'required-unset' | 'broken-reference' | 'metadata-unavailable';
+	readonly editable: boolean;
+}
+
+export interface InspectorPropertyDto {
+	readonly identity: string;
+	readonly label: string;
+	readonly description: string | null;
+	readonly valueKind: ProjectValueKindDto;
+	readonly required: boolean;
+	readonly constraints: InspectorConstraintsDto;
+	readonly state: InspectorPropertyStateDto;
+	readonly mutationTarget: InspectorMutationTargetDto | null;
+}
+
+export interface InspectorTargetGroupDto {
+	readonly identity: string;
+	readonly kind: 'entity' | 'component' | 'placement';
+	readonly label: string;
+	readonly description: string | null;
+	readonly componentId: string | null;
+	readonly componentType: InspectorComponentTypeDto | null;
+	readonly metadataStatus: 'available' | 'unavailable';
+	readonly editable: boolean;
+	readonly properties: readonly InspectorPropertyDto[];
+}
+
+export interface InspectorSnapshotDto {
+	readonly revision: number;
+	readonly target: HierarchySemanticTargetDto;
+	readonly title: string;
+	readonly definitionOrigin: 'authored' | 'generated';
+	readonly provenance: 'local' | 'generated';
+	readonly editable: boolean;
+	readonly groups: readonly InspectorTargetGroupDto[];
+}
+
+export type InspectorReadResultDto =
+	| {
+		readonly read: true; readonly projectGeneration: number; readonly snapshot: InspectorSnapshotDto;
+		readonly diagnostics: readonly ProjectDiagnosticDto[]; readonly failureCode: null;
+	}
+	| {
+		readonly read: false; readonly projectGeneration: null; readonly snapshot: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[]; readonly failureCode: string;
+	};
+
 /** Wire acknowledgement of process shutdown. */
 export interface ShutdownResultDto {
 	readonly shutdown: boolean;
@@ -254,6 +365,18 @@ export class AuthoringProtocolClient {
 			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
 			assetId: requiredNonEmptyString(assetId, 'assetId')
 		}, validateDefinitionOpenResult)).result;
+	}
+
+	async readInspector(
+		expectedProjectGeneration: number,
+		expectedDefinitionRevision: number,
+		target: HierarchySemanticTargetDto
+	): Promise<InspectorReadResultDto> {
+		return (await this.request(authoringProtocolMethods.readInspector, {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			expectedDefinitionRevision: requiredInteger(expectedDefinitionRevision, 'expectedDefinitionRevision'),
+			target: semanticTargetJson(target)
+		}, validateInspectorReadResult)).result;
 	}
 
 	async shutdown(): Promise<ShutdownResultDto> {
@@ -374,14 +497,309 @@ function validateDefinitionOpenResult(value: JsonValue): DefinitionOpenResultDto
 	return { opened: false, projectGeneration: null, definition: null, diagnostics, failureCode };
 }
 
+/** Validates the exact discriminated Inspector read result. */
+function validateInspectorReadResult(value: JsonValue): InspectorReadResultDto {
+	const object = requiredObject(value, 'inspector/read result');
+	const read = requiredBoolean(object.read, 'read');
+	const generation = nullableInteger(object.projectGeneration, 'projectGeneration');
+	const snapshot = object.snapshot === null ? null : validateInspectorSnapshot(object.snapshot);
+	const diagnostics = requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic);
+	const failureCode = nullableString(object.failureCode, 'failureCode');
+	if (read) {
+		if (generation === null || snapshot === null || failureCode !== null) {
+			throw new Error('inspector/read result has an inconsistent success shape');
+		}
+		return { read: true, projectGeneration: generation, snapshot, diagnostics, failureCode: null };
+	}
+	if (generation !== null || snapshot !== null || failureCode === null || failureCode.length === 0) {
+		throw new Error('inspector/read result has an inconsistent rejection shape');
+	}
+	return { read: false, projectGeneration: null, snapshot: null, diagnostics, failureCode };
+}
+
+/** Validates one complete immutable Inspector snapshot. */
+function validateInspectorSnapshot(value: JsonValue | undefined): InspectorSnapshotDto {
+	const object = requiredObject(value, 'inspector snapshot');
+	const target = validateSemanticTarget(object.target);
+	if (target.occurrence === null) {
+		throw new Error('Inspector target must contain a hierarchy occurrence');
+	}
+	const groups = requiredArray(object.groups, 'inspector groups').map(validateInspectorGroup);
+	const identities = new Set(groups.map(group => group.identity));
+	if (identities.size !== groups.length) {
+		throw new Error('Inspector group identities must be unique');
+	}
+	const editable = requiredBoolean(object.editable, 'inspector editable');
+	if (!editable && groups.some(group => group.editable || group.properties.some(property => property.state.editable))) {
+		throw new Error('A read-only Inspector snapshot cannot contain editable groups or properties');
+	}
+	return {
+		revision: requiredInteger(object.revision, 'inspector revision'),
+		target,
+		title: requiredString(object.title, 'inspector title'),
+		definitionOrigin: requiredDefinitionOrigin(object.definitionOrigin),
+		provenance: requiredInspectorProvenance(object.provenance),
+		editable,
+		groups
+	};
+}
+
+/** Validates one selectable Inspector target group. */
+function validateInspectorGroup(value: JsonValue): InspectorTargetGroupDto {
+	const object = requiredObject(value, 'Inspector group');
+	const kind = requiredInspectorGroupKind(object.kind);
+	const componentId = nullableString(object.componentId, 'Inspector group componentId');
+	const componentType = object.componentType === null ? null : validateInspectorComponentType(object.componentType);
+	if ((componentId === null) !== (componentType === null) || (kind === 'component') !== (componentId !== null)) {
+		throw new Error('Inspector component group identity is inconsistent');
+	}
+	const properties = requiredArray(object.properties, 'Inspector group properties').map(validateInspectorProperty);
+	if (new Set(properties.map(property => property.identity)).size !== properties.length) {
+		throw new Error('Inspector property identities must be unique within a group');
+	}
+	const metadataStatus = requiredMetadataStatus(object.metadataStatus);
+	const editable = requiredBoolean(object.editable, 'Inspector group editable');
+	if (!editable && properties.some(property => property.state.editable)) {
+		throw new Error('A read-only Inspector group cannot contain editable properties');
+	}
+	if (metadataStatus === 'unavailable'
+		&& (editable || properties.some(property => property.state.validity !== 'metadata-unavailable'))) {
+		throw new Error('An Inspector group without metadata must remain visible and read-only');
+	}
+	return {
+		identity: requiredNonEmptyString(object.identity, 'Inspector group identity'),
+		kind,
+		label: requiredString(object.label, 'Inspector group label'),
+		description: nullableString(object.description, 'Inspector group description'),
+		componentId,
+		componentType,
+		metadataStatus,
+		editable,
+		properties
+	};
+}
+
+/** Validates one exact component type. */
+function validateInspectorComponentType(value: JsonValue | undefined): InspectorComponentTypeDto {
+	const object = requiredObject(value, 'Inspector component type');
+	return {
+		id: requiredNonEmptyString(object.id, 'Inspector component type id'),
+		version: requiredPositiveInteger(object.version, 'Inspector component type version')
+	};
+}
+
+/** Validates one Inspector property and cross-field invariants. */
+function validateInspectorProperty(value: JsonValue): InspectorPropertyDto {
+	const object = requiredObject(value, 'Inspector property');
+	const valueKind = requiredProjectValueKind(object.valueKind);
+	const constraints = validateInspectorConstraints(object.constraints, valueKind);
+	const state = validateInspectorPropertyState(object.state, valueKind, constraints);
+	const required = requiredBoolean(object.required, 'Inspector property required');
+	if (state.validity === 'required-unset' && (!required || state.effectiveValue !== null)) {
+		throw new Error('Required-unset validity requires a required property without an effective value');
+	}
+	const mutationTarget = object.mutationTarget === null ? null : validateInspectorMutationTarget(object.mutationTarget);
+	if (state.editable !== (mutationTarget !== null)) {
+		throw new Error('Inspector property editability must match mutation identity');
+	}
+	return {
+		identity: requiredNonEmptyString(object.identity, 'Inspector property identity'),
+		label: requiredString(object.label, 'Inspector property label'),
+		description: nullableString(object.description, 'Inspector property description'),
+		valueKind,
+		required,
+		constraints,
+		state,
+		mutationTarget
+	};
+}
+
+/** Validates structural constraints and the closed typed semantic vocabulary. */
+function validateInspectorConstraints(value: JsonValue | undefined, valueKind: ProjectValueKindDto): InspectorConstraintsDto {
+	const object = requiredObject(value, 'Inspector constraints');
+	const elementKind = object.elementKind === null ? null : requiredProjectValueKind(object.elementKind);
+	const exactElementCount = object.exactElementCount === null
+		? null
+		: requiredPositiveInteger(object.exactElementCount, 'Inspector exactElementCount');
+	if (valueKind !== 'array' && (elementKind !== null || exactElementCount !== null)) {
+		throw new Error('Only arrays can declare element constraints');
+	}
+	const acceptedReferenceKinds = requiredArray(object.acceptedReferenceKinds, 'acceptedReferenceKinds')
+		.map(requiredReferenceKind);
+	if (valueKind !== 'reference' && acceptedReferenceKinds.length !== 0) {
+		throw new Error('Only reference properties can declare accepted reference kinds');
+	}
+	const editor = validateInspectorEditor(object.editor);
+	if (valueKind !== 'number' && (editor.minimum !== null || editor.maximum !== null)) {
+		throw new Error('Only number properties can declare numeric bounds');
+	}
+	validateEditorShape(editor.semantic, valueKind, elementKind, exactElementCount);
+	return { elementKind, exactElementCount, acceptedReferenceKinds, editor };
+}
+
+/** Validates one closed typed editor-semantic description. */
+function validateInspectorEditor(value: JsonValue | undefined): InspectorEditorSemanticsDto {
+	const object = requiredObject(value, 'Inspector editor semantics');
+	return {
+		semantic: requiredEditorSemantic(object.semantic),
+		minimum: object.minimum === null ? null : validateNumericBound(object.minimum),
+		maximum: object.maximum === null ? null : validateNumericBound(object.maximum)
+	};
+}
+
+function validateNumericBound(value: JsonValue | undefined): InspectorNumericBoundDto {
+	const object = requiredObject(value, 'Inspector numeric bound');
+	return {
+		decimal: requiredDecimal(object.decimal, 'Inspector numeric bound decimal'),
+		inclusive: requiredBoolean(object.inclusive, 'Inspector numeric bound inclusive')
+	};
+}
+
+/** Validates authored/default/effective state without collapsing origin, validity, and editability. */
+function validateInspectorPropertyState(
+	value: JsonValue | undefined,
+	valueKind: ProjectValueKindDto,
+	constraints: InspectorConstraintsDto
+): InspectorPropertyStateDto {
+	const object = requiredObject(value, 'Inspector property state');
+	const authoredValue = object.authoredValue === null ? null : validateInspectorValue(object.authoredValue);
+	const defaultValue = object.defaultValue === null ? null : validateInspectorValue(object.defaultValue);
+	const effectiveValue = object.effectiveValue === null ? null : validateInspectorValue(object.effectiveValue);
+	const origin = requiredPropertyOrigin(object.origin);
+	if ((origin === 'authored' && (authoredValue === null || effectiveValue === null))
+		|| (origin === 'default' && (authoredValue !== null || defaultValue === null || effectiveValue === null))
+		|| (origin === 'unset' && (authoredValue !== null || effectiveValue !== null))) {
+		throw new Error('Inspector property origin is inconsistent with projected values');
+	}
+	for (const projected of [authoredValue, defaultValue, effectiveValue]) {
+		if (projected !== null) {
+			validateInspectorValueShape(projected, valueKind, constraints);
+		}
+	}
+	return {
+		authoredValue,
+		defaultValue,
+		effectiveValue,
+		origin,
+		validity: requiredPropertyValidity(object.validity),
+		editable: requiredBoolean(object.editable, 'Inspector property editable')
+	};
+}
+
+/** Rejects projected values that contradict their descriptor-owned structural shape. */
+function validateInspectorValueShape(
+	value: InspectorValueDto,
+	valueKind: ProjectValueKindDto,
+	constraints: InspectorConstraintsDto
+): void {
+	if (value.kind !== valueKind) {
+		throw new Error('Inspector property value does not match its structural kind');
+	}
+	if (value.kind !== 'array') {
+		return;
+	}
+	if (constraints.exactElementCount !== null && value.values.length !== constraints.exactElementCount) {
+		throw new Error('Inspector array value does not match its exact element count');
+	}
+	if (constraints.elementKind !== null && value.values.some(element => element.kind !== constraints.elementKind)) {
+		throw new Error('Inspector array value does not match its element kind');
+	}
+}
+
+/** Recursively validates every tagged Inspector value variant. */
+function validateInspectorValue(value: JsonValue | undefined): InspectorValueDto {
+	const object = requiredObject(value, 'Inspector value');
+	const kind = requiredString(object.kind, 'Inspector value kind');
+	switch (kind) {
+		case 'null': return { kind };
+		case 'boolean': return { kind, value: requiredBoolean(object.value, 'Inspector boolean value') };
+		case 'number': return { kind, decimal: requiredDecimal(object.decimal, 'Inspector number decimal') };
+		case 'text': return { kind, value: requiredString(object.value, 'Inspector text value') };
+		case 'array': return {
+			kind,
+			values: requiredArray(object.values, 'Inspector array values').map(validateInspectorValue)
+		};
+		case 'object': {
+			const values = requiredObject(object.values, 'Inspector object values');
+			const validated: Record<string, InspectorValueDto> = {};
+			for (const [key, entry] of Object.entries(values)) {
+				validated[key] = validateInspectorValue(entry);
+			}
+			return { kind, values: validated };
+		}
+		case 'reference': return {
+			kind,
+			referenceKind: requiredReferenceKind(object.referenceKind),
+			locator: requiredNonEmptyString(object.locator, 'Inspector reference locator'),
+			label: requiredString(object.label, 'Inspector reference label'),
+			resolution: requiredResolution(object.resolution),
+			revealUri: nullableString(object.revealUri, 'Inspector reference revealUri')
+		};
+		case 'entity-target': return {
+			kind,
+			entityId: requiredNonEmptyString(object.entityId, 'Inspector entity target id'),
+			label: requiredString(object.label, 'Inspector entity target label'),
+			resolution: requiredResolution(object.resolution),
+			occurrence: object.occurrence === null ? null : validateOccurrence(object.occurrence)
+		};
+		case 'component-target': return {
+			kind,
+			entityId: requiredNonEmptyString(object.entityId, 'Inspector component target entity id'),
+			componentId: requiredNonEmptyString(object.componentId, 'Inspector component target component id'),
+			entityLabel: requiredString(object.entityLabel, 'Inspector component target entity label'),
+			componentLabel: requiredString(object.componentLabel, 'Inspector component target component label'),
+			componentType: object.componentType === null ? null : validateInspectorComponentType(object.componentType),
+			resolution: requiredResolution(object.resolution),
+			occurrence: object.occurrence === null ? null : validateOccurrence(object.occurrence)
+		};
+		default: throw new Error('Inspector value kind is invalid');
+	}
+}
+
+/** Validates the closed future mutation identity union. */
+function validateInspectorMutationTarget(value: JsonValue | undefined): InspectorMutationTargetDto {
+	const object = requiredObject(value, 'Inspector mutation target');
+	const kind = requiredString(object.kind, 'Inspector mutation target kind');
+	if (kind === 'entity-enabled') {
+		return {
+			kind,
+			occurrence: validateOccurrence(object.occurrence),
+			entityId: requiredNonEmptyString(object.entityId, 'Inspector mutation entityId')
+		};
+	}
+	if (kind === 'component-property') {
+		return {
+			kind,
+			occurrence: validateOccurrence(object.occurrence),
+			entityId: requiredNonEmptyString(object.entityId, 'Inspector mutation entityId'),
+			componentId: requiredNonEmptyString(object.componentId, 'Inspector mutation componentId'),
+			propertyId: requiredNonEmptyString(object.propertyId, 'Inspector mutation propertyId')
+		};
+	}
+	throw new Error('Inspector mutation target kind is invalid');
+}
+
+/** Serializes one already-validated semantic target as JSON request data. */
+function semanticTargetJson(target: HierarchySemanticTargetDto): JsonObject {
+	return {
+		kind: target.kind,
+		source: target.source,
+		identity: target.identity,
+		occurrence: target.occurrence === null ? null : {
+			definitionAssetId: target.occurrence.definitionAssetId,
+			entityPath: [...target.occurrence.entityPath]
+		}
+	};
+}
+
 /** Validates one complete structural-definition snapshot. */
 function validateDefinitionSnapshot(value: JsonValue | undefined): DefinitionSnapshotDto {
 	const object = requiredObject(value, 'definition');
 	const context = requiredObject(object.context, 'definition.context');
 	const origin = requiredDefinitionOrigin(context.origin);
 	const editable = requiredBoolean(context.editable, 'definition.context.editable');
-	if (editable !== (origin === 'authored')) {
-		throw new Error('definition.context editability must match origin');
+	if (editable && origin !== 'authored') {
+		throw new Error('a generated definition cannot be editable');
 	}
 	return {
 		revision: requiredInteger(object.revision, 'definition.revision'),
@@ -548,6 +966,94 @@ function requiredTargetKind(value: JsonValue | undefined): HierarchySemanticTarg
 	return value;
 }
 
+function requiredInspectorProvenance(value: JsonValue | undefined): InspectorSnapshotDto['provenance'] {
+	if (value !== 'local' && value !== 'generated') {
+		throw new Error('Inspector provenance is invalid');
+	}
+	return value;
+}
+
+function requiredInspectorGroupKind(value: JsonValue | undefined): InspectorTargetGroupDto['kind'] {
+	if (value !== 'entity' && value !== 'component' && value !== 'placement') {
+		throw new Error('Inspector group kind is invalid');
+	}
+	return value;
+}
+
+function requiredMetadataStatus(value: JsonValue | undefined): InspectorTargetGroupDto['metadataStatus'] {
+	if (value !== 'available' && value !== 'unavailable') {
+		throw new Error('Inspector metadata status is invalid');
+	}
+	return value;
+}
+
+function requiredProjectValueKind(value: JsonValue | undefined): ProjectValueKindDto {
+	if (value !== 'null' && value !== 'boolean' && value !== 'number' && value !== 'text'
+		&& value !== 'array' && value !== 'object' && value !== 'reference'
+		&& value !== 'entity-target' && value !== 'component-target') {
+		throw new Error('Inspector project value kind is invalid');
+	}
+	return value;
+}
+
+function requiredReferenceKind(value: JsonValue | undefined): 'project' | 'asset' | 'import' {
+	if (value !== 'project' && value !== 'asset' && value !== 'import') {
+		throw new Error('Inspector reference kind is invalid');
+	}
+	return value;
+}
+
+function requiredResolution(value: JsonValue | undefined): 'resolved' | 'broken' {
+	if (value !== 'resolved' && value !== 'broken') {
+		throw new Error('Inspector resolution is invalid');
+	}
+	return value;
+}
+
+function requiredEditorSemantic(value: JsonValue | undefined): InspectorEditorSemanticsDto['semantic'] {
+	if (value !== 'default' && value !== 'integer' && value !== 'vector2' && value !== 'vector3'
+		&& value !== 'quaternion' && value !== 'color-linear') {
+		throw new Error('Inspector editor semantic is invalid');
+	}
+	return value;
+}
+
+function validateEditorShape(
+	semantic: InspectorEditorSemanticsDto['semantic'],
+	valueKind: ProjectValueKindDto,
+	elementKind: ProjectValueKindDto | null,
+	exactElementCount: number | null
+): void {
+	if (semantic === 'integer' && valueKind !== 'number') {
+		throw new Error('Integer semantics require a number property');
+	}
+	const counts: Partial<Record<InspectorEditorSemanticsDto['semantic'], number>> = {
+		vector2: 2,
+		vector3: 3,
+		quaternion: 4,
+		'color-linear': 3
+	};
+	const count = counts[semantic];
+	if (count !== undefined && (valueKind !== 'array' || elementKind !== 'number' || exactElementCount !== count)) {
+		throw new Error(`${semantic} semantics require a fixed numeric array`);
+	}
+}
+
+function requiredPropertyOrigin(value: JsonValue | undefined): InspectorPropertyStateDto['origin'] {
+	if (value !== 'authored' && value !== 'default' && value !== 'unset') {
+		throw new Error('Inspector property origin is invalid');
+	}
+	return value;
+}
+
+function requiredPropertyValidity(value: JsonValue | undefined): InspectorPropertyStateDto['validity'] {
+	if (value !== 'valid' && value !== 'required-unset' && value !== 'broken-reference'
+		&& value !== 'metadata-unavailable') {
+		throw new Error('Inspector property validity is invalid');
+	}
+	return value;
+}
+
 /** Requires one structured presentation-text kind. */
 function requiredTextKind(value: JsonValue | undefined): AuthoringTextDto['kind'] {
 	if (value !== 'literal' && value !== 'message') {
@@ -585,6 +1091,15 @@ function requiredNonEmptyString(value: JsonValue | undefined, name: string): str
 	const result = requiredString(value, name);
 	if (result.length === 0) {
 		throw new Error(`${name} must not be empty`);
+	}
+	return result;
+}
+
+/** Requires canonical non-exponent decimal text so Java precision is retained exactly. */
+function requiredDecimal(value: JsonValue | undefined, name: string): string {
+	const result = requiredString(value, name);
+	if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(result)) {
+		throw new Error(`${name} must be canonical decimal text`);
 	}
 	return result;
 }

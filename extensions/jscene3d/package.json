@@ -90,6 +90,13 @@
 					"title": "%viewsContainer.jscene3d%",
 					"icon": "resources/jscene3d-mark.svg"
 				}
+			],
+			"secondarySidebar": [
+				{
+					"id": "jscene3d-inspector",
+					"title": "%viewsContainer.inspector%",
+					"icon": "resources/jscene3d-mark.svg"
+				}
 			]
 		},
 		"views": {
@@ -104,6 +111,14 @@
 					"id": "jscene3d.project",
 					"name": "%view.project%",
 					"icon": "$(folder)",
+					"visibility": "visible"
+				}
+			],
+			"jscene3d-inspector": [
+				{
+					"id": "jscene3d.inspector",
+					"name": "%view.inspector%",
+					"type": "webview",
 					"visibility": "visible"
 				}
 			]
@@ -154,7 +169,7 @@
 		},
 		"configurationDefaults": {
 			"workbench.colorTheme": "JScene3D Dark",
-			"workbench.secondarySideBar.defaultVisibility": "hidden",
+			"workbench.secondarySideBar.defaultVisibility": "visibleInWorkspace",
 			"chat.disableAIFeatures": true,
 			"chat.agentsControl.enabled": "hidden",
 			"chat.viewSessions.enabled": false,
