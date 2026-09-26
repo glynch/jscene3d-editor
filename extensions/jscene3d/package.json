@@ -105,13 +105,14 @@
 					"id": "jscene3d.hierarchy",
 					"name": "%view.hierarchy%",
 					"icon": "$(list-tree)",
+					"when": "jscene3d.projectOpen",
 					"visibility": "visible"
 				},
 				{
 					"id": "jscene3d.project",
 					"name": "%view.project%",
 					"icon": "$(folder)",
-					"visibility": "visible"
+					"visibility": "collapsed"
 				}
 			],
 			"jscene3d-inspector": [
@@ -124,11 +125,6 @@
 			]
 		},
 		"viewsWelcome": [
-			{
-				"view": "jscene3d.hierarchy",
-				"contents": "%view.hierarchy.noProject%",
-				"when": "!jscene3d.projectOpen"
-			},
 			{
 				"view": "jscene3d.hierarchy",
 				"contents": "%view.hierarchy.noActiveDefinition%",

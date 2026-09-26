@@ -42,9 +42,11 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(openDefinition?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
 	});
 
-	test('places both JScene3D views in one localized Activity Bar container', () => {
+	test('keeps Project available and makes Hierarchy conditional on an open project', () => {
 		const contributions = extensionManifest().contributes;
 		const container = contributions.viewsContainers.activitybar.find(candidate => candidate.id === 'jscene3d');
+		const hierarchy = contributions.views.jscene3d.find(view => view.id === hierarchyViewId);
+		const project = contributions.views.jscene3d.find(view => view.id === projectViewId);
 		const messages = extensionMessages();
 		const icon = path.join(__dirname, '..', '..', container?.icon ?? '');
 
@@ -58,6 +60,10 @@ suite('JScene3D extension contributions', () => {
 			hierarchyViewId,
 			projectViewId
 		]);
+		assert.strictEqual(hierarchy?.when, 'jscene3d.projectOpen');
+		assert.strictEqual(hierarchy?.visibility, 'visible');
+		assert.strictEqual(project?.when, undefined);
+		assert.strictEqual(project?.visibility, 'collapsed');
 		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
 		assert.strictEqual(path.extname(icon), '.svg');
 		assert.ok(fs.statSync(icon).isFile());
@@ -89,7 +95,7 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(manifest.contributes.configurationDefaults['workbench.secondarySideBar.defaultVisibility'], 'visibleInWorkspace');
 	});
 
-	test('localizes the complete Hierarchy welcome states and preserves their actions', () => {
+	test('keeps only the project-open Hierarchy welcome state', () => {
 		const welcomes = extensionManifest().contributes.viewsWelcome.filter(entry => entry.view === hierarchyViewId);
 		const messages = extensionMessages();
 
@@ -101,11 +107,6 @@ suite('JScene3D extension contributions', () => {
 			})),
 			[
 				{
-					contents: '%view.hierarchy.noProject%',
-					when: '!jscene3d.projectOpen',
-					localized: `Open a JScene3D project to begin.\n[Open Project...](command:${openProjectCommandId})`
-				},
-				{
 					contents: '%view.hierarchy.noActiveDefinition%',
 					when: 'jscene3d.projectOpen && !jscene3d.definitionActive',
 					localized: `Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:${openDefinitionCommandId})`
@@ -114,13 +115,13 @@ suite('JScene3D extension contributions', () => {
 		);
 		assert.deepStrictEqual(
 			{
-				noProject: messageComments(messages['view.hierarchy.noProject']),
 				noActiveDefinition: messageComments(messages['view.hierarchy.noActiveDefinition']),
+				hasNoProjectMessage: messages['view.hierarchy.noProject'] !== undefined,
 				hasRawLocalization: welcomes.some(welcome => localizedContribution(welcome.contents, messages)?.includes('%'))
 			},
 			{
-				noProject: ['{Locked="](command:jscene3d.openProject)"}'],
 				noActiveDefinition: ['{Locked="](command:jscene3d.openDefinition)"}'],
+				hasNoProjectMessage: false,
 				hasRawLocalization: false
 			}
 		);
@@ -166,9 +167,9 @@ interface ExtensionManifest {
 			readonly selector: readonly { readonly filenamePattern: string }[];
 		}[];
 		readonly views: Readonly<Record<string, readonly {
-			readonly id: string; readonly name?: string; readonly type?: string; readonly visibility?: string;
+			readonly id: string; readonly name?: string; readonly type?: string; readonly visibility?: string; readonly when?: string;
 		}[] | undefined>> & {
-			readonly jscene3d: readonly { readonly id: string }[];
+			readonly jscene3d: readonly { readonly id: string; readonly visibility?: string; readonly when?: string }[];
 		};
 		readonly configurationDefaults: Readonly<Record<string, unknown>>;
 		readonly viewsWelcome: readonly { readonly view: string; readonly contents: string; readonly when?: string }[];

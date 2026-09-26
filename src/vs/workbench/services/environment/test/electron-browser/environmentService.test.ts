@@ -12,10 +12,16 @@ import { TestProductService } from '../../../../test/common/workbenchTestService
 suite('NativeWorkbenchEnvironmentService', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('maps the JScene3D product default view to non-forced workbench construction options', () => {
-		assert.deepStrictEqual(getNativeWorkbenchConstructionOptions(product), {
+	test('leaves the JScene3D product on the normal native workbench layout', () => {
+		assert.strictEqual(getNativeWorkbenchConstructionOptions(product), undefined);
+	});
+
+	test('maps a generic product default view to non-forced workbench construction options', () => {
+		assert.deepStrictEqual(getNativeWorkbenchConstructionOptions({
+			defaultLayout: { views: [{ id: 'example.primaryView' }] }
+		}), {
 			defaultLayout: {
-				views: [{ id: 'jscene3d.hierarchy' }]
+				views: [{ id: 'example.primaryView' }]
 			}
 		});
 	});

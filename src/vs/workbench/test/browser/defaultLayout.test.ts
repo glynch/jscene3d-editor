@@ -10,35 +10,35 @@ import { getDefaultLayoutViews } from '../../browser/defaultLayout.js';
 suite('Workbench default layout', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	const productDefault = { views: [{ id: 'jscene3d.hierarchy' }] };
+	const productDefault = { views: [{ id: 'example.primaryView' }] };
 
 	test('makes a non-forced product default eligible only for a new workspace', () => {
 		assert.deepStrictEqual({
 			newWorkspace: getDefaultLayoutViews(productDefault, true),
 			restoredWorkspace: getDefaultLayoutViews(productDefault, false)
 		}, {
-			newWorkspace: ['jscene3d.hierarchy'],
+			newWorkspace: ['example.primaryView'],
 			restoredWorkspace: undefined
 		});
 	});
 
-	test('leaves saved Explorer and JScene3D selections eligible in an existing workspace', () => {
+	test('leaves saved view-container selections eligible in an existing workspace', () => {
 		const productDefaultViews = getDefaultLayoutViews(productDefault, false);
-		const savedExplorer = 'workbench.view.explorer';
-		const savedJScene3D = 'workbench.view.extension.jscene3d';
+		const savedPrimary = 'workbench.view.explorer';
+		const savedSecondary = 'workbench.view.extension.example';
 
 		assert.deepStrictEqual({
 			productDefaultViews,
-			explorerToRestore: productDefaultViews === undefined ? savedExplorer : savedJScene3D,
-			jscene3dToRestore: productDefaultViews === undefined ? savedJScene3D : savedExplorer
+			primaryToRestore: productDefaultViews === undefined ? savedPrimary : savedSecondary,
+			secondaryToRestore: productDefaultViews === undefined ? savedSecondary : savedPrimary
 		}, {
 			productDefaultViews: undefined,
-			explorerToRestore: savedExplorer,
-			jscene3dToRestore: savedJScene3D
+			primaryToRestore: savedPrimary,
+			secondaryToRestore: savedSecondary
 		});
 	});
 
 	test('preserves forced web workbench defaults', () => {
-		assert.deepStrictEqual(getDefaultLayoutViews({ ...productDefault, force: true }, false), ['jscene3d.hierarchy']);
+		assert.deepStrictEqual(getDefaultLayoutViews({ ...productDefault, force: true }, false), ['example.primaryView']);
 	});
 });
