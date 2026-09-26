@@ -19,7 +19,7 @@ import { ProjectReopenOutcome, ProjectWorkspaceOpenResult } from '../project/pro
 import { DefinitionSnapshotDto, ProjectDiagnosticDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authoring workflow', () => {
-	test('opens an initial project without exposing protocol result nesting', async () => {
+	test('opens an initial project and reveals the JScene3D workspace exactly once', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextOpen = { status: 'opened', workspace: 'transitionRequested' };
 
@@ -28,6 +28,7 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.lifecycle.opened, [{ scheme: 'file', fsPath: '/projects/a/a.j3d' }]);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[]]);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
 	});
 
 	test('treats project selection cancellation as a no-op', async () => {
@@ -39,6 +40,7 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.lifecycle.opened, []);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, []);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 	});
 
 	test('rejects a non-local project selection before invoking project lifecycle', async () => {
@@ -49,6 +51,7 @@ suite('JScene3D authoring workflow', () => {
 
 		assert.deepStrictEqual(fixture.lifecycle.opened, []);
 		assert.deepStrictEqual(fixture.host.notifications, ['localProjectRequired']);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 		assert.ok(fixture.logger.lines.some(line => line.startsWith('Open Project command rejected')));
 	});
 
@@ -59,18 +62,25 @@ suite('JScene3D authoring workflow', () => {
 		await fixture.workflow.openProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectOpenRejected']);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 	});
 
 	test('distinguishes replacement success, candidate rejection, and conflict', async () => {
 		for (const scenario of [
-			{ outcome: { status: 'replaced', workspace: 'unchanged' } as const, notification: undefined },
+			{
+				outcome: { status: 'replaced', workspace: 'unchanged' } as const,
+				notification: undefined,
+				workspaceRevealCalls: 1
+			},
 			{
 				outcome: { status: 'candidateRejected', workspace: 'unchanged' } as const,
-				notification: 'projectCandidateRejected' as const
+				notification: 'projectCandidateRejected' as const,
+				workspaceRevealCalls: 0
 			},
 			{
 				outcome: { status: 'conflict', workspace: 'unchanged' } as const,
-				notification: 'projectReplacementConflict' as const
+				notification: 'projectReplacementConflict' as const,
+				workspaceRevealCalls: 0
 			}
 		]) {
 			const fixture = workflowFixture(openSnapshot());
@@ -80,6 +90,7 @@ suite('JScene3D authoring workflow', () => {
 
 			assert.deepStrictEqual(fixture.host.notifications,
 				scenario.notification === undefined ? [] : [scenario.notification]);
+			assert.strictEqual(fixture.host.workspaceRevealCalls, scenario.workspaceRevealCalls);
 		}
 	});
 
@@ -90,6 +101,7 @@ suite('JScene3D authoring workflow', () => {
 		await fixture.workflow.openProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectOpenFailed']);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 		assert.ok(fixture.logger.lines.includes('Open Project command failed: workspace unavailable'));
 	});
 
@@ -170,6 +182,17 @@ suite('JScene3D authoring workflow', () => {
 		await fixture.workflow.reopenPendingProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectReopenFailed']);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+	});
+
+	test('reveals the JScene3D workspace after a successful persisted project reopen', async () => {
+		const fixture = workflowFixture(closedSnapshot());
+		fixture.lifecycle.nextReopen = { status: 'reopened' };
+
+		await fixture.workflow.reopenPendingProject();
+
+		assert.deepStrictEqual(fixture.host.notifications, []);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
 	});
 });
 
@@ -248,6 +271,7 @@ class TestWorkflowHost implements AuthoringWorkflowHost {
 	selection: ProjectLocation | undefined = { scheme: 'file', fsPath: '/projects/a/a.j3d' };
 	readonly diagnosticPublications: Array<readonly ProjectDiagnosticDto[]> = [];
 	readonly notifications: AuthoringWorkflowNotification[] = [];
+	workspaceRevealCalls = 0;
 
 	selectProjectDescriptor(): Promise<ProjectLocation | undefined> {
 		return Promise.resolve(this.selection);
@@ -255,6 +279,11 @@ class TestWorkflowHost implements AuthoringWorkflowHost {
 
 	publishDefinitionDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void {
 		this.diagnosticPublications.push(diagnostics);
+	}
+
+	revealProjectWorkspace(): Promise<void> {
+		this.workspaceRevealCalls++;
+		return Promise.resolve();
 	}
 
 	notify(notification: AuthoringWorkflowNotification): Promise<void> {

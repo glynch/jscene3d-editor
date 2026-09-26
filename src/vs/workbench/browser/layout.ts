@@ -51,6 +51,7 @@ import { ITelemetryService } from '../../platform/telemetry/common/telemetry.js'
 import { IAuxiliaryWindowService } from '../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { CodeWindow, mainWindow } from '../../base/browser/window.js';
 import { localize } from '../../nls.js';
+import { getDefaultLayoutViews } from './defaultLayout.js';
 
 //#region Layout Implementation
 
@@ -777,7 +778,10 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				editorsToOpen: this.resolveEditorsToOpen(fileService, initialEditorsState),
 			},
 			views: {
-				defaults: this.getDefaultLayoutViews(this.environmentService, this.storageService),
+				defaults: getDefaultLayoutViews(
+					this.environmentService.options?.defaultLayout,
+					this.storageService.isNew(StorageScope.WORKSPACE)
+				),
 				containerToRestore: {}
 			}
 		};
@@ -849,24 +853,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 		// Window border
 		this.updateWindowBorder(true);
-	}
-
-	private getDefaultLayoutViews(environmentService: IBrowserWorkbenchEnvironmentService, storageService: IStorageService): string[] | undefined {
-		const defaultLayout = environmentService.options?.defaultLayout;
-		if (!defaultLayout) {
-			return undefined;
-		}
-
-		if (!defaultLayout.force && !storageService.isNew(StorageScope.WORKSPACE)) {
-			return undefined;
-		}
-
-		const { views } = defaultLayout;
-		if (views?.length) {
-			return views.map(view => view.id);
-		}
-
-		return undefined;
 	}
 
 	private shouldRestoreEditors(contextService: IWorkspaceContextService, initialEditorsState: IInitialEditorsState | undefined): boolean {

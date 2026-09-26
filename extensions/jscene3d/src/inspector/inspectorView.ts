@@ -130,7 +130,6 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 		noResults: translate('No matching components or properties.'),
 		properties: translate('Properties'),
 		readOnly: translate('Read-only'),
-		defaultValue: translate('Default'),
 		unset: translate('Unset'),
 		required: translate('Required'),
 		broken: translate('Broken reference'),
@@ -295,7 +294,6 @@ if (bootstrap.status !== 'ready') {
 
 	function propertyBadges(property) {
 		const badges = [];
-		if (property.state.origin === 'default') { badges.push({ text: bootstrap.strings.defaultValue }); }
 		if (property.state.origin === 'unset') { badges.push({ text: property.required ? bootstrap.strings.required : bootstrap.strings.unset, problem: property.required }); }
 		if (property.state.validity === 'broken-reference') { badges.push({ text: bootstrap.strings.broken, problem: true }); }
 		if (property.state.validity === 'metadata-unavailable') { badges.push({ text: bootstrap.strings.metadataUnavailable }); }

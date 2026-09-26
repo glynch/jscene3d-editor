@@ -91,6 +91,45 @@ suite('JScene3D Inspector view', () => {
 		assert.doesNotMatch(html, /inspector\/read/);
 	});
 
+	test('keeps provenance in the snapshot while presenting ordinary default and authored states quietly', () => {
+		const base = snapshot();
+		const template = base.groups[1].properties[0];
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], {
+				...base.groups[1],
+				properties: [template, {
+					...template,
+					identity: 'gravity',
+					label: 'Gravity',
+					state: {
+						authoredValue: { kind: 'number', decimal: '18' },
+						defaultValue: { kind: 'number', decimal: '9.8' },
+						effectiveValue: { kind: 'number', decimal: '18' },
+						origin: 'authored', validity: 'valid', editable: false
+					}
+				}, {
+					...template,
+					identity: 'optional-target',
+					label: 'Optional Target',
+					state: {
+						authoredValue: null, defaultValue: null, effectiveValue: null,
+						origin: 'unset', validity: 'valid', editable: false
+					}
+				}]
+			}]
+		};
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.match(html, /"effectiveValue":\{"kind":"number","decimal":"4\.0"\}/);
+		assert.match(html, /"origin":"default"/);
+		assert.match(html, /"origin":"authored"/);
+		assert.match(html, /"origin":"unset"/);
+		assert.match(html, /"unset":"Unset"/);
+		assert.doesNotMatch(html, /"defaultValue":"Default"/);
+		assert.doesNotMatch(html, /Authored/);
+	});
+
 	test('retains read-only and missing-metadata presentation in the webview model', () => {
 		const base = snapshot();
 		const missingGroup = {
@@ -138,6 +177,20 @@ suite('JScene3D Inspector view', () => {
 
 function translate(message: string, ...args: string[]): string {
 	return args.reduce((value, argument, index) => value.replace(`{${index}}`, argument), message);
+}
+
+function readyState(inspector: InspectorSnapshotDto, selectedGroupId: string) {
+	return {
+		status: 'ready' as const,
+		selection: {
+			projectGeneration: 1,
+			assetId: 'world-a',
+			occurrence: inspector.target.occurrence!,
+			target: inspector.target
+		},
+		inspector,
+		selectedGroupId
+	};
 }
 
 function snapshot(): InspectorSnapshotDto {

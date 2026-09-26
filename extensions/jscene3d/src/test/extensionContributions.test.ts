@@ -89,19 +89,40 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(manifest.contributes.configurationDefaults['workbench.secondarySideBar.defaultVisibility'], 'visibleInWorkspace');
 	});
 
-	test('localizes the complete Hierarchy welcome content and preserves its action', () => {
-		const welcome = extensionManifest().contributes.viewsWelcome.find(entry => entry.view === hierarchyViewId);
+	test('localizes the complete Hierarchy welcome states and preserves their actions', () => {
+		const welcomes = extensionManifest().contributes.viewsWelcome.filter(entry => entry.view === hierarchyViewId);
 		const messages = extensionMessages();
 
-		assert.strictEqual(welcome?.contents, '%view.hierarchy.noActive%');
-		assert.strictEqual(welcome?.when, '!jscene3d.definitionActive');
-		assert.strictEqual(
-			localizedContribution(welcome?.contents, messages),
-			'Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)'
+		assert.deepStrictEqual(
+			welcomes.map(welcome => ({
+				contents: welcome.contents,
+				when: welcome.when,
+				localized: localizedContribution(welcome.contents, messages)
+			})),
+			[
+				{
+					contents: '%view.hierarchy.noProject%',
+					when: '!jscene3d.projectOpen',
+					localized: `Open a JScene3D project to begin.\n[Open Project...](command:${openProjectCommandId})`
+				},
+				{
+					contents: '%view.hierarchy.noActiveDefinition%',
+					when: 'jscene3d.projectOpen && !jscene3d.definitionActive',
+					localized: `Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:${openDefinitionCommandId})`
+				}
+			]
 		);
 		assert.deepStrictEqual(
-			messageComments(messages['view.hierarchy.noActive']),
-			['{Locked="](command:jscene3d.openDefinition)"}']
+			{
+				noProject: messageComments(messages['view.hierarchy.noProject']),
+				noActiveDefinition: messageComments(messages['view.hierarchy.noActiveDefinition']),
+				hasRawLocalization: welcomes.some(welcome => localizedContribution(welcome.contents, messages)?.includes('%'))
+			},
+			{
+				noProject: ['{Locked="](command:jscene3d.openProject)"}'],
+				noActiveDefinition: ['{Locked="](command:jscene3d.openDefinition)"}'],
+				hasRawLocalization: false
+			}
 		);
 	});
 

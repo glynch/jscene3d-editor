@@ -33,6 +33,7 @@ export type AuthoringWorkflowNotification =
 export interface AuthoringWorkflowHost {
 	selectProjectDescriptor(): Promise<ProjectLocation | undefined>;
 	publishDefinitionDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
+	revealProjectWorkspace(): Promise<void>;
 	notify(notification: AuthoringWorkflowNotification): Promise<void>;
 }
 
@@ -105,6 +106,7 @@ export class AuthoringWorkflow {
 		switch (result.status) {
 			case 'opened':
 			case 'replaced':
+				await this.revealProjectWorkspace();
 				return;
 			case 'openRejected':
 				await this.host.notify('projectOpenRejected');
@@ -161,6 +163,8 @@ export class AuthoringWorkflow {
 		const outcome = await this.projectLifecycle.reopenPendingProject();
 		if (outcome.status === 'failed') {
 			await this.host.notify('projectReopenFailed');
+		} else if (outcome.status === 'reopened') {
+			await this.revealProjectWorkspace();
 		}
 	}
 
@@ -175,6 +179,14 @@ export class AuthoringWorkflow {
 		}
 		this.diagnosticProjectGeneration = generation;
 		this.host.publishDefinitionDiagnostics([]);
+	}
+
+	private async revealProjectWorkspace(): Promise<void> {
+		try {
+			await this.host.revealProjectWorkspace();
+		} catch (error) {
+			this.logger.appendLine(`Failed to reveal JScene3D workspace: ${errorMessage(error)}`);
+		}
 	}
 }
 

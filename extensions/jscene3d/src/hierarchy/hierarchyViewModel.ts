@@ -6,6 +6,14 @@
 import { HierarchyNodeDto, HierarchyOccurrenceDto } from '../protocol/authoringProtocol';
 
 export const hierarchyViewId = 'jscene3d.hierarchy';
+export const hierarchyFocusCommandId = `${hierarchyViewId}.focus`;
+
+export type HierarchyCommandExecutor = (command: string) => PromiseLike<unknown> | unknown;
+
+/** Reveals the existing JScene3D workspace by focusing its primary Hierarchy view. */
+export async function revealJScene3DWorkspace(executeCommand: HierarchyCommandExecutor): Promise<void> {
+	await executeCommand(hierarchyFocusCommandId);
+}
 
 /** VS Code-independent presentation model for one authoritative hierarchy occurrence. */
 export interface HierarchyTreeItemModel {

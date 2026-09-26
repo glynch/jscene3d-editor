@@ -11,7 +11,13 @@
 	"view.project": "JScene3D Project",
 	"view.hierarchy": "Hierarchy",
 	"view.inspector": "Inspector",
-	"view.hierarchy.noActive": {
+	"view.hierarchy.noProject": {
+		"message": "Open a JScene3D project to begin.\n[Open Project...](command:jscene3d.openProject)",
+		"comment": [
+			"{Locked=\"](command:jscene3d.openProject)\"}"
+		]
+	},
+	"view.hierarchy.noActiveDefinition": {
 		"message": "Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:jscene3d.openDefinition)",
 		"comment": [
 			"{Locked=\"](command:jscene3d.openDefinition)\"}"

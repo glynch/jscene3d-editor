@@ -96,6 +96,11 @@ export interface IDictationRuntimeProductConfig {
 	readonly urlTemplate: string;
 }
 
+/** Default workbench layout contributed by a product. */
+export interface IProductDefaultLayout {
+	readonly views?: readonly { readonly id: string }[];
+}
+
 export interface IProductConfiguration {
 	readonly version: string;
 	readonly date?: string;
@@ -115,6 +120,7 @@ export interface IProductConfiguration {
 	readonly applicationName: string;
 	readonly embedderIdentifier?: string;
 	readonly agentsTelemetryAppName?: string;
+	readonly defaultLayout?: IProductDefaultLayout;
 
 	readonly urlProtocol: string;
 	readonly dataFolderName: string; // location for extensions (e.g. ~/.vscode-insiders)

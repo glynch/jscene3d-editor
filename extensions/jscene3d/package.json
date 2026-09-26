@@ -126,8 +126,13 @@
 		"viewsWelcome": [
 			{
 				"view": "jscene3d.hierarchy",
-				"contents": "%view.hierarchy.noActive%",
-				"when": "!jscene3d.definitionActive"
+				"contents": "%view.hierarchy.noProject%",
+				"when": "!jscene3d.projectOpen"
+			},
+			{
+				"view": "jscene3d.hierarchy",
+				"contents": "%view.hierarchy.noActiveDefinition%",
+				"when": "jscene3d.projectOpen && !jscene3d.definitionActive"
 			}
 		],
 		"customEditors": [

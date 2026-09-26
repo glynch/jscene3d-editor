@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { PerformanceMark } from '../../../../base/common/performance.js';
+import { IProductConfiguration } from '../../../../base/common/product.js';
 import { IBrowserWorkbenchEnvironmentService } from '../browser/environmentService.js';
 import { IColorScheme, INativeWindowConfiguration, IOSConfiguration, IPath, IPathsToWaitFor } from '../../../../platform/window/common/window.js';
 import { IEnvironmentService, INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
@@ -15,6 +16,7 @@ import { Schemas } from '../../../../base/common/network.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { decodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
+import { IWorkbenchConstructionOptions } from '../../../browser/web.api.js';
 
 export const INativeWorkbenchEnvironmentService = refineServiceDecorator<IEnvironmentService, INativeWorkbenchEnvironmentService>(IEnvironmentService);
 
@@ -56,7 +58,24 @@ export interface INativeWorkbenchEnvironmentService extends IBrowserWorkbenchEnv
 	readonly filesToWait?: IPathsToWaitFor;
 }
 
+/** Maps optional product layout defaults to the existing workbench construction input. */
+export function getNativeWorkbenchConstructionOptions(productConfiguration: Pick<IProductConfiguration, 'defaultLayout'>): IWorkbenchConstructionOptions | undefined {
+	const defaultLayout = productConfiguration.defaultLayout;
+	if (!defaultLayout) {
+		return undefined;
+	}
+
+	return {
+		defaultLayout: {
+			views: defaultLayout.views?.map(view => ({ id: view.id }))
+		}
+	};
+}
+
 export class NativeWorkbenchEnvironmentService extends AbstractNativeEnvironmentService implements INativeWorkbenchEnvironmentService {
+
+	@memoize
+	get options(): IWorkbenchConstructionOptions | undefined { return getNativeWorkbenchConstructionOptions(this.productService); }
 
 	@memoize
 	get mainPid() { return this.configuration.mainPid; }

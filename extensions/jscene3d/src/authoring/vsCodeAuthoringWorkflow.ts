@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { revealJScene3DWorkspace } from '../hierarchy/hierarchyViewModel';
 import { ProjectLocation } from '../project/projectLocation';
 import { publishProjectDiagnostics } from '../project/projectDiagnostics';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
@@ -27,6 +28,10 @@ export class VsCodeAuthoringWorkflowHost implements AuthoringWorkflowHost {
 
 	publishDefinitionDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void {
 		publishProjectDiagnostics(this.definitionDiagnostics, diagnostics);
+	}
+
+	async revealProjectWorkspace(): Promise<void> {
+		await revealJScene3DWorkspace(command => vscode.commands.executeCommand(command));
 	}
 
 	async notify(notification: AuthoringWorkflowNotification): Promise<void> {
