@@ -41,6 +41,28 @@ suite('JScene3D authoring service lifecycle', () => {
 		assert.deepStrictEqual(process.initializationLanguages, ['fr-CA']);
 	});
 
+	test('returns a definition result atomically with its validated Java connection generation', async () => {
+		const process = new TestAuthoringProcess();
+		process.exitAfterShutdown = true;
+		const service = createService(process);
+
+		await service.openProject('/projects/sample/sample.j3d');
+		const response = await service.openDefinition(7, 'world:main');
+		await service.shutdown();
+
+		assert.deepStrictEqual({
+			connectionGeneration: response.connectionGeneration,
+			opened: response.result.opened,
+			projectGeneration: response.result.projectGeneration,
+			assetId: response.result.definition?.context.assetId
+		}, {
+			connectionGeneration: 'connection-test',
+			opened: true,
+			projectGeneration: 7,
+			assetId: 'world:main'
+		});
+	});
+
 	test('shares concurrent startup without launching another process', async () => {
 		const process = new TestAuthoringProcess();
 		process.respondToInitialize = false;
@@ -316,6 +338,26 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						descriptor: '/projects/replacement/replacement.j3d',
 						startupWorld: { id: 'world:main', name: 'Main' },
 						assetCounts: { authored: 1, projected: 1 }
+					},
+					diagnostics: [],
+					failureCode: null
+				});
+				break;
+			case 'definition/open':
+				this.respond(id, {
+					opened: true,
+					projectGeneration: 7,
+					definition: {
+						revision: 0,
+						context: {
+							assetId: 'world:main',
+							kind: 'world-definition',
+							origin: 'authored',
+							editable: true,
+							source: 'file:///projects/sample/worlds/main.world.json',
+							label: { kind: 'literal', text: 'Main', messageCode: null, arguments: [] }
+						},
+						roots: []
 					},
 					diagnostics: [],
 					failureCode: null

@@ -304,7 +304,7 @@ function openedDefinitionOutcome(diagnostics: readonly ProjectDiagnosticDto[]): 
 	return {
 		status: 'opened',
 		resource: {
-			resource: 'file:///projects/a/worlds/main.world.json?jscene3dGeneration=7&jscene3dAssetId=world%3Aa',
+			resource: 'file:///projects/a/worlds/main.world.json?jscene3dConnectionGeneration=connection-a&jscene3dGeneration=7&jscene3dAssetId=world%3Aa',
 			projectGeneration: 7,
 			assetId: 'world:a',
 			snapshot: definitionSnapshot

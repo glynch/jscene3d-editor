@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { AuthoredDefinitionOpener, authoredDefinitionViewType } from '../definition/authoredDefinitionOpener';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
-import { DefinitionOpenResultDto, DefinitionSnapshotDto } from '../protocol/authoringProtocol';
+import { ConnectionScopedResult, DefinitionOpenResultDto, DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authored definition opener', () => {
 	test('opens the generation-scoped resource through the JScene3D custom view type', async () => {
@@ -14,7 +14,7 @@ suite('JScene3D authored definition opener', () => {
 		state.setProjectGeneration(4);
 		const opened: Array<{ resource: string; viewType: string }> = [];
 		const opener = new AuthoredDefinitionOpener(
-			{ openDefinition: async () => success(4, definition('definition-a')) },
+			{ openDefinition: async () => connected(success(4, definition('definition-a'))) },
 			state,
 			async (resource, viewType) => { opened.push({ resource, viewType }); }
 		);
@@ -24,6 +24,7 @@ suite('JScene3D authored definition opener', () => {
 		assert.strictEqual(outcome.status, 'opened');
 		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.assetId : undefined, 'definition-a');
 		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
+		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dGeneration'), '4');
 	});
 
@@ -41,7 +42,7 @@ suite('JScene3D authored definition opener', () => {
 		}];
 		const opener = new AuthoredDefinitionOpener(
 			{
-				openDefinition: async () => ({
+				openDefinition: async () => connected({
 					opened: false,
 					projectGeneration: null,
 					definition: null,
@@ -64,7 +65,7 @@ suite('JScene3D authored definition opener', () => {
 		state.setProjectGeneration(4);
 		let openCalls = 0;
 		const opener = new AuthoredDefinitionOpener(
-			{ openDefinition: async () => success(5, definition('definition-a')) },
+			{ openDefinition: async () => connected(success(5, definition('definition-a'))) },
 			state,
 			async () => { openCalls++; }
 		);
@@ -76,6 +77,10 @@ suite('JScene3D authored definition opener', () => {
 
 function success(projectGeneration: number, definition: DefinitionSnapshotDto): DefinitionOpenResultDto {
 	return { opened: true, projectGeneration, definition, diagnostics: [], failureCode: null };
+}
+
+function connected(result: DefinitionOpenResultDto): ConnectionScopedResult<DefinitionOpenResultDto> {
+	return { connectionGeneration: 'connection-a', result };
 }
 
 function definition(assetId: string): DefinitionSnapshotDto {

@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import { Readable, Writable } from 'stream';
 import {
 	AuthoringProtocolClient,
+	ConnectionScopedResult,
 	DefinitionOpenResultDto,
 	InitializeResultDto,
 	HierarchySemanticTargetDto,
@@ -145,7 +146,10 @@ export class AuthoringService implements Disposable {
 		}
 	}
 
-	async openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto> {
+	async openDefinition(
+		expectedProjectGeneration: number,
+		assetId: string
+	): Promise<ConnectionScopedResult<DefinitionOpenResultDto>> {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().openDefinition(expectedProjectGeneration, assetId);

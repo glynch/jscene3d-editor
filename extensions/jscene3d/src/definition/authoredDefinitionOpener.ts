@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DefinitionOpenResultDto, ProjectDiagnosticDto } from '../protocol/authoringProtocol';
+import { ConnectionScopedResult, DefinitionOpenResultDto, ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceUri } from './definitionResource';
 
@@ -25,7 +25,10 @@ export type AuthoredDefinitionOpenOutcome =
 
 /** Protocol operation needed by the generic authored-definition opener. */
 export interface DefinitionOpenClient {
-	openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto>;
+	openDefinition(
+		expectedProjectGeneration: number,
+		assetId: string
+	): Promise<ConnectionScopedResult<DefinitionOpenResultDto>>;
 }
 
 /** Opens a generation-scoped definition through the registered JScene3D custom-editor view type. */
@@ -37,7 +40,8 @@ export class AuthoredDefinitionOpener {
 	) { }
 
 	async open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
-		const result = await this.client.openDefinition(projectGeneration, assetId);
+		const response = await this.client.openDefinition(projectGeneration, assetId);
+		const result = response.result;
 		if (!result.opened) {
 			return {
 				status: 'rejected',
@@ -48,7 +52,7 @@ export class AuthoredDefinitionOpener {
 		if (result.projectGeneration !== projectGeneration || result.definition.context.assetId !== assetId) {
 			throw new Error('Definition response identity does not match the requested project generation and AssetId');
 		}
-		const resource = definitionResourceUri(result.projectGeneration, result.definition);
+		const resource = definitionResourceUri(response.connectionGeneration, result.projectGeneration, result.definition);
 		const mapping = this.state.register(resource, result.projectGeneration, result.definition);
 		await this.openWith(resource, authoredDefinitionViewType);
 		return { status: 'opened', resource: mapping, diagnostics: result.diagnostics };

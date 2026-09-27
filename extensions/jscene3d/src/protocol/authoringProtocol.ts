@@ -195,6 +195,12 @@ export type DefinitionOpenResultDto =
 		readonly failureCode: string | null;
 	};
 
+/** Associates one validated authoring operation result with its owning Java connection generation. */
+export interface ConnectionScopedResult<T> {
+	readonly connectionGeneration: string;
+	readonly result: T;
+}
+
 export type ProjectValueKindDto = 'null' | 'boolean' | 'number' | 'text' | 'array' | 'object'
 	| 'reference' | 'entity-target' | 'component-target';
 
@@ -360,11 +366,14 @@ export class AuthoringProtocolClient {
 		return (await this.request(authoringProtocolMethods.closeProject, {}, validateProjectCloseResult)).result;
 	}
 
-	async openDefinition(expectedProjectGeneration: number, assetId: string): Promise<DefinitionOpenResultDto> {
-		return (await this.request(authoringProtocolMethods.openDefinition, {
+	async openDefinition(
+		expectedProjectGeneration: number,
+		assetId: string
+	): Promise<ConnectionScopedResult<DefinitionOpenResultDto>> {
+		return this.request(authoringProtocolMethods.openDefinition, {
 			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
 			assetId: requiredNonEmptyString(assetId, 'assetId')
-		}, validateDefinitionOpenResult)).result;
+		}, validateDefinitionOpenResult);
 	}
 
 	async readInspector(

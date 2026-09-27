@@ -49,8 +49,10 @@ suite('JScene3D authoring protocol client', () => {
 		const opened = client.openDefinition(1, 'e890c4c3-fb32-49d8-88b8-4e04e7a29656');
 		transport.respond(fixture('definition-open-response.json'));
 
-		const result = await opened;
+		const response = await opened;
+		const result = response.result;
 
+		assert.strictEqual(response.connectionGeneration, 'connection-1');
 		assert.strictEqual(result.definition?.context.kind, 'world-definition');
 		assert.strictEqual(result.definition?.roots[0].target.kind, 'local-entity');
 		assert.deepStrictEqual(result.definition?.roots[0].occurrence.entityPath, [
@@ -102,7 +104,7 @@ suite('JScene3D authoring protocol client', () => {
 			result: { ...result, definition: { ...definition, context: { ...context, editable: false } } }
 		});
 
-		assert.strictEqual((await readOnly).definition?.context.editable, false);
+		assert.strictEqual((await readOnly).result.definition?.context.editable, false);
 
 		const generatedTransport = new TestTransport();
 		const generatedClient = await initializedClient(generatedTransport);
@@ -130,7 +132,17 @@ suite('JScene3D authoring protocol client', () => {
 		};
 		transport.respond(success(2, result));
 
-		assert.deepStrictEqual(await opened, result);
+		assert.deepStrictEqual(await opened, { connectionGeneration: 'connection-1', result });
+	});
+
+	test('rejects a definition response from a different Java connection generation', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const opened = client.openDefinition(1, 'definition-a');
+		const response = fixture('definition-open-response.json');
+		transport.respond({ ...response, connectionGeneration: 'connection-2' });
+
+		await assert.rejects(opened, /connection generation changed unexpectedly/);
 	});
 
 	test('rejects partially populated definition-open failures', async () => {

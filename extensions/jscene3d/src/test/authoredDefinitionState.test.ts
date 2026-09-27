@@ -5,6 +5,7 @@
 
 import * as assert from 'assert';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
+import { definitionResourceUri } from '../definition/definitionResource';
 import { DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authored definition state', () => {
@@ -59,6 +60,36 @@ suite('JScene3D authored definition state', () => {
 		state.activate('file:///ordinary.txt');
 
 		assert.strictEqual(state.active, undefined);
+	});
+
+	test('keeps a stale prior-connection tab isolated when project generation resets', () => {
+		const state = new AuthoredDefinitionState();
+		const snapshot = definition('world-a');
+		const staleResource = definitionResourceUri('connection-a', 1, snapshot);
+		const currentResource = definitionResourceUri('connection-b', 1, snapshot);
+		state.setProjectGeneration(1);
+		state.register(staleResource, 1, snapshot);
+		state.activate(staleResource);
+		state.select(snapshot.roots[0]);
+
+		state.setProjectGeneration(undefined);
+		state.setProjectGeneration(1);
+		state.register(currentResource, 1, snapshot);
+		state.activate(staleResource);
+		const stale = { active: state.active, selection: state.selection };
+		state.activate(currentResource);
+
+		assert.deepStrictEqual({
+			resourcesDiffer: staleResource !== currentResource,
+			staleActive: stale.active,
+			staleSelection: stale.selection,
+			currentAssetId: state.active?.assetId
+		}, {
+			resourcesDiffer: true,
+			staleActive: undefined,
+			staleSelection: undefined,
+			currentAssetId: 'world-a'
+		});
 	});
 });
 
