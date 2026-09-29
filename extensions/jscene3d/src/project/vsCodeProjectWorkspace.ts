@@ -52,7 +52,7 @@ export class VsCodeProjectWorkspace implements ProjectWorkspaceHost {
 	}
 }
 
-/** Stores one versioned reopen intent across the expected workspace restart. */
+/** Stores one versioned active-project record across workspace transitions and editor restarts. */
 export class ExtensionProjectReopenIntentStore implements ProjectReopenIntentStore {
 	constructor(private readonly state: vscode.Memento) { }
 

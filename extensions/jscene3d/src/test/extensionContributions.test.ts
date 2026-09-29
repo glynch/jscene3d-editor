@@ -18,6 +18,13 @@ import { inspectorViewId } from '../inspector/inspectorView';
 import { projectViewId } from '../project/projectViewModel';
 
 suite('JScene3D extension contributions', () => {
+	test('contributes the JScene3D Java tooling defaults', () => {
+		const defaults = extensionManifest().contributes.configurationDefaults;
+
+		assert.strictEqual(defaults['java.compile.nullAnalysis.mode'], 'disabled');
+		assert.strictEqual(defaults['java.import.gradle.enabled'], false);
+	});
+
 	test('does not misplace project commands under File New File', () => {
 		const manifest = extensionManifest();
 		assert.strictEqual(manifest.contributes.menus['file/newFile'], undefined);

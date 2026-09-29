@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 1, minor: 2 } as const;
+export const authoringProtocolVersion = { major: 1, minor: 4 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -15,6 +15,13 @@ export const authoringProtocolMethods = {
 	replaceProject: 'project/replace',
 	closeProject: 'project/close',
 	openDefinition: 'definition/open',
+	mutateDefinition: 'definition/mutate',
+	undoDefinition: 'definition/undo',
+	redoDefinition: 'definition/redo',
+	saveDefinition: 'definition/save',
+	revertDefinition: 'definition/revert',
+	backupDefinition: 'definition/backup',
+	restoreDefinitionBackup: 'definition/restoreBackup',
 	readInspector: 'inspector/read',
 	shutdown: 'service/shutdown'
 } as const;
@@ -241,6 +248,38 @@ export type InspectorMutationTargetDto =
 		readonly componentId: string; readonly propertyId: string;
 	};
 
+/** Exact scalar candidate accepted by the first editable Inspector slice. */
+export type DefinitionMutationValueDto =
+	| { readonly kind: 'boolean'; readonly value: boolean }
+	| { readonly kind: 'integer' | 'number' | 'text'; readonly literal: string };
+
+/** Permanent authored mutation vocabulary. */
+export type DefinitionMutationDto =
+	| { readonly operation: 'set'; readonly value: DefinitionMutationValueDto }
+	| { readonly operation: 'remove' };
+
+/** Authoritative state returned after mutation, history, persistence, or recovery. */
+export interface DefinitionOperationResultDto {
+	readonly definition: string;
+	readonly outcome: string;
+	readonly revision: number;
+	readonly dirty: boolean;
+	readonly canUndo: boolean;
+	readonly canRedo: boolean;
+	readonly diagnostics: readonly ProjectDiagnosticDto[];
+}
+
+/** Authoritative recovery capture with opaque Java-produced bytes. */
+export interface DefinitionBackupResultDto {
+	readonly definition: string;
+	readonly outcome: string;
+	readonly revision: number;
+	readonly dirty: boolean;
+	readonly canUndo: boolean;
+	readonly canRedo: boolean;
+	readonly backup: string | null;
+}
+
 export interface InspectorNumericBoundDto {
 	readonly decimal: string;
 	readonly inclusive: boolean;
@@ -266,6 +305,7 @@ export interface InspectorPropertyStateDto {
 	readonly origin: 'authored' | 'default' | 'unset';
 	readonly validity: 'valid' | 'required-unset' | 'broken-reference' | 'metadata-unavailable';
 	readonly editable: boolean;
+	readonly modified: boolean;
 }
 
 export interface InspectorPropertyDto {
@@ -376,6 +416,56 @@ export class AuthoringProtocolClient {
 		}, validateDefinitionOpenResult);
 	}
 
+	async mutateDefinition(
+		expectedProjectGeneration: number,
+		assetId: string,
+		expectedDefinitionRevision: number,
+		target: InspectorMutationTargetDto,
+		mutation: DefinitionMutationDto
+	): Promise<DefinitionOperationResultDto> {
+		return (await this.request(authoringProtocolMethods.mutateDefinition, {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			assetId: requiredNonEmptyString(assetId, 'assetId'),
+			expectedDefinitionRevision: requiredInteger(expectedDefinitionRevision, 'expectedDefinitionRevision'),
+			operation: mutation.operation,
+			target: mutationTargetJson(target),
+			value: mutation.operation === 'set' ? mutationValueJson(mutation.value) : null
+		}, validateDefinitionOperationResult)).result;
+	}
+
+	undoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.definitionOperation(authoringProtocolMethods.undoDefinition, projectGeneration, assetId, revision);
+	}
+
+	redoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.definitionOperation(authoringProtocolMethods.redoDefinition, projectGeneration, assetId, revision);
+	}
+
+	saveDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.definitionOperation(authoringProtocolMethods.saveDefinition, projectGeneration, assetId, revision);
+	}
+
+	revertDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.definitionOperation(authoringProtocolMethods.revertDefinition, projectGeneration, assetId, revision);
+	}
+
+	async backupDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionBackupResultDto> {
+		return (await this.request(authoringProtocolMethods.backupDefinition,
+			definitionOperationParams(projectGeneration, assetId, revision), validateDefinitionBackupResult)).result;
+	}
+
+	async restoreDefinitionBackup(
+		projectGeneration: number,
+		assetId: string,
+		revision: number,
+		backup: string
+	): Promise<DefinitionOperationResultDto> {
+		return (await this.request(authoringProtocolMethods.restoreDefinitionBackup, {
+			...definitionOperationParams(projectGeneration, assetId, revision),
+			backup: requiredNonEmptyString(backup, 'backup')
+		}, validateDefinitionOperationResult)).result;
+	}
+
 	async readInspector(
 		expectedProjectGeneration: number,
 		expectedDefinitionRevision: number,
@@ -405,6 +495,19 @@ export class AuthoringProtocolClient {
 			throw new Error('Authoring service connection generation changed unexpectedly');
 		}
 		return response;
+	}
+
+	private async definitionOperation(
+		method: typeof authoringProtocolMethods.undoDefinition
+			| typeof authoringProtocolMethods.redoDefinition
+			| typeof authoringProtocolMethods.saveDefinition
+			| typeof authoringProtocolMethods.revertDefinition,
+		projectGeneration: number,
+		assetId: string,
+		revision: number
+	): Promise<DefinitionOperationResultDto> {
+		return (await this.request(method, definitionOperationParams(projectGeneration, assetId, revision),
+			validateDefinitionOperationResult)).result;
 	}
 }
 
@@ -691,7 +794,8 @@ function validateInspectorPropertyState(
 		effectiveValue,
 		origin,
 		validity: requiredPropertyValidity(object.validity),
-		editable: requiredBoolean(object.editable, 'Inspector property editable')
+		editable: requiredBoolean(object.editable, 'Inspector property editable'),
+		modified: requiredBoolean(object.modified, 'Inspector property modified')
 	};
 }
 
@@ -799,6 +903,76 @@ function semanticTargetJson(target: HierarchySemanticTargetDto): JsonObject {
 			entityPath: [...target.occurrence.entityPath]
 		}
 	};
+}
+
+/** Serializes one Java-issued mutation target without using labels or JSON pointers. */
+function mutationTargetJson(target: InspectorMutationTargetDto): JsonObject {
+	return target.kind === 'entity-enabled'
+		? {
+			kind: target.kind,
+			occurrence: occurrenceJson(target.occurrence),
+			entityId: target.entityId,
+			componentId: null,
+			propertyId: null
+		}
+		: {
+			kind: target.kind,
+			occurrence: occurrenceJson(target.occurrence),
+			entityId: target.entityId,
+			componentId: target.componentId,
+			propertyId: target.propertyId
+		};
+}
+
+function occurrenceJson(occurrence: HierarchyOccurrenceDto): JsonObject {
+	return { definitionAssetId: occurrence.definitionAssetId, entityPath: [...occurrence.entityPath] };
+}
+
+/** Serializes one exact first-slice scalar candidate. */
+function mutationValueJson(value: DefinitionMutationValueDto): JsonObject {
+	return value.kind === 'boolean'
+		? { kind: value.kind, value: value.value, literal: null }
+		: { kind: value.kind, value: null, literal: value.literal };
+}
+
+function definitionOperationParams(projectGeneration: number, assetId: string, revision: number): JsonObject {
+	return {
+		expectedProjectGeneration: requiredPositiveInteger(projectGeneration, 'expectedProjectGeneration'),
+		assetId: requiredNonEmptyString(assetId, 'assetId'),
+		expectedDefinitionRevision: requiredInteger(revision, 'expectedDefinitionRevision')
+	};
+}
+
+/** Validates authoritative working-copy lifecycle state. */
+function validateDefinitionOperationResult(value: JsonValue): DefinitionOperationResultDto {
+	const object = requiredObject(value, 'definition operation result');
+	return {
+		definition: requiredNonEmptyString(object.definition, 'definition'),
+		outcome: requiredNonEmptyString(object.outcome, 'outcome'),
+		revision: requiredInteger(object.revision, 'revision'),
+		dirty: requiredBoolean(object.dirty, 'dirty'),
+		canUndo: requiredBoolean(object.canUndo, 'canUndo'),
+		canRedo: requiredBoolean(object.canRedo, 'canRedo'),
+		diagnostics: requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic)
+	};
+}
+
+/** Validates one opaque Java recovery capture. */
+function validateDefinitionBackupResult(value: JsonValue): DefinitionBackupResultDto {
+	const object = requiredObject(value, 'definition backup result');
+	const result = {
+		definition: requiredNonEmptyString(object.definition, 'definition'),
+		outcome: requiredNonEmptyString(object.outcome, 'outcome'),
+		revision: requiredInteger(object.revision, 'revision'),
+		dirty: requiredBoolean(object.dirty, 'dirty'),
+		canUndo: requiredBoolean(object.canUndo, 'canUndo'),
+		canRedo: requiredBoolean(object.canRedo, 'canRedo'),
+		backup: nullableString(object.backup, 'backup')
+	};
+	if ((result.backup !== null) !== (result.outcome === 'backed-up')) {
+		throw new Error('definition backup result has an inconsistent shape');
+	}
+	return result;
 }
 
 /** Validates one complete structural-definition snapshot. */

@@ -72,6 +72,27 @@ export class AuthoredDefinitionState {
 		return mapping?.projectGeneration === this.projectGeneration ? mapping : undefined;
 	}
 
+	resolveAsset(projectGeneration: number, assetId: string): AuthoredDefinitionResource | undefined {
+		if (projectGeneration !== this.projectGeneration) {
+			return undefined;
+		}
+		return Array.from(this.resources.values()).find(mapping => mapping.assetId === assetId);
+	}
+
+	update(resource: string, snapshot: DefinitionSnapshotDto): AuthoredDefinitionResource {
+		const current = this.resolve(resource);
+		if (current === undefined || current.assetId !== snapshot.context.assetId) {
+			throw new Error('Definition refresh does not belong to the active document identity');
+		}
+		const updated = { ...current, snapshot };
+		this.resources.set(resource, updated);
+		if (this.activeValue === current) {
+			this.activeValue = updated;
+		}
+		this.emit();
+		return updated;
+	}
+
 	activate(resource: string | undefined): void {
 		const active = resource === undefined ? undefined : this.resolve(resource);
 		if (active === this.activeValue) {

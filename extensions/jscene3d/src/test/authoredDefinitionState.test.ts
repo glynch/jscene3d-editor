@@ -35,6 +35,7 @@ suite('JScene3D authored definition state', () => {
 		state.setProjectGeneration(4);
 
 		assert.strictEqual(state.resolve(resource), undefined);
+		assert.strictEqual(state.resolveAsset(4, 'world-a'), undefined);
 		assert.strictEqual(state.active, undefined);
 		assert.strictEqual(state.selection, undefined);
 	});
@@ -75,6 +76,7 @@ suite('JScene3D authored definition state', () => {
 		state.setProjectGeneration(undefined);
 		state.setProjectGeneration(1);
 		state.register(currentResource, 1, snapshot);
+		assert.strictEqual(state.resolveAsset(1, 'world-a')?.resource, currentResource);
 		state.activate(staleResource);
 		const stale = { active: state.active, selection: state.selection };
 		state.activate(currentResource);

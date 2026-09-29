@@ -15,6 +15,7 @@ import {
 import { AuthoringLaunchConfiguration, AuthoringService, NodeAuthoringProcessLauncher } from './authoring/authoringService';
 import { VsCodeAuthoringWorkflowHost } from './authoring/vsCodeAuthoringWorkflow';
 import { AuthoredDefinitionEditorProvider } from './definition/authoredDefinitionEditor';
+import { AuthoredDefinitionLifecycle } from './definition/authoredDefinitionLifecycle';
 import {
 	AuthoredDefinitionOpener,
 	authoredDefinitionViewType,
@@ -30,7 +31,7 @@ import { publishProjectDiagnostics } from './project/projectDiagnostics';
 import { ProjectState } from './project/projectState';
 import { ProjectTreeDataProvider } from './project/projectView';
 import { projectViewId } from './project/projectViewModel';
-import { ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
+import { CoordinatedProjectDocumentLifecycle, ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './project/vsCodeProjectWorkspace';
 
 const projectOpenContext = 'jscene3d.projectOpen';
@@ -55,14 +56,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const definitionDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.definitionAttempt');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
+	const definitionState = new AuthoredDefinitionState();
+	const definitionLifecycle = new AuthoredDefinitionLifecycle(
+		service,
+		definitionState,
+		diagnostics => publishProjectDiagnostics(definitionDiagnostics, diagnostics)
+	);
+	const definitionEditorProvider = new AuthoredDefinitionEditorProvider(
+		definitionState,
+		definitionLifecycle,
+		() => projectState.snapshot.status === 'open' ? projectState.snapshot.generation : undefined
+	);
+	const inspectorState = new InspectorState(service, definitionState);
+	const projectProvider = new ProjectTreeDataProvider(projectState);
+	const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: projectProvider });
+	const hierarchyProvider = new HierarchyTreeDataProvider(definitionState);
+	const hierarchyTree = vscode.window.createTreeView(hierarchyViewId, { treeDataProvider: hierarchyProvider });
+	const inspectorProvider = new InspectorViewProvider(
+		inspectorState,
+		vscode.env.language,
+		(message, ...args) => vscode.l10n.t(message, ...args),
+		{
+			mutate: async (target, candidate, label) => {
+				try {
+					const outcome = await definitionEditorProvider.acceptInspectorMutation(
+						target, { operation: 'set', value: candidate }, label);
+					if (outcome.status === 'rejected' && outcome.diagnostics.length === 0) {
+						await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D rejected the edit: {0}', outcome.outcome));
+					}
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					output.appendLine(`Inspector edit failed: ${message}`);
+					await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not apply the edit: {0}', message));
+				}
+			}
+		}
+	);
 	const workspaceLifecycle = new ProjectWorkspaceLifecycle(
 		projectState,
 		new VsCodeProjectWorkspace(),
 		new ExtensionProjectReopenIntentStore(context.globalState),
-		output
+		output,
+		new CoordinatedProjectDocumentLifecycle(inspectorProvider, definitionEditorProvider)
 	);
-	const definitionState = new AuthoredDefinitionState();
-	const inspectorState = new InspectorState(service, definitionState);
 	const definitionOpener = new AuthoredDefinitionOpener(
 		service,
 		definitionState,
@@ -76,16 +112,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		output
 	);
 	activeRuntime = { service, projectState, workspaceLifecycle, definitionState, inspectorState };
-	const projectProvider = new ProjectTreeDataProvider(projectState);
-	const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: projectProvider });
-	const hierarchyProvider = new HierarchyTreeDataProvider(definitionState);
-	const hierarchyTree = vscode.window.createTreeView(hierarchyViewId, { treeDataProvider: hierarchyProvider });
-	const definitionEditorProvider = new AuthoredDefinitionEditorProvider(definitionState);
-	const inspectorProvider = new InspectorViewProvider(
-		inspectorState,
-		vscode.env.language,
-		(message, ...args) => vscode.l10n.t(message, ...args)
-	);
 
 	const updateActiveDefinition = () => {
 		const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
@@ -126,15 +152,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		projectProvider,
 		tree,
 		definitionState,
+		definitionEditorProvider,
 		inspectorState,
 		inspectorProvider,
 		hierarchyProvider,
 		hierarchyTree,
 		stateSubscription,
 		definitionStateSubscription,
-		vscode.window.registerCustomEditorProvider(authoredDefinitionViewType, definitionEditorProvider, {
-			supportsMultipleEditorsPerDocument: true
-		}),
 		vscode.window.registerWebviewViewProvider(inspectorViewId, inspectorProvider),
 		vscode.window.tabGroups.onDidChangeTabs(updateActiveDefinition),
 		vscode.window.tabGroups.onDidChangeTabGroups(updateActiveDefinition),
@@ -162,6 +186,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	updateActiveDefinition();
 
 	await workflow.reopenPendingProject();
+	context.subscriptions.push(vscode.window.registerCustomEditorProvider(authoredDefinitionViewType, definitionEditorProvider, {
+		supportsMultipleEditorsPerDocument: true
+	}));
 }
 
 /** Stops project callbacks before awaiting termination of the owned Java service. */

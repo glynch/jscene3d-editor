@@ -5,17 +5,27 @@
 
 import { randomBytes } from 'crypto';
 import type * as vscode from 'vscode';
-import { InspectorSnapshotDto } from '../protocol/authoringProtocol';
+import { DefinitionMutationValueDto, InspectorMutationTargetDto, InspectorSnapshotDto } from '../protocol/authoringProtocol';
 import { InspectorState, InspectorStateSnapshot } from './inspectorState';
 import { inspectorSearchIndex } from './inspectorViewModel';
-import { resolvePropertyEditor } from './propertyEditorResolver';
+import { acceptsPropertyEditorCandidate, resolvePropertyEditor } from './propertyEditorResolver';
 
 export const inspectorViewId = 'jscene3d.inspector';
 export const inspectorFocusCommandId = `${inspectorViewId}.focus`;
 
-export type InspectorInboundMessage = { readonly type: 'selectGroup'; readonly groupId: string };
+export type InspectorInboundMessage =
+	| { readonly type: 'selectGroup'; readonly groupId: string }
+	| { readonly type: 'prepareForDocumentCloseResult'; readonly requestId: number; readonly accepted: boolean }
+	| {
+		readonly type: 'editProperty'; readonly groupId: string; readonly propertyId: string;
+		readonly candidate: DefinitionMutationValueDto;
+	};
 export type InspectorTranslate = (message: string, ...args: string[]) => string;
 export type InspectorCommandExecutor = (command: string) => PromiseLike<unknown> | unknown;
+
+export interface InspectorMutationHandler {
+	mutate(target: InspectorMutationTargetDto, candidate: DefinitionMutationValueDto, label: string): Promise<void>;
+}
 
 /** Activates the Inspector's Secondary Side Bar container through Code OSS's generated view command. */
 export async function revealInspector(executeCommand: InspectorCommandExecutor): Promise<void> {
@@ -28,11 +38,14 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 	private lastInspector: object | undefined;
 	private readonly stateSubscription: { dispose(): void };
 	private messageSubscription: vscode.Disposable | undefined;
+	private closePreparationSequence = 0;
+	private readonly closePreparations = new Map<number, (accepted: boolean) => void>();
 
 	constructor(
 		private readonly state: InspectorState,
 		private readonly language: string,
-		private readonly translate: InspectorTranslate
+		private readonly translate: InspectorTranslate,
+		private readonly mutations?: InspectorMutationHandler
 	) {
 		this.stateSubscription = state.onDidChange(() => this.render());
 	}
@@ -48,14 +61,47 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 				this.lastInspector = undefined;
 				this.messageSubscription?.dispose();
 				this.messageSubscription = undefined;
+				this.completeClosePreparations(false);
 			}
 		});
 		this.render(true);
 	}
 
+	/** Commits valid pending scalar input or rejects the lifecycle action while local input is invalid. */
+	prepareForDocumentClose(): Promise<boolean> {
+		const view = this.view;
+		if (view === undefined) {
+			return Promise.resolve(true);
+		}
+		const requestId = ++this.closePreparationSequence;
+		return new Promise<boolean>(resolve => {
+			let completed = false;
+			const complete = (accepted: boolean) => {
+				if (completed) {
+					return;
+				}
+				completed = true;
+				clearTimeout(timeout);
+				this.closePreparations.delete(requestId);
+				resolve(accepted);
+			};
+			const timeout = setTimeout(() => complete(false), 2000);
+			this.closePreparations.set(requestId, complete);
+			void Promise.resolve(view.webview.postMessage({ type: 'prepareForDocumentClose', requestId })).then(
+				delivered => {
+					if (!delivered) {
+						complete(true);
+					}
+				},
+				() => complete(false)
+			);
+		});
+	}
+
 	dispose(): void {
 		this.stateSubscription.dispose();
 		this.messageSubscription?.dispose();
+		this.completeClosePreparations(false);
 		this.view = undefined;
 		this.lastInspector = undefined;
 	}
@@ -64,10 +110,36 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 		if (!isInspectorMessage(value)) {
 			return;
 		}
+		if (value.type === 'prepareForDocumentCloseResult') {
+			this.closePreparations.get(value.requestId)?.(value.accepted);
+			return;
+		}
+		if (value.type === 'editProperty') {
+			void this.acceptMutation(value);
+			return;
+		}
 		try {
 			this.state.selectGroup(value.groupId);
 		} catch {
 			// A stale webview message is ignored; the next state render is authoritative.
+		}
+	}
+
+	private async acceptMutation(message: Extract<InspectorInboundMessage, { readonly type: 'editProperty' }>): Promise<void> {
+		const snapshot = this.state.snapshot;
+		const property = snapshot.status === 'ready'
+			? snapshot.inspector.groups.find(group => group.identity === message.groupId)
+				?.properties.find(candidate => candidate.identity === message.propertyId)
+			: undefined;
+		if (property?.mutationTarget === null || property?.mutationTarget === undefined || !property.state.editable
+			|| !acceptsPropertyEditorCandidate(property, message.candidate)) {
+			this.render(true);
+			return;
+		}
+		try {
+			await this.mutations?.mutate(property.mutationTarget, message.candidate, `Edit ${property.label}`);
+		} finally {
+			this.render(true);
 		}
 	}
 
@@ -84,6 +156,12 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 		this.lastInspector = snapshot.status === 'ready' ? snapshot.inspector : undefined;
 		view.webview.html = inspectorHtml(view.webview.cspSource, snapshot, this.language, this.translate);
 	}
+
+	private completeClosePreparations(accepted: boolean): void {
+		for (const complete of Array.from(this.closePreparations.values())) {
+			complete(accepted);
+		}
+	}
 }
 
 export function isInspectorMessage(value: unknown): value is InspectorInboundMessage {
@@ -91,10 +169,36 @@ export function isInspectorMessage(value: unknown): value is InspectorInboundMes
 		return false;
 	}
 	const message = value as Record<string, unknown>;
-	return message.type === 'selectGroup'
-		&& typeof message.groupId === 'string'
-		&& message.groupId.length > 0
-		&& Object.keys(message).every(key => key === 'type' || key === 'groupId');
+	if (message.type === 'selectGroup') {
+		return typeof message.groupId === 'string'
+			&& message.groupId.length > 0
+			&& Object.keys(message).every(key => key === 'type' || key === 'groupId');
+	}
+	if (message.type === 'prepareForDocumentCloseResult') {
+		return typeof message.requestId === 'number'
+			&& Number.isSafeInteger(message.requestId) && message.requestId > 0
+			&& typeof message.accepted === 'boolean'
+			&& Object.keys(message).every(key => key === 'type' || key === 'requestId' || key === 'accepted');
+	}
+	return message.type === 'editProperty'
+		&& typeof message.groupId === 'string' && message.groupId.length > 0
+		&& typeof message.propertyId === 'string' && message.propertyId.length > 0
+		&& isMutationCandidate(message.candidate)
+		&& Object.keys(message).every(key => key === 'type' || key === 'groupId' || key === 'propertyId' || key === 'candidate');
+}
+
+function isMutationCandidate(value: unknown): value is DefinitionMutationValueDto {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return false;
+	}
+	const candidate = value as Record<string, unknown>;
+	if (candidate.kind === 'boolean') {
+		return typeof candidate.value === 'boolean'
+			&& Object.keys(candidate).every(key => key === 'kind' || key === 'value');
+	}
+	return (candidate.kind === 'integer' || candidate.kind === 'number' || candidate.kind === 'text')
+		&& typeof candidate.literal === 'string'
+		&& Object.keys(candidate).every(key => key === 'kind' || key === 'literal');
 }
 
 /** Creates one restrictive, self-contained webview document. */
@@ -139,6 +243,9 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 		resolved: translate('Resolved'),
 		trueValue: translate('True'),
 		falseValue: translate('False'),
+		invalidInteger: translate('Invalid integer'),
+		invalidNumber: translate('Invalid number'),
+		modified: translate('Modified since last save'),
 		items: translate('{0} items', '{count}'),
 		fields: translate('{0} fields', '{count}')
 	};
@@ -217,9 +324,15 @@ button, input { font: inherit; }
 .property-heading { position: sticky; top: 0; z-index: 2; margin: 0 -10px 6px; padding: 8px 10px 6px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); font-weight: 600; text-transform: uppercase; }
 .group-description { margin: 0 0 8px; color: var(--vscode-descriptionForeground); }
 .property { display: grid; grid-template-columns: minmax(80px, 42%) minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--vscode-sideBarSectionHeader-border) 55%, transparent); }
+.property.modified { border-left: 2px solid var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)); padding-left: 6px; background: color-mix(in srgb, var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)) 7%, transparent); }
 .property:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 .property-label { min-width: 0; color: var(--vscode-foreground); }
 .property-value { min-width: 0; text-align: right; overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); user-select: text; }
+.property-input { width: 100%; min-width: 0; border: 1px solid var(--vscode-input-border); padding: 2px 5px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+.property-input.validation-error { border-color: var(--vscode-inputValidation-errorBorder); outline-color: var(--vscode-inputValidation-errorBorder); }
+.property-validation { margin-top: 2px; color: var(--vscode-inputValidation-errorForeground); font-size: 0.85em; line-height: 1.2; text-align: left; }
+.property-validation[hidden] { display: none; }
+.property-checkbox { accent-color: var(--vscode-checkbox-selectBackground); }
 .property.block { display: block; }
 .property.block .property-value { margin-top: 4px; text-align: left; white-space: pre-wrap; font-family: var(--vscode-editor-font-family); }
 .property-disclosure { width: 100%; display: grid; grid-template-columns: auto minmax(72px, 42%) minmax(0, 1fr); gap: 4px; align-items: center; border: 0; padding: 0; color: var(--vscode-foreground); background: transparent; text-align: left; cursor: pointer; }
@@ -259,7 +372,7 @@ if (bootstrap.status !== 'ready') {
 	const properties = app.querySelector('.property-scroll');
 	const divider = app.querySelector('.divider');
 	title.textContent = snapshot.title;
-	subtitle.textContent = snapshot.target.kind.replaceAll('-', ' ') + ' · ' + bootstrap.strings.readOnly;
+	subtitle.textContent = snapshot.target.kind.replaceAll('-', ' ') + (snapshot.editable ? '' : ' · ' + bootstrap.strings.readOnly);
 	searchInput.setAttribute('placeholder', bootstrap.strings.filterPlaceholder);
 	searchInput.setAttribute('aria-label', bootstrap.strings.filterPlaceholder);
 	filterButton.setAttribute('aria-label', bootstrap.strings.filterOptions);
@@ -270,6 +383,9 @@ if (bootstrap.status !== 'ready') {
 	const collapsedProperties = new Set(Array.isArray(savedState?.collapsedProperties)
 		? savedState.collapsedProperties.filter(value => typeof value === 'string') : []);
 	let selectedGroupId = bootstrap.selectedGroupId;
+	let validationSequence = 0;
+	const numericEditors = new Set();
+	const pendingNumericEditors = new Set();
 
 	function savePresentationState() {
 		vscode.setState({ query: searchInput.value, collapsedProperties: Array.from(collapsedProperties) });
@@ -313,6 +429,9 @@ if (bootstrap.status !== 'ready') {
 	}
 
 	function renderProperties(propertyId) {
+		for (const editor of numericEditors) { editor.dispose(); }
+		numericEditors.clear();
+		pendingNumericEditors.clear();
 		properties.replaceChildren();
 		const group = snapshot.groups.find(candidate => candidate.identity === selectedGroupId);
 		if (!group) { return; }
@@ -321,9 +440,10 @@ if (bootstrap.status !== 'ready') {
 		if (group.description) { const description = document.createElement('p'); description.className = 'group-description'; description.textContent = group.description; properties.append(description); }
 		for (const property of group.properties) {
 			const row = document.createElement('div'); row.className = 'property'; row.tabIndex = -1; row.dataset.propertyId = property.identity;
+			if (property.state.modified) { row.classList.add('modified'); row.title = bootstrap.strings.modified; }
 			row.dataset.editorKind = property.propertyEditor.kind;
 			if (isBlockEditor(property.propertyEditor)) { row.classList.add('block'); }
-			const value = document.createElement('div'); value.className = 'property-value'; renderPropertyEditor(value, property.propertyEditor);
+			const value = document.createElement('div'); value.className = 'property-value'; renderPropertyEditor(value, property.propertyEditor, group.identity, property.identity);
 			if (property.propertyEditor.collapsible === true) {
 				renderCompoundProperty(row, value, group.identity, property);
 			} else {
@@ -371,12 +491,84 @@ if (bootstrap.status !== 'ready') {
 			|| editor.kind === 'collectionSummary' || editor.kind === 'objectSummary';
 	}
 
-	function renderPropertyEditor(container, editor) {
+	function renderPropertyEditor(container, editor, groupId, propertyId) {
 		switch (editor.kind) {
-			case 'boolean': container.textContent = editor.value === null ? '—' : editor.value ? bootstrap.strings.trueValue : bootstrap.strings.falseValue; return;
+			case 'boolean': {
+				if (!editor.editable) { container.textContent = editor.value === null ? '—' : editor.value ? bootstrap.strings.trueValue : bootstrap.strings.falseValue; return; }
+				const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'property-checkbox'; input.checked = editor.value === true;
+				input.addEventListener('change', () => vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: 'boolean', value: input.checked } }));
+				container.append(input); return;
+			}
 			case 'decimal':
-			case 'integer': container.textContent = editor.decimal ?? '—'; return;
-			case 'text': container.textContent = editor.value ?? '—'; return;
+			case 'integer': {
+				if (!editor.editable) { container.textContent = editor.decimal ?? '—'; return; }
+				const input = document.createElement('input'); input.type = 'text'; input.className = 'property-input'; input.value = editor.decimal ?? '';
+				input.inputMode = editor.kind === 'integer' ? 'numeric' : 'decimal';
+				const complete = new RegExp(editor.completePattern); const intermediate = new RegExp(editor.intermediatePattern);
+				const validation = document.createElement('div'); validation.className = 'property-validation'; validation.hidden = true;
+				validation.id = 'property-validation-' + ++validationSequence;
+				input.setAttribute('aria-describedby', validation.id);
+				input.setAttribute('aria-invalid', 'false');
+				let committedValue = input.value;
+				let commitTimer;
+				function status() {
+					return complete.test(input.value) ? 'complete' : intermediate.test(input.value) ? 'intermediate' : 'invalid';
+				}
+				function showValidation(show) {
+					input.classList.toggle('validation-error', show);
+					input.setAttribute('aria-invalid', String(show));
+					validation.textContent = show ? (editor.kind === 'integer' ? bootstrap.strings.invalidInteger : bootstrap.strings.invalidNumber) : '';
+					validation.hidden = !show;
+				}
+				function commitNumericInput(reportInvalid) {
+					clearTimeout(commitTimer);
+					const currentStatus = status();
+					if (currentStatus !== 'complete') {
+						showValidation(reportInvalid || currentStatus === 'invalid');
+						pendingNumericEditors.add(controller);
+						return false;
+					}
+					showValidation(false);
+					if (input.value === committedValue) {
+						pendingNumericEditors.delete(controller);
+						return true;
+					}
+					committedValue = input.value;
+					pendingNumericEditors.delete(controller);
+					vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: editor.kind === 'integer' ? 'integer' : 'number', literal: input.value } });
+					return true;
+				}
+				const controller = {
+					commit: () => commitNumericInput(true),
+					focus: () => input.focus(),
+					dispose: () => clearTimeout(commitTimer)
+				};
+				numericEditors.add(controller);
+				input.addEventListener('input', () => {
+					clearTimeout(commitTimer);
+					const currentStatus = status();
+					showValidation(currentStatus === 'invalid');
+					if (input.value === committedValue) {
+						pendingNumericEditors.delete(controller);
+						return;
+					}
+					pendingNumericEditors.add(controller);
+					if (currentStatus === 'complete') {
+						commitTimer = setTimeout(() => commitNumericInput(false), 250);
+					}
+				});
+				input.addEventListener('change', () => commitNumericInput(true));
+				input.addEventListener('keydown', event => {
+					if (event.key === 'Enter') { commitNumericInput(true); }
+				});
+				container.append(input, validation); return;
+			}
+			case 'text': {
+				if (!editor.editable) { container.textContent = editor.value ?? '—'; return; }
+				const input = document.createElement('input'); input.type = 'text'; input.className = 'property-input'; input.value = editor.value ?? '';
+				input.addEventListener('change', () => vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: 'text', literal: input.value } }));
+				container.append(input); return;
+			}
 			case 'vector2':
 			case 'vector3':
 			case 'eulerRotation':
@@ -438,7 +630,23 @@ if (bootstrap.status !== 'ready') {
 	divider.addEventListener('pointerdown', event => { dragging = true; divider.classList.add('dragging'); divider.setPointerCapture(event.pointerId); });
 	divider.addEventListener('pointermove', event => { if (!dragging) { return; } const bounds = shell.getBoundingClientRect(); const headerHeight = app.querySelector('.header').getBoundingClientRect().height; const available = bounds.height - headerHeight - 5; const size = Math.max(80, Math.min(available - 100, event.clientY - bounds.top - headerHeight)); shell.style.setProperty('--navigator-size', size + 'px'); });
 	divider.addEventListener('pointerup', event => { dragging = false; divider.classList.remove('dragging'); divider.releasePointerCapture(event.pointerId); });
-	window.addEventListener('message', event => { if (event.data?.type === 'focusGroup' && typeof event.data.groupId === 'string' && event.data.groupId !== selectedGroupId) { selectGroup(event.data.groupId, undefined, false); } });
+	window.addEventListener('message', event => {
+		if (event.data?.type === 'focusGroup' && typeof event.data.groupId === 'string' && event.data.groupId !== selectedGroupId) {
+			selectGroup(event.data.groupId, undefined, false);
+			return;
+		}
+		if (event.data?.type === 'prepareForDocumentClose' && Number.isSafeInteger(event.data.requestId)) {
+			let accepted = true;
+			for (const editor of Array.from(pendingNumericEditors)) {
+				if (!editor.commit()) {
+					editor.focus();
+					accepted = false;
+					break;
+				}
+			}
+			vscode.postMessage({ type: 'prepareForDocumentCloseResult', requestId: event.data.requestId, accepted });
+		}
+	});
 	selectGroup(selectedGroupId, undefined, false);
 	updateSearch();
 }

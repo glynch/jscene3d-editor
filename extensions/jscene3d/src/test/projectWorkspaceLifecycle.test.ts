@@ -6,6 +6,9 @@
 import * as assert from 'assert';
 import { ProjectOpenResultDto, ProjectReplaceResultDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
 import {
+	CoordinatedProjectDocumentLifecycle,
+	ProjectDocumentLifecycle,
+	ProjectDocumentPreparation,
 	ProjectReopenIntent,
 	ProjectReopenIntentStore,
 	ProjectWorkspaceHost,
@@ -67,7 +70,9 @@ suite('JScene3D project workspace lifecycle', () => {
 		state.nextSelection = replaceSelection(candidateRejectedResult());
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
+		const store = new TestIntentStore();
+		store.value = intent('/projects/a/a.j3d', '/projects/a');
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/bad/bad.j3d' });
 
@@ -75,6 +80,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.strictEqual(result.workspace, 'unchanged');
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
 		assert.strictEqual(workspace.openedResource, undefined);
+		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
 	});
 
 	test('normalizes a replacement generation conflict without changing the workspace', async () => {
@@ -89,12 +95,15 @@ suite('JScene3D project workspace lifecycle', () => {
 		});
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
+		const store = new TestIntentStore();
+		store.value = intent('/projects/a/a.j3d', '/projects/a');
+		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, store, new TestLogger());
 
 		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
 
 		assert.deepStrictEqual(result, { status: 'conflict', workspace: 'unchanged' });
 		assert.strictEqual(workspace.openedResource, undefined);
+		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
 	});
 
 	test('successful replacement with a different root persists B intent and opens B workspace', async () => {
@@ -115,10 +124,10 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.ok(logger.lines.includes('Opening replacement workspace: /projects/b'));
 	});
 
-	test('successful replacement with the current root updates B without reload or intent', async () => {
+	test('successful replacement with the current root updates the retained B reopen record without reload', async () => {
 		const state = new TestProjectState();
 		state.snapshot = openSnapshot(summaryA, 7);
-		const sameRootB = { ...summaryB, root: summaryA.root };
+		const sameRootB = { ...summaryB, root: summaryA.root, descriptor: '/projects/a/b.j3d' };
 		state.nextSelection = replaceSelection(replacedResult(sameRootB, 8));
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
@@ -130,7 +139,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		assert.strictEqual(result.status, 'replaced');
 		assert.strictEqual(result.workspace, 'unchanged');
-		assert.strictEqual(store.value, undefined);
+		assert.deepStrictEqual(store.value, intent('/projects/a/b.j3d', '/projects/a'));
 		assert.strictEqual(workspace.openedResource, undefined);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(sameRootB, 8));
 	});
@@ -151,6 +160,78 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.strictEqual(workspace.closeCalls, 1);
 		assert.deepStrictEqual(state.snapshot, closedSnapshot());
 		assert.ok(logger.lines.includes('Closing project workspace'));
+	});
+
+	test('closes native authored documents before destroying Java state', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.snapshot = openSnapshot(summaryA, 7);
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state, new TestWorkspaceHost(events), new TestIntentStore(events), new TestLogger(), new TestDocuments(events));
+
+		await lifecycle.closeProject();
+
+		assert.deepStrictEqual(events, ['document-close', 'java-close', 'intent-clear', 'workspace-close']);
+	});
+
+	test('commits valid focused Inspector input before starting native dirty-document close', async () => {
+		const events: string[] = [];
+		const documents = new CoordinatedProjectDocumentLifecycle(
+			new TestDocumentPreparation(events), new TestDocuments(events));
+
+		const accepted = await documents.closeProjectDocuments();
+
+		assert.strictEqual(accepted, true);
+		assert.deepStrictEqual(events, ['prepare-local-input', 'document-close']);
+	});
+
+	test('invalid focused Inspector input remains local and prevents native document close', async () => {
+		const events: string[] = [];
+		const documents = new CoordinatedProjectDocumentLifecycle(
+			new TestDocumentPreparation(events, false), new TestDocuments(events));
+
+		const accepted = await documents.closeProjectDocuments();
+
+		assert.strictEqual(accepted, false);
+		assert.deepStrictEqual(events, ['prepare-local-input']);
+	});
+
+	test('native Cancel or save failure propagates after valid Inspector preparation', async () => {
+		const events: string[] = [];
+		const documents = new CoordinatedProjectDocumentLifecycle(
+			new TestDocumentPreparation(events), new TestDocuments(events, false));
+
+		const accepted = await documents.closeProjectDocuments();
+
+		assert.strictEqual(accepted, false);
+		assert.deepStrictEqual(events, ['prepare-local-input', 'document-close']);
+	});
+
+	test('cancelled native document close preserves Java project and workspace', async () => {
+		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		const workspace = new TestWorkspaceHost();
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state, workspace, new TestIntentStore(), new TestLogger(), new TestDocuments([], false));
+
+		await lifecycle.closeProject();
+
+		assert.strictEqual(state.closeCalls, 0);
+		assert.strictEqual(workspace.closeCalls, 0);
+		assert.strictEqual(state.snapshot.status, 'open');
+	});
+
+	test('cancelled document close prevents project replacement', async () => {
+		const state = new TestProjectState();
+		state.snapshot = openSnapshot(summaryA, 7);
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state, new TestWorkspaceHost(), new TestIntentStore(), new TestLogger(), new TestDocuments([], false));
+
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
+
+		assert.deepStrictEqual(result, { status: 'cancelled', workspace: 'unchanged' });
+		assert.deepStrictEqual(state.openCalls, []);
+		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
 	});
 
 	test('close failure leaves workspace open and intent intact', async () => {
@@ -186,7 +267,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		]);
 	});
 
-	test('activation reopens persisted B with fresh ordinary-open authority', async () => {
+	test('activation reopens persisted B with fresh ordinary-open authority and retains its restart record', async () => {
 		const state = new TestProjectState();
 		state.nextSelection = openSelection(openResult(summaryB, 12));
 		const workspace = new TestWorkspaceHost();
@@ -200,7 +281,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.deepStrictEqual(result, { status: 'reopened' });
 		assert.deepStrictEqual(state.openCalls, ['/projects/b/b.j3d']);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 12));
-		assert.strictEqual(store.value, undefined);
+		assert.deepStrictEqual(store.value, intent('/projects/b/b.j3d', '/projects/b'));
 	});
 
 	test('invalid persisted intent is cleared without Java or workspace work', async () => {
@@ -346,6 +427,24 @@ class TestLogger {
 
 	appendLine(message: string): void {
 		this.lines.push(message);
+	}
+}
+
+class TestDocuments implements ProjectDocumentLifecycle {
+	constructor(private readonly events: string[] = [], private readonly accepted = true) { }
+
+	closeProjectDocuments(): Promise<boolean> {
+		this.events.push('document-close');
+		return Promise.resolve(this.accepted);
+	}
+}
+
+class TestDocumentPreparation implements ProjectDocumentPreparation {
+	constructor(private readonly events: string[] = [], private readonly accepted = true) { }
+
+	prepareForDocumentClose(): Promise<boolean> {
+		this.events.push('prepare-local-input');
+		return Promise.resolve(this.accepted);
 	}
 }
 

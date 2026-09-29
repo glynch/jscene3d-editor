@@ -117,6 +117,8 @@ export class AuthoringWorkflow {
 			case 'conflict':
 				await this.host.notify('projectReplacementConflict');
 				return;
+			case 'cancelled':
+				return;
 		}
 	}
 

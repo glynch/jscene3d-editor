@@ -4,7 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { resolvePropertyEditor } from '../inspector/propertyEditorResolver';
+import {
+	acceptsPropertyEditorCandidate,
+	numericInputStatus,
+	resolvePropertyEditor
+} from '../inspector/propertyEditorResolver';
 import {
 	InspectorEditorSemanticsDto,
 	InspectorPropertyDto,
@@ -15,7 +19,7 @@ import {
 suite('JScene3D Inspector property editor resolver', () => {
 	test('resolves ordinary scalar and integer presentations without changing exact decimals', () => {
 		assert.deepStrictEqual(resolvePropertyEditor(property('boolean', { kind: 'boolean', value: true })), {
-			kind: 'boolean', value: true
+			kind: 'boolean', value: true, editable: false
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(property(
 			'number',
@@ -25,17 +29,90 @@ suite('JScene3D Inspector property editor resolver', () => {
 		)), {
 			kind: 'decimal',
 			decimal: '12345678901234567890.12345678901234567890',
+			editable: false,
 			minimum: { decimal: '-100000000000000000000.5', inclusive: true },
-			maximum: null
+			maximum: null,
+			completePattern: '^[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?$',
+			intermediatePattern: '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)[eE][+-]?)$'
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(property(
 			'number', { kind: 'number', decimal: '100000000000000000000' }, 'integer'
 		)), {
-			kind: 'integer', decimal: '100000000000000000000', minimum: null, maximum: null
+			kind: 'integer', decimal: '100000000000000000000', editable: false, minimum: null, maximum: null,
+			completePattern: '^[+-]?\\d+$', intermediatePattern: '^[+-]?$'
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(property('text', { kind: 'text', value: 'Player' })), {
-			kind: 'text', value: 'Player'
+			kind: 'text', value: 'Player', editable: false
 		});
+	});
+
+	test('enables only authoritative simple scalar mutation targets', () => {
+		const readonly = property('text', { kind: 'text', value: 'Player' });
+		const editable: InspectorPropertyDto = {
+			...readonly,
+			state: { ...readonly.state, editable: true },
+			mutationTarget: {
+				kind: 'component-property',
+				occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] },
+				entityId: 'entity-a', componentId: 'component-a', propertyId: 'name'
+			}
+		};
+
+		assert.deepStrictEqual(resolvePropertyEditor(editable), { kind: 'text', value: 'Player', editable: true });
+	});
+
+	test('uses the closed scalar registry to validate typed edit candidates', () => {
+		assert.strictEqual(acceptsPropertyEditorCandidate(property('boolean', { kind: 'boolean', value: true }), {
+			kind: 'boolean', value: false
+		}), true);
+		assert.strictEqual(acceptsPropertyEditorCandidate(property(
+			'number', { kind: 'number', decimal: '1' }, 'integer'
+		), { kind: 'integer', literal: '12345678901234567890' }), true);
+		assert.strictEqual(acceptsPropertyEditorCandidate(property('number', { kind: 'number', decimal: '1.25' }), {
+			kind: 'number', literal: '0.00000000000000000001'
+		}), true);
+		assert.strictEqual(acceptsPropertyEditorCandidate(property('text', { kind: 'text', value: 'before' }), {
+			kind: 'text', literal: 'after'
+		}), true);
+		assert.strictEqual(acceptsPropertyEditorCandidate(property(
+			'number', { kind: 'number', decimal: '1' }, 'integer'
+		), { kind: 'number', literal: '1' }), false);
+		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('vector3', ['1', '2', '3']), {
+			kind: 'text', literal: 'unsupported'
+		}), false);
+	});
+
+	test('rejects syntactically impossible exact numeric candidates before mutation', () => {
+		const integer = property('number', { kind: 'number', decimal: '1' }, 'integer');
+		const number = property('number', { kind: 'number', decimal: '1.25' });
+
+		for (const literal of ['0', '42', '-42', '123456789012345678901234567890']) {
+			assert.strictEqual(acceptsPropertyEditorCandidate(integer, { kind: 'integer', literal }), true);
+		}
+		for (const literal of ['1.5', 'abc', '12abc']) {
+			assert.strictEqual(acceptsPropertyEditorCandidate(integer, { kind: 'integer', literal }), false);
+		}
+		for (const literal of [
+			'0', '0.34', '-1.25', '12345678901234567890.12345678901234567890',
+			'0.000000000000000000000000000001', '1.', '-0.', '1e3', '-2.5E-7'
+		]) {
+			assert.strictEqual(acceptsPropertyEditorCandidate(number, { kind: 'number', literal }), true);
+		}
+		for (const literal of ['0.3aaaaaaa', 'abc', '12abc', '-', '.', '1e', '1e+']) {
+			assert.strictEqual(acceptsPropertyEditorCandidate(number, { kind: 'number', literal }), false);
+		}
+	});
+
+	test('distinguishes useful numeric typing prefixes from impossible syntax', () => {
+		for (const literal of ['', '+', '-']) {
+			assert.strictEqual(numericInputStatus('integer', literal), 'intermediate');
+		}
+		for (const literal of ['', '+', '-', '.', '+.', '-.', '1e', '1e+', '-2.5E-']) {
+			assert.strictEqual(numericInputStatus('number', literal), 'intermediate');
+		}
+		for (const literal of ['e', '+e', '1ee', '1e+a']) {
+			assert.strictEqual(numericInputStatus('number', literal), 'invalid');
+		}
 	});
 
 	test('resolves every specialized numeric-array semantic before structural array summary', () => {
@@ -136,7 +213,7 @@ function property(
 		},
 		state: {
 			authoredValue: value, defaultValue: null, effectiveValue: value,
-			origin: 'authored', validity: 'valid', editable: false
+			origin: 'authored', validity: 'valid', editable: false, modified: false
 		},
 		mutationTarget: null
 	};

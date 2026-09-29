@@ -171,6 +171,8 @@
 		"configurationDefaults": {
 			"workbench.colorTheme": "JScene3D Dark",
 			"workbench.secondarySideBar.defaultVisibility": "visibleInWorkspace",
+			"java.compile.nullAnalysis.mode": "disabled",
+			"java.import.gradle.enabled": false,
 			"chat.disableAIFeatures": true,
 			"chat.agentsControl.enabled": "hidden",
 			"chat.viewSessions.enabled": false,

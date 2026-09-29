@@ -41,14 +41,14 @@ export interface WorkspaceProjectState {
 	close(): Promise<void>;
 }
 
-/** Versioned stable intent retained only across a workspace transition. */
+/** Versioned active-project record retained across workspace transitions and editor restarts. */
 export interface ProjectReopenIntent {
 	readonly version: 1;
 	readonly descriptorUri: string;
 	readonly projectRootUri: string;
 }
 
-/** Persistence boundary for the one pending workspace-transition intent. */
+/** Persistence boundary for the active-project restart record. */
 export interface ProjectReopenIntentStore {
 	read(): unknown;
 	write(value: ProjectReopenIntent | undefined): Promise<void>;
@@ -57,6 +57,29 @@ export interface ProjectReopenIntentStore {
 /** Receives workspace reconciliation messages. */
 export interface ProjectWorkspaceLogger {
 	appendLine(message: string): void;
+}
+
+/** Native document close boundary that must complete before Java project invalidation. */
+export interface ProjectDocumentLifecycle {
+	closeProjectDocuments(): Promise<boolean>;
+}
+
+/** Local editor preparation performed before native authored-document resolution. */
+export interface ProjectDocumentPreparation {
+	prepareForDocumentClose(): Promise<boolean>;
+}
+
+/** Commits valid local editor state before delegating to VS Code's native dirty-document lifecycle. */
+export class CoordinatedProjectDocumentLifecycle implements ProjectDocumentLifecycle {
+	constructor(
+		private readonly preparation: ProjectDocumentPreparation,
+		private readonly documents: ProjectDocumentLifecycle
+	) { }
+
+	async closeProjectDocuments(): Promise<boolean> {
+		return await this.preparation.prepareForDocumentClose()
+			&& this.documents.closeProjectDocuments();
+	}
 }
 
 /** Application-level result of opening Java state and reconciling the Code OSS workspace. */
@@ -68,9 +91,10 @@ export type ProjectWorkspaceOpenResult =
 	| {
 		readonly status: 'openRejected' | 'candidateRejected' | 'conflict';
 		readonly workspace: 'unchanged';
-	};
+	}
+	| { readonly status: 'cancelled'; readonly workspace: 'unchanged' };
 
-/** Outcome of reconciling a persisted project intent during activation. */
+/** Outcome of reopening a persisted active project during activation. */
 export type ProjectReopenOutcome =
 	| { readonly status: 'none' }
 	| { readonly status: 'reopened' }
@@ -86,7 +110,8 @@ export class ProjectWorkspaceLifecycle {
 		private readonly projectState: WorkspaceProjectState,
 		private readonly workspace: ProjectWorkspaceHost,
 		private readonly intentStore: ProjectReopenIntentStore,
-		private readonly logger: ProjectWorkspaceLogger
+		private readonly logger: ProjectWorkspaceLogger,
+		private readonly documents: ProjectDocumentLifecycle = { closeProjectDocuments: () => Promise.resolve(true) }
 	) {
 		this.workspaceSubscription = workspace.onDidChangeWorkspace(() => {
 			void this.runExclusive(() => this.reconcileExternalWorkspaceChange()).catch(error => {
@@ -97,10 +122,16 @@ export class ProjectWorkspaceLifecycle {
 
 	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult> {
 		return this.runExclusive(async () => {
+			if (this.projectState.snapshot.status === 'open' && !await this.documents.closeProjectDocuments()) {
+				this.logger.appendLine('Project replacement cancelled while closing authored documents');
+				return { status: 'cancelled', workspace: 'unchanged' };
+			}
 			const selection = await this.projectState.open(localProjectPath(location));
 			const outcome = projectSelectionOutcome(selection);
 			if (outcome.status !== 'opened' && outcome.status !== 'replaced') {
-				await this.intentStore.write(undefined);
+				if (selection.operation === 'open') {
+					await this.intentStore.write(undefined);
+				}
 				return { status: outcome.status, workspace: 'unchanged' };
 			}
 			if (this.disposed) {
@@ -109,18 +140,18 @@ export class ProjectWorkspaceLifecycle {
 
 			const project = outcome.project;
 			const projectRoot = this.workspace.resourceForLocalPath(project.root);
-			if (this.workspace.matchesProjectRoot(projectRoot)) {
-				await this.intentStore.write(undefined);
-				this.logger.appendLine(`Workspace already matches project root: ${project.root}`);
-				return { status: outcome.status, workspace: 'unchanged' };
-			}
-
 			const intent: ProjectReopenIntent = {
 				version: 1,
 				descriptorUri: this.workspace.resourceForLocalPath(project.descriptor).uri,
 				projectRootUri: projectRoot.uri
 			};
-			this.logger.appendLine('Persisting project reopen intent');
+			if (this.workspace.matchesProjectRoot(projectRoot)) {
+				await this.intentStore.write(intent);
+				this.logger.appendLine(`Workspace already matches project root: ${project.root}`);
+				return { status: outcome.status, workspace: 'unchanged' };
+			}
+
+			this.logger.appendLine('Persisting active project reopen record');
 			try {
 				await this.intentStore.write(intent);
 			} catch (error) {
@@ -188,7 +219,6 @@ export class ProjectWorkspaceLifecycle {
 					this.logger.appendLine('Project reopen failed: Java project root does not match the current workspace');
 					return { status: 'failed', reason: 'Java project root does not match the current workspace' };
 				}
-				await this.intentStore.write(undefined);
 				this.logger.appendLine(`Project reopened: ${result.project.name}`);
 				return { status: 'reopened' };
 			} catch (error) {
@@ -203,6 +233,10 @@ export class ProjectWorkspaceLifecycle {
 	closeProject(): Promise<void> {
 		return this.runExclusive(async () => {
 			if (this.projectState.snapshot.status !== 'open') {
+				return;
+			}
+			if (!await this.documents.closeProjectDocuments()) {
+				this.logger.appendLine('Project close cancelled while closing authored documents');
 				return;
 			}
 			await this.projectState.close();

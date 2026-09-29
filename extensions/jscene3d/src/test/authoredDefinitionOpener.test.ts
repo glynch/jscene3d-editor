@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import { AuthoredDefinitionOpener, authoredDefinitionViewType } from '../definition/authoredDefinitionOpener';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
+import { definitionResourceUri } from '../definition/definitionResource';
 import { ConnectionScopedResult, DefinitionOpenResultDto, DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authored definition opener', () => {
@@ -73,14 +74,37 @@ suite('JScene3D authored definition opener', () => {
 		await assert.rejects(opener.open(4, 'definition-a'), /does not match/);
 		assert.strictEqual(openCalls, 0);
 	});
+
+	test('focuses the recovered hot-exit resource instead of opening a duplicate current-session URI', async () => {
+		const state = new AuthoredDefinitionState();
+		const snapshot = definition('definition-a');
+		const recoveredResource = definitionResourceUri('connection-before-restart', 4, snapshot);
+		state.setProjectGeneration(4);
+		state.register(recoveredResource, 4, snapshot);
+		const opened: string[] = [];
+		const opener = new AuthoredDefinitionOpener(
+			{ openDefinition: async () => connected(success(4, snapshot), 'connection-after-restart') },
+			state,
+			async resource => { opened.push(resource); }
+		);
+
+		const outcome = await opener.open(4, 'definition-a');
+
+		assert.strictEqual(outcome.status, 'opened');
+		assert.deepStrictEqual(opened, [recoveredResource]);
+		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.resource : undefined, recoveredResource);
+	});
 });
 
 function success(projectGeneration: number, definition: DefinitionSnapshotDto): DefinitionOpenResultDto {
 	return { opened: true, projectGeneration, definition, diagnostics: [], failureCode: null };
 }
 
-function connected(result: DefinitionOpenResultDto): ConnectionScopedResult<DefinitionOpenResultDto> {
-	return { connectionGeneration: 'connection-a', result };
+function connected(
+	result: DefinitionOpenResultDto,
+	connectionGeneration = 'connection-a'
+): ConnectionScopedResult<DefinitionOpenResultDto> {
+	return { connectionGeneration, result };
 }
 
 function definition(assetId: string): DefinitionSnapshotDto {

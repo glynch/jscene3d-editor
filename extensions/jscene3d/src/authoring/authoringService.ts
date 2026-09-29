@@ -9,10 +9,14 @@ import { Readable, Writable } from 'stream';
 import {
 	AuthoringProtocolClient,
 	ConnectionScopedResult,
+	DefinitionBackupResultDto,
+	DefinitionMutationDto,
+	DefinitionOperationResultDto,
 	DefinitionOpenResultDto,
 	InitializeResultDto,
 	HierarchySemanticTargetDto,
 	InspectorReadResultDto,
+	InspectorMutationTargetDto,
 	ProjectCloseResultDto,
 	ProjectOpenResultDto,
 	ProjectReplaceResultDto
@@ -175,6 +179,45 @@ export class AuthoringService implements Disposable {
 		}
 	}
 
+	async mutateDefinition(
+		projectGeneration: number,
+		assetId: string,
+		revision: number,
+		target: InspectorMutationTargetDto,
+		mutation: DefinitionMutationDto
+	): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.mutateDefinition(projectGeneration, assetId, revision, target, mutation));
+	}
+
+	async undoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.undoDefinition(projectGeneration, assetId, revision));
+	}
+
+	async redoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.redoDefinition(projectGeneration, assetId, revision));
+	}
+
+	async saveDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.saveDefinition(projectGeneration, assetId, revision));
+	}
+
+	async revertDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.revertDefinition(projectGeneration, assetId, revision));
+	}
+
+	async backupDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionBackupResultDto> {
+		return this.withClient(client => client.backupDefinition(projectGeneration, assetId, revision));
+	}
+
+	async restoreDefinitionBackup(
+		projectGeneration: number,
+		assetId: string,
+		revision: number,
+		backup: string
+	): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.restoreDefinitionBackup(projectGeneration, assetId, revision, backup));
+	}
+
 	shutdown(): Promise<void> {
 		this.shutdownPromise ??= this.performShutdown();
 		return this.shutdownPromise;
@@ -266,6 +309,15 @@ export class AuthoringService implements Disposable {
 			if (this.starting === starting) {
 				this.starting = undefined;
 			}
+		}
+	}
+
+	private async withClient<T>(operation: (client: AuthoringProtocolClient) => Promise<T>): Promise<T> {
+		await this.ensureReady();
+		try {
+			return await operation(this.requireClient());
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
 		}
 	}
 

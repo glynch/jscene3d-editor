@@ -95,6 +95,36 @@ suite('JScene3D Inspector view', () => {
 		assert.doesNotMatch(html, /inspector\/read/);
 	});
 
+	test('renders exact text-backed scalar editors and posts typed candidates', () => {
+		const base = snapshot();
+		const speed = base.groups[1].properties[0];
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], {
+				...base.groups[1],
+				properties: [{
+					...speed,
+					state: { ...speed.state, editable: true },
+					mutationTarget: {
+						kind: 'component-property', occurrence: base.target.occurrence!,
+						entityId: 'entity-a', componentId: 'component-a', propertyId: 'speed'
+					}
+				}]
+			}, base.groups[2]]
+		};
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.match(html, /"propertyEditor":\{"kind":"decimal","decimal":"4\.0","editable":true/);
+		assert.match(html, /input\.type = 'text'/);
+		assert.match(html, /input\.inputMode = editor\.kind === 'integer' \? 'numeric' : 'decimal'/);
+		assert.match(html, /candidate: \{ kind: editor\.kind === 'integer' \? 'integer' : 'number', literal: input\.value \}/);
+		assert.match(html, /className = 'property-validation'/);
+		assert.match(html, /aria-invalid/);
+		assert.match(html, /prepareForDocumentClose/);
+		assert.doesNotMatch(html, /reportValidity|setCustomValidity|property-input:invalid/);
+		assert.doesNotMatch(html, /parseFloat|parseInt|Number\(/);
+	});
+
 	test('keeps provenance in the snapshot while presenting ordinary default and authored states quietly', () => {
 		const base = snapshot();
 		const template = base.groups[1].properties[0];
@@ -110,7 +140,7 @@ suite('JScene3D Inspector view', () => {
 						authoredValue: { kind: 'number', decimal: '18' },
 						defaultValue: { kind: 'number', decimal: '9.8' },
 						effectiveValue: { kind: 'number', decimal: '18' },
-						origin: 'authored', validity: 'valid', editable: false
+						origin: 'authored', validity: 'valid', editable: false, modified: false
 					}
 				}, {
 					...template,
@@ -118,7 +148,7 @@ suite('JScene3D Inspector view', () => {
 					label: 'Optional Target',
 					state: {
 						authoredValue: null, defaultValue: null, effectiveValue: null,
-						origin: 'unset', validity: 'valid', editable: false
+						origin: 'unset', validity: 'valid', editable: false, modified: false
 					}
 				}]
 			}]
@@ -132,6 +162,26 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /"unset":"Unset"/);
 		assert.doesNotMatch(html, /"defaultValue":"Default"/);
 		assert.doesNotMatch(html, /Authored/);
+	});
+
+	test('marks only properties changed from the authoritative persisted baseline', () => {
+		const base = snapshot();
+		const changed = base.groups[1].properties[0];
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], {
+				...base.groups[1],
+				properties: [{ ...changed, state: { ...changed.state, modified: true } }]
+			}]
+		};
+
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.match(html, /"modified":true/);
+		assert.match(html, /property\.state\.modified/);
+		assert.match(html, /Modified since last save/);
+		assert.match(html, /settings-modifiedItemIndicator/);
+		assert.match(html, /border-left: 2px solid var\(--vscode-settings-modifiedItemIndicator, var\(--vscode-focusBorder\)\)/);
 	});
 
 	test('retains read-only and missing-metadata presentation in the webview model', () => {
@@ -185,7 +235,7 @@ suite('JScene3D Inspector view', () => {
 					kind: 'reference', referenceKind: 'asset', locator: 'mesh', label: 'Player mesh',
 					resolution: 'resolved', revealUri: 'file:///project/assets/player.glb'
 				},
-				origin: 'authored', validity: 'valid', editable: false
+				origin: 'authored', validity: 'valid', editable: false, modified: false
 			}
 		};
 		const inspector: InspectorSnapshotDto = {
@@ -207,7 +257,7 @@ suite('JScene3D Inspector view', () => {
 
 		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
 
-		assert.ok(html.includes('"propertyEditor":{"kind":"decimal","decimal":"4.0","minimum":null,"maximum":null}'));
+		assert.match(html, /"propertyEditor":\{"kind":"decimal","decimal":"4\.0","editable":false,"minimum":null,"maximum":null/);
 		assert.ok(html.includes('"kind":"vector2","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"1.25"},{"label":"Y","decimal":"-4"}],"summary":"1.25, -4"'));
 		assert.ok(html.includes('"kind":"vector3","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"-6"},{"label":"Y","decimal":"0.875"},{"label":"Z","decimal":"6"}],"summary":"-6, 0.875, 6"'));
 		assert.ok(html.includes('"kind":"eulerRotation","collapsible":true,"unit":"degrees","components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"90"},{"label":"Z","decimal":"-2.5"}],"summary":"0°, 90°, -2.5°"'));
@@ -235,10 +285,30 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /collapsedProperties: Array\.from\(collapsedProperties\)/);
 	});
 
-	test('accepts only the closed select-group webview message shape', () => {
+	test('accepts only the closed Inspector webview message shapes', () => {
 		assert.strictEqual(isInspectorMessage({ type: 'selectGroup', groupId: 'movement' }), true);
 		assert.strictEqual(isInspectorMessage({ type: 'selectGroup', groupId: '' }), false);
 		assert.strictEqual(isInspectorMessage({ type: 'selectGroup', groupId: 'movement', extra: true }), false);
+		assert.strictEqual(isInspectorMessage({
+			type: 'editProperty', groupId: 'movement', propertyId: 'speed',
+			candidate: { kind: 'number', literal: '0.00000000000000000001' }
+		}), true);
+		assert.strictEqual(isInspectorMessage({
+			type: 'editProperty', groupId: 'movement', propertyId: 'speed',
+			candidate: { kind: 'number', literal: 1 }
+		}), false);
+		assert.strictEqual(isInspectorMessage({
+			type: 'prepareForDocumentCloseResult', requestId: 1, accepted: true
+		}), true);
+		assert.strictEqual(isInspectorMessage({
+			type: 'prepareForDocumentCloseResult', requestId: 0, accepted: true
+		}), false);
+		assert.strictEqual(isInspectorMessage({
+			type: 'prepareForDocumentCloseResult', requestId: 1, accepted: 'yes'
+		}), false);
+		assert.strictEqual(isInspectorMessage({
+			type: 'prepareForDocumentCloseResult', requestId: 1, accepted: true, extra: true
+		}), false);
 		assert.strictEqual(isInspectorMessage({ type: 'mutate', groupId: 'movement' }), false);
 		assert.strictEqual(isInspectorMessage({ type: 'filter', query: 'duration' }), false);
 	});
@@ -287,7 +357,8 @@ function snapshot(): InspectorSnapshotDto {
 				},
 				state: {
 					authoredValue: null, defaultValue: { kind: 'number', decimal: '4.0' },
-					effectiveValue: { kind: 'number', decimal: '4.0' }, origin: 'default', validity: 'valid', editable: false
+					effectiveValue: { kind: 'number', decimal: '4.0' }, origin: 'default', validity: 'valid', editable: false,
+					modified: false
 				},
 				mutationTarget: null
 			}]
@@ -303,7 +374,8 @@ function snapshot(): InspectorSnapshotDto {
 				},
 				state: {
 					authoredValue: null, defaultValue: { kind: 'number', decimal: '0.1' },
-					effectiveValue: { kind: 'number', decimal: '0.1' }, origin: 'default', validity: 'valid', editable: false
+					effectiveValue: { kind: 'number', decimal: '0.1' }, origin: 'default', validity: 'valid', editable: false,
+					modified: false
 				},
 				mutationTarget: null
 			}]
@@ -326,7 +398,7 @@ function semanticArrayProperty(
 		},
 		state: {
 			authoredValue: value, defaultValue: null, effectiveValue: value,
-			origin: 'authored', validity: 'valid', editable: false
+			origin: 'authored', validity: 'valid', editable: false, modified: false
 		},
 		mutationTarget: null
 	};

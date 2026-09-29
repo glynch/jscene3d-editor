@@ -52,8 +52,15 @@ export class AuthoredDefinitionOpener {
 		if (result.projectGeneration !== projectGeneration || result.definition.context.assetId !== assetId) {
 			throw new Error('Definition response identity does not match the requested project generation and AssetId');
 		}
-		const resource = definitionResourceUri(response.connectionGeneration, result.projectGeneration, result.definition);
-		const mapping = this.state.register(resource, result.projectGeneration, result.definition);
+		const recovered = this.state.resolveAsset(result.projectGeneration, assetId);
+		const mapping = recovered === undefined
+			? this.state.register(
+				definitionResourceUri(response.connectionGeneration, result.projectGeneration, result.definition),
+				result.projectGeneration,
+				result.definition
+			)
+			: this.state.update(recovered.resource, result.definition);
+		const resource = mapping.resource;
 		await this.openWith(resource, authoredDefinitionViewType);
 		return { status: 'opened', resource: mapping, diagnostics: result.diagnostics };
 	}

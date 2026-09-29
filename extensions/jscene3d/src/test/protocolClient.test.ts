@@ -17,17 +17,21 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 1, minor: 2 },
+			protocolVersion: { major: 1, minor: 4 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
-			capabilities: ['project/open', 'project/replace', 'project/close', 'definition/open', 'inspector/read', 'service/shutdown']
+			capabilities: [
+				'project/open', 'project/replace', 'project/close', 'definition/open', 'definition/mutate',
+				'definition/undo', 'definition/redo', 'definition/save', 'definition/revert', 'definition/backup',
+				'definition/restoreBackup', 'inspector/read', 'service/shutdown'
+			]
 		});
 		assert.deepStrictEqual(transport.sent[0], {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 2 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 1, minor: 4 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
@@ -65,6 +69,36 @@ suite('JScene3D authoring protocol client', () => {
 			params: {
 				expectedProjectGeneration: 1,
 				assetId: 'e890c4c3-fb32-49d8-88b8-4e04e7a29656'
+			}
+		});
+	});
+
+	test('transports exact scalar mutation literals and validates authoritative lifecycle state', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const target = {
+			kind: 'component-property' as const,
+			occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] },
+			entityId: 'entity-a', componentId: 'component-a', propertyId: 'speed'
+		};
+		const mutation = client.mutateDefinition(1, 'world-a', 4, target, {
+			operation: 'set', value: { kind: 'number', literal: '0.00000000000000000001' }
+		});
+		const result = {
+			definition: 'world-a', outcome: 'accepted', revision: 5,
+			dirty: true, canUndo: true, canRedo: false, diagnostics: []
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await mutation, result);
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'definition/mutate', params: {
+				expectedProjectGeneration: 1,
+				assetId: 'world-a',
+				expectedDefinitionRevision: 4,
+				operation: 'set',
+				target: { ...target, componentId: 'component-a', propertyId: 'speed' },
+				value: { kind: 'number', value: null, literal: '0.00000000000000000001' }
 			}
 		});
 	});
@@ -780,7 +814,8 @@ function inspectorReadResult(): JsonObject {
 					constraints,
 					state: {
 						authoredValue: { kind: 'boolean', value: true }, defaultValue: null,
-						effectiveValue: { kind: 'boolean', value: true }, origin: 'authored', validity: 'valid', editable: true
+						effectiveValue: { kind: 'boolean', value: true }, origin: 'authored', validity: 'valid', editable: true,
+						modified: false
 					},
 					mutationTarget: { kind: 'entity-enabled', occurrence, entityId: 'entity-a' }
 				}]
@@ -794,7 +829,7 @@ function inspectorReadResult(): JsonObject {
 					state: {
 						authoredValue: { kind: 'object', values: semanticValues }, defaultValue: null,
 						effectiveValue: { kind: 'object', values: semanticValues },
-						origin: 'authored', validity: 'valid', editable: true
+						origin: 'authored', validity: 'valid', editable: true, modified: false
 					},
 					mutationTarget: {
 						kind: 'component-property', occurrence, entityId: 'entity-a',
@@ -824,7 +859,7 @@ function inspectorReadResult(): JsonObject {
 								{ kind: 'number', decimal: '0.0' }
 							]
 						},
-						origin: 'default', validity: 'valid', editable: false
+						origin: 'default', validity: 'valid', editable: false, modified: false
 					},
 					mutationTarget: null
 				}, {
@@ -849,7 +884,7 @@ function inspectorReadResult(): JsonObject {
 								{ kind: 'number', decimal: '-2.5' }
 							]
 						},
-						origin: 'default', validity: 'valid', editable: false
+						origin: 'default', validity: 'valid', editable: false, modified: false
 					},
 					mutationTarget: null
 				}]

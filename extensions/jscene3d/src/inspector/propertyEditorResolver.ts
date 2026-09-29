@@ -4,10 +4,27 @@
  *--------------------------------------------------------------------------------------------*/
 
 import {
+	DefinitionMutationValueDto,
 	InspectorNumericBoundDto,
 	InspectorPropertyDto,
 	InspectorValueDto
 } from '../protocol/authoringProtocol';
+
+export type ScalarPropertyEditorKind = 'boolean' | 'integer' | 'number' | 'text';
+
+interface ScalarPropertyEditorRegistration {
+	readonly kind: ScalarPropertyEditorKind;
+	readonly valueKind: InspectorPropertyDto['valueKind'];
+	readonly semantic: InspectorPropertyDto['constraints']['editor']['semantic'];
+}
+
+/** Closed internal registry for the scalar editors supported by the first writable slice. */
+const scalarPropertyEditors: readonly ScalarPropertyEditorRegistration[] = [
+	{ kind: 'boolean', valueKind: 'boolean', semantic: 'default' },
+	{ kind: 'integer', valueKind: 'number', semantic: 'integer' },
+	{ kind: 'number', valueKind: 'number', semantic: 'default' },
+	{ kind: 'text', valueKind: 'text', semantic: 'default' }
+];
 
 export interface ReadonlyPropertyEditorComponent {
 	readonly label: 'X' | 'Y' | 'Z' | 'W' | 'R' | 'G' | 'B';
@@ -16,9 +33,17 @@ export interface ReadonlyPropertyEditorComponent {
 
 interface ReadonlyNumericPropertyEditorModel {
 	readonly decimal: string | null;
+	readonly editable: boolean;
 	readonly minimum: InspectorNumericBoundDto | null;
 	readonly maximum: InspectorNumericBoundDto | null;
+	readonly completePattern: string;
+	readonly intermediatePattern: string;
 }
+
+const integerCompletePattern = '^[+-]?\\d+$';
+const integerIntermediatePattern = '^[+-]?$';
+const numberCompletePattern = '^[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?$';
+const numberIntermediatePattern = '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)[eE][+-]?)$';
 
 interface ReadonlyComponentPropertyEditorModel {
 	readonly collapsible: true;
@@ -29,10 +54,10 @@ interface ReadonlyComponentPropertyEditorModel {
 
 /** Closed presentation vocabulary used only by the built-in read-only Inspector. */
 export type ReadonlyPropertyEditorModel =
-	| { readonly kind: 'boolean'; readonly value: boolean | null }
+	| { readonly kind: 'boolean'; readonly value: boolean | null; readonly editable: boolean }
 	| ({ readonly kind: 'decimal' } & ReadonlyNumericPropertyEditorModel)
 	| ({ readonly kind: 'integer' } & ReadonlyNumericPropertyEditorModel)
-	| { readonly kind: 'text'; readonly value: string | null }
+	| { readonly kind: 'text'; readonly value: string | null; readonly editable: boolean }
 	| ({ readonly kind: 'vector2' } & ReadonlyComponentPropertyEditorModel)
 	| ({ readonly kind: 'vector3' } & ReadonlyComponentPropertyEditorModel)
 	| ({ readonly kind: 'eulerRotation' } & ReadonlyComponentPropertyEditorModel)
@@ -63,9 +88,11 @@ export type ReadonlyPropertyEditorModel =
 export function resolvePropertyEditor(property: InspectorPropertyDto): ReadonlyPropertyEditorModel {
 	const value = property.state.effectiveValue;
 	const semantic = property.constraints.editor.semantic;
+	const scalar = scalarPropertyEditor(property.valueKind, semantic);
+	if (scalar !== undefined) {
+		return scalarEditor(scalar.kind, property, value);
+	}
 	switch (semantic) {
-		case 'integer':
-			return numericEditor('integer', property, value);
 		case 'vector2':
 			return componentEditor('vector2', ['X', 'Y'], null, value);
 		case 'vector3':
@@ -76,8 +103,60 @@ export function resolvePropertyEditor(property: InspectorPropertyDto): ReadonlyP
 			return componentEditor('quaternion', ['X', 'Y', 'Z', 'W'], null, value);
 		case 'color-linear':
 			return componentEditor('linearColor', ['R', 'G', 'B'], null, value);
+		case 'integer':
 		case 'default':
 			return structuralEditor(property, value);
+	}
+}
+
+/** Rejects forged webview candidates that do not match the registered editor for a property. */
+export function acceptsPropertyEditorCandidate(
+	property: InspectorPropertyDto,
+	candidate: DefinitionMutationValueDto
+): boolean {
+	const editor = scalarPropertyEditor(property.valueKind, property.constraints.editor.semantic);
+	if (editor?.kind !== candidate.kind) {
+		return false;
+	}
+	return candidate.kind !== 'integer' && candidate.kind !== 'number'
+		? true
+		: numericInputStatus(candidate.kind, candidate.literal) === 'complete';
+}
+
+/** Classifies exact decimal text against the syntax accepted by Java's BigDecimal parser. */
+export function numericInputStatus(
+	kind: 'integer' | 'number',
+	literal: string
+): 'complete' | 'intermediate' | 'invalid' {
+	const complete = new RegExp(kind === 'integer' ? integerCompletePattern : numberCompletePattern);
+	if (complete.test(literal)) {
+		return 'complete';
+	}
+	const intermediate = new RegExp(kind === 'integer' ? integerIntermediatePattern : numberIntermediatePattern);
+	return intermediate.test(literal) ? 'intermediate' : 'invalid';
+}
+
+function scalarPropertyEditor(
+	valueKind: InspectorPropertyDto['valueKind'],
+	semantic: InspectorPropertyDto['constraints']['editor']['semantic']
+): ScalarPropertyEditorRegistration | undefined {
+	return scalarPropertyEditors.find(editor => editor.valueKind === valueKind && editor.semantic === semantic);
+}
+
+function scalarEditor(
+	kind: ScalarPropertyEditorKind,
+	property: InspectorPropertyDto,
+	value: InspectorValueDto | null
+): ReadonlyPropertyEditorModel {
+	switch (kind) {
+		case 'boolean':
+			return { kind, value: value?.kind === 'boolean' ? value.value : null, editable: editable(property) };
+		case 'integer':
+			return numericEditor(kind, property, value);
+		case 'number':
+			return numericEditor('decimal', property, value);
+		case 'text':
+			return { kind, value: value?.kind === 'text' ? value.value : null, editable: editable(property) };
 	}
 }
 
@@ -86,12 +165,6 @@ function structuralEditor(
 	value: InspectorValueDto | null
 ): ReadonlyPropertyEditorModel {
 	switch (property.valueKind) {
-		case 'boolean':
-			return { kind: 'boolean', value: value?.kind === 'boolean' ? value.value : null };
-		case 'number':
-			return numericEditor('decimal', property, value);
-		case 'text':
-			return { kind: 'text', value: value?.kind === 'text' ? value.value : null };
 		case 'reference':
 			return value?.kind === 'reference'
 				? {
@@ -116,6 +189,10 @@ function structuralEditor(
 			return { kind: 'objectSummary', count: value?.kind === 'object' ? Object.keys(value.values).length : null };
 		case 'null':
 			return fallbackEditor(property, value);
+		case 'boolean':
+		case 'number':
+		case 'text':
+			return { kind: 'fallback', value: 'unsupported' };
 	}
 }
 
@@ -127,9 +204,16 @@ function numericEditor(
 	return {
 		kind,
 		decimal: value?.kind === 'number' ? value.decimal : null,
+		editable: editable(property),
 		minimum: property.constraints.editor.minimum,
-		maximum: property.constraints.editor.maximum
+		maximum: property.constraints.editor.maximum,
+		completePattern: kind === 'integer' ? integerCompletePattern : numberCompletePattern,
+		intermediatePattern: kind === 'integer' ? integerIntermediatePattern : numberIntermediatePattern
 	};
+}
+
+function editable(property: InspectorPropertyDto): boolean {
+	return property.state.editable && property.mutationTarget !== null;
 }
 
 function componentEditor(
