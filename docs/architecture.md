@@ -5,9 +5,9 @@ JScene3D project authoring. The editor combines Code OSS presentation and
 document lifecycle facilities with Java-owned JScene3D project semantics.
 
 This document describes the architecture present in this repository. It also
-identifies the editable-document lifecycle that is currently being integrated
-and the native viewport direction that was proven separately but is not part of
-this checkout.
+identifies the editable-document lifecycle and native viewport architecture
+that are currently being integrated. In-progress architecture is distinguished
+from functionality available in the editor today.
 
 ## System overview
 
@@ -350,33 +350,232 @@ protocol negotiation, project transitions, failures, and Java standard error
 are written to the JScene3D Output channel. Output text is not used as a
 substitute for structured Problems entries.
 
-## Native viewport status
+## Native viewport rendering architecture
 
-This checkout does not contain or mount the earlier JScene3D native viewport.
-It has no JScene3D IOSurface transport, Electron SharedTexture integration,
-`VideoFrame` bridge, WebGPU presentation surface, or native renderer-session
-orchestration.
+The native viewport spans three related projects:
 
-The native rendering direction was proven in a separate earlier Code OSS proof
-of concept:
+```text
+JScene3D Editor
+    Code OSS-based desktop product
+        |
+        | runs on
+        v
+JScene3D Electron
+    Electron downstream with narrow native JScene3D integration
+        |
+        | communicates with
+        v
+JScene3D Java
+    engine, LWJGL/OpenGL renderer, and project/runtime implementation
+```
+
+Code OSS uses Electron as its desktop runtime, but its source tree does not
+contain Electron's source. A normal Code OSS build consumes a prebuilt Electron
+distribution. JScene3D maintains a small Electron downstream because the native
+viewport needs macOS process and surface integration below the
+TypeScript/JavaScript boundary. The downstream owns that narrow integration; it
+does not replace Electron's existing generic SharedTexture implementation.
+
+This architecture is being implemented and validated. It does not describe a
+viewport that users can open in the current editor.
+
+### Rendering resource path
+
+The viewport presents frames produced by the real Java renderer:
 
 ```text
 JScene3D / LWJGL / OpenGL
         |
+        | renders into
         v
-native shared rendering surface
+IOSurface
         |
         v
-Electron / Code OSS presentation
+JScene3D Electron
+        |
+        | imports and exposes as
+        v
+SharedTexture
+        |
+        | transferred to renderer as
+        v
+VideoFrame
+        |
+        | consumed as a WebGPU external texture
+        v
+Code OSS viewport canvas
 ```
 
-That proof established the intended principle: the editor should present the
-real JScene3D renderer rather than implement a second browser scene renderer.
-This repository currently focuses on the authoring and workbench integration,
-and the proven viewport path has not yet been integrated into this branch.
+The cross-process ownership is more precise than the linear presentation path
+suggests:
 
-Detailed native transport mechanisms are intentionally not documented here
-because their implementation is absent from this checkout.
+```text
+Java renderer process
+        |
+        | OpenGL rendering
+        v
+    IOSurface
+        ^
+        | Mach right / process-local IOSurface reference
+        |
+JScene3D Electron
+        |
+        v
+SharedTexture
+        |
+        v
+Code OSS renderer process
+        |
+        v
+VideoFrame
+        |
+        v
+WebGPU
+        |
+        v
+Viewport canvas
+```
+
+An IOSurface is a macOS facility for GPU-compatible image storage that can be
+shared across process and graphics-API boundaries. Electron creates the
+IOSurface and owns its lifecycle. The Java renderer obtains access to that same
+surface, and `IOSurfaceRenderSurface` lets the JScene3D LWJGL/OpenGL renderer
+render into it. The IOSurface is a shared native resource, not merely a copied
+bitmap. This design preserves one JScene3D renderer instead of recreating scene
+rendering in browser code.
+
+Electron and Java are separate processes and cannot exchange native pointers.
+A Mach port transfers the right needed for the Java child to acquire its own
+process-local reference to the Electron-created IOSurface. The Mach port does
+not carry framebuffer pixels. After acquisition, both processes have valid
+process-local references to the same underlying IOSurface.
+
+Electron's generic SharedTexture abstraction carries native image resources
+through its process boundary. The relevant Electron generation provides
+`sharedTexture.importSharedTexture`, `sharedTexture.sendSharedTexture`, and
+`sharedTexture.setSharedTextureReceiver`. On macOS, Electron can import the
+IOSurface-backed image as a SharedTexture. The JScene3D downstream creates and
+manages renderer sessions and the native IOSurface transport while continuing
+to use this stock abstraction. The presentation path therefore remains based
+on native, GPU-backed resources instead of being designed around CPU
+framebuffer readback and large bitmap messages. The architecture does not
+assume that every driver or presentation step is literally zero-copy.
+
+Chromium's `VideoFrame` represents an image or frame and can refer to GPU-backed
+resources. Its use does not mean that JScene3D encodes or plays a video. In the
+viewport it is the Code OSS renderer-process representation obtained from the
+transferred SharedTexture. The preload and presentation layer must close each
+`VideoFrame` explicitly and release the associated texture according to the
+ownership contract.
+
+The Code OSS viewport presents the frame; it does not render the JScene3D scene:
+
+```text
+VideoFrame
+    |
+    v
+WebGPU external texture
+    |
+    v
+viewport canvas
+```
+
+Scene evaluation, geometry, materials, lighting, and drawing remain in the
+Java/LWJGL/OpenGL renderer. WebGPU is the final presentation mechanism rather
+than a second implementation of the engine.
+
+### Control path
+
+Rendering resources and control messages travel along conceptually different
+paths. The resource path is:
+
+```text
+Electron-created IOSurface
+        |
+        | Mach access
+        v
+Java renderer
+        |
+        | renders pixels
+        v
+IOSurface
+        |
+        | SharedTexture / VideoFrame
+        v
+Code OSS presentation
+```
+
+Commands travel from the workbench toward the renderer:
+
+```text
+Code OSS viewport
+        |
+        v
+Electron renderer session
+        |
+        v
+Java renderer process
+```
+
+The control model covers lifecycle operations such as resize, pause, resume,
+and shutdown. Orbit, pan, and zoom belong on the same path when interactive
+camera controls are implemented; they are not claimed as current editor
+features.
+
+### Renderer process model
+
+The selected model is one Java renderer process per concrete viewport. It gives
+each viewport independent lifecycle and OpenGL/context ownership, isolates a
+renderer failure from other viewports, and keeps runtime or game extension
+execution outside the safe authoring-service process. The earlier proof of
+concept demonstrated this process model. A multi-session Java renderer service
+would introduce coordination and failure-domain complexity that is not needed
+at this stage.
+
+The viewport renderer is separate from the persistent Java authoring service.
+The authoring service interprets projects and owns safe authoring semantics; a
+viewport renderer owns live JScene3D runtime and rendering state for one
+concrete view.
+
+### Ownership and cleanup
+
+Resource ownership follows the process boundaries:
+
+- The Code OSS pane owns viewport UI state and presentation resources.
+- Electron main and native code own the renderer session, Java child process,
+  IOSurface, and native control channel.
+- The Java renderer child owns its JScene3D runtime/render state, OpenGL
+  context, and process-local IOSurface reference.
+- The preload and renderer presentation layer own the received SharedTexture,
+  `VideoFrame`, and WebGPU presentation resources.
+
+Surface replacement and shutdown must release each resource through its owner.
+Session and surface-generation identities prevent delayed work for a stopped or
+replaced surface from being routed to another viewport. Failure handling may
+terminate only the exact Java child owned by the affected renderer session.
+
+### Development and distribution
+
+During native integration, the JScene3D Electron downstream is built and
+validated separately from this Code OSS repository. The intended product model
+is for JScene3D Editor eventually to consume a prebuilt JScene3D Electron
+distribution, just as Code OSS normally consumes a prebuilt Electron
+distribution. Ordinary editor contributors should not need to build Chromium
+to work on unrelated functionality. Packaging and distribution of that
+downstream have not yet been implemented.
+
+### Current integration status
+
+The native path was proven in an earlier standalone Electron and Code OSS proof
+of concept. It is now being ported to the Electron version used by the current
+editor. The native Electron renderer-session and IOSurface foundation is under
+integration and validation in the separate JScene3D Electron checkout.
+
+This Code OSS checkout does not yet mount a native viewport pane. The preload,
+SharedTexture-to-`VideoFrame`, WebGPU canvas presentation, and real project-world
+viewport integration remain later integration work. Initial native support is
+macOS-specific. These status boundaries keep the proven architecture distinct
+from functionality currently available to editor users.
 
 ## Relationship to the JScene3D repository
 
@@ -394,7 +593,7 @@ This repository owns:
 - workbench and workspace integration;
 - the built-in JScene3D extension;
 - editor presentation and document lifecycle integration;
-- the Code OSS side of future native viewport integration.
+- the Code OSS pane and presentation side of native viewport integration.
 
 The protocol and stable identities form the repository boundary. Java details
 belong in the JScene3D repository rather than being duplicated here.
@@ -424,7 +623,8 @@ profile. A final packaged editor may bundle the Java runtime differently.
 
 ## Current limitations
 
-- The native JScene3D viewport is not integrated into this checkout.
+- The native JScene3D viewport pane is not yet integrated into this checkout;
+  its Electron foundation is being integrated and validated separately.
 - The editable-document lifecycle remains under active development and manual
   UI verification.
 - The source launcher requires the versioned authoring runtime to have been
@@ -451,5 +651,6 @@ The current implementation depends on the following rules:
   copy.
 - Structured authoring diagnostics use Problems; operational process information
   uses Output.
-- The eventual viewport reuses the native JScene3D renderer rather than creating
-  a browser renderer with separate scene semantics.
+- The native viewport reuses the JScene3D Java/LWJGL/OpenGL renderer; Code OSS
+  presents its frames rather than creating a browser renderer with separate
+  scene semantics.
