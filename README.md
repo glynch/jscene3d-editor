@@ -128,26 +128,43 @@ the repositories.
 
 This repository follows the upstream Code OSS development model. Start with the
 [Code OSS build and contribution documentation](https://github.com/microsoft/vscode/wiki/How-to-Contribute)
-to prepare and build the workbench on your platform.
+to prepare the workbench prerequisites on your platform. Then prepare this
+checkout with:
 
-The development launcher requires all of the following to exist already:
+```bash
+npm install
+npm run compile
+npm run electron
+```
 
-- a source-built JScene3D Editor application;
-- the compiled built-in JScene3D extension;
-- a JDK suitable for the Java authoring service;
-- the expected JScene3D authoring runtime installed in the local Maven
-  repository.
+These commands install the Code OSS dependencies, compile the workbench and
+built-in JScene3D extension, and download and prepare the source Electron
+application under `.build/electron`.
 
-When the Java artifacts change, install the runtime from the JScene3D Java
-repository with:
+The editor consumes a separately produced JScene3D Java authoring runtime. For
+the current `0.1.0-SNAPSHOT` development version, install that runtime from a
+checkout of the separate [JScene3D repository](https://github.com/glynch/jscene3d)
+with:
 
 ```bash
 ./mvnw install -pl jscene3d-editor-authoring-runtime -am
 ```
 
-The launcher does not compile Code OSS, TypeScript, or Java and does not run
-tests. Once the source build, extension output, and installed Java runtime
-exist, start an isolated development profile from this repository with:
+This producer step installs
+`jscene3d-editor-authoring-runtime-<version>-runtime.zip` in the local artifact
+repository. The editor launcher consumes that installed archive; it does not
+invoke Maven. The Java source checkout does not need to be adjacent to this
+repository, or remain present after the artifact has been installed.
+
+Once the source application, compiled extension, suitable JDK, and installed
+authoring runtime are available, verify the complete launch configuration
+without opening the GUI:
+
+```bash
+./scripts/jscene3d/launch-source-editor.sh --check --fresh-profile
+```
+
+Then launch the editor with an isolated development profile:
 
 ```bash
 ./scripts/jscene3d/launch-source-editor.sh --fresh-profile
@@ -155,10 +172,15 @@ exist, start an isolated development profile from this repository with:
 
 The [source launcher](scripts/jscene3d/launch-source-editor.sh) resolves the
 explicit runtime version in `scripts/jscene3d/authoring-runtime.version` from
-`$HOME/.m2/repository`. A non-default local repository can be selected with
-`JSCENE3D_MAVEN_LOCAL_REPOSITORY`. The launcher does not invoke Maven, and the
-Java source checkout does not need to be beside this repository after the
-runtime is installed. These environment variables provide advanced overrides:
+the following location:
+
+```text
+default: $HOME/.m2/repository
+override: JSCENE3D_MAVEN_LOCAL_REPOSITORY
+```
+
+This is an artifact-storage convention and does not make Maven a launcher
+dependency. These environment variables provide advanced overrides:
 
 ```text
 JSCENE3D_MAVEN_LOCAL_REPOSITORY
@@ -166,6 +188,10 @@ JSCENE3D_AUTHORING_SERVICE_MODULE_PATH
 JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH
 JSCENE3D_JAVA_EXECUTABLE
 ```
+
+The current snapshot runtime must be installed locally. A future published
+runtime artifact can remove the need for developers to build the Java
+repository themselves; it is not currently available from Maven Central.
 
 Current authoring development and testing target macOS. The absence of a native
 viewport here means this repository does not yet make native viewport support
