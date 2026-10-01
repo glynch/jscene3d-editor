@@ -6,6 +6,7 @@
 import { INodeProcess, IProcessEnvironment } from '../../../common/platform.js';
 import { ISandboxConfiguration } from '../common/sandboxTypes.js';
 import { IpcRenderer, ProcessMemoryInfo, WebFrame, WebUtils } from './electronTypes.js';
+import { IJScene3DViewportBridge } from '../common/jscene3dViewport.js';
 
 /**
  * In Electron renderers we cannot expose all of the `process` global of node.js
@@ -123,6 +124,7 @@ interface ISandboxGlobal {
 		readonly process: ISandboxNodeProcess;
 		readonly context: ISandboxContext;
 		readonly webUtils: WebUtils;
+		readonly jscene3dViewport: IJScene3DViewportBridge;
 	};
 }
 
@@ -133,6 +135,7 @@ export const webFrame: WebFrame = vscodeGlobal.webFrame;
 export const process: ISandboxNodeProcess = vscodeGlobal.process;
 export const context: ISandboxContext = vscodeGlobal.context;
 export const webUtils: WebUtils = vscodeGlobal.webUtils;
+export const jscene3dViewport: IJScene3DViewportBridge = vscodeGlobal.jscene3dViewport;
 
 /**
  * A set of globals only available to main windows that depend
@@ -145,6 +148,7 @@ export interface IMainWindowSandboxGlobals {
 	readonly process: ISandboxNodeProcess;
 	readonly context: ISandboxContext;
 	readonly webUtils: WebUtils;
+	readonly jscene3dViewport: IJScene3DViewportBridge;
 }
 
 /**

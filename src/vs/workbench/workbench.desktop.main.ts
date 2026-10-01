@@ -140,6 +140,9 @@ import './contrib/surveys/browser/survey.contribution.js';
 // Process Explorer
 import './contrib/processExplorer/electron-browser/processExplorer.contribution.js';
 
+// JScene3D native renderer preview
+import './contrib/jscene3d/electron-browser/jscene3dViewport.contribution.js';
+
 // Remote
 import './contrib/remote/electron-browser/remote.contribution.js';
 

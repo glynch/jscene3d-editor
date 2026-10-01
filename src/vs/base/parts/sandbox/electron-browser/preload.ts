@@ -7,9 +7,13 @@
 
 (function () {
 
-	const { ipcRenderer, webFrame, contextBridge, webUtils } = require('electron');
+	const { ipcRenderer, webFrame, contextBridge, webUtils, sharedTexture } = require('electron');
 
 	type ISandboxConfiguration = import('../common/sandboxTypes.js').ISandboxConfiguration;
+	type IJScene3DViewportBridge = import('../common/jscene3dViewport.js').IJScene3DViewportBridge;
+	type IJScene3DViewportFailure = import('../common/jscene3dViewport.js').IJScene3DViewportFailure;
+	type IJScene3DViewportFrameIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportFrameIdentity;
+	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
 
 	//#region Utilities
 
@@ -92,6 +96,135 @@
 
 	//#region Globals Definition
 
+	type JScene3DPaneRegistration = {
+		readonly onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>;
+		readonly onFailure: (failure: IJScene3DViewportFailure) => void;
+		session?: IJScene3DViewportSessionIdentity;
+		surfaceGeneration: number;
+		frameNumber: number;
+	};
+
+	const jscene3dPanes = new Map<string, JScene3DPaneRegistration>();
+	const validPaneId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 128;
+	const validDimension = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0 && (value as number) <= 16384;
+	const validSession = (value: unknown): value is IJScene3DViewportSessionIdentity => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DViewportSessionIdentity>;
+		return Number.isInteger(candidate.sessionId) && candidate.sessionId! > 0
+			&& Number.isInteger(candidate.rendererGeneration) && candidate.rendererGeneration! > 0;
+	};
+	const validFrameIdentity = (value: unknown): value is IJScene3DViewportFrameIdentity => {
+		if (!validSession(value)) {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DViewportFrameIdentity>;
+		return validPaneId(candidate.paneId)
+			&& Number.isInteger(candidate.surfaceGeneration) && candidate.surfaceGeneration! > 0
+			&& Number.isInteger(candidate.frameNumber) && candidate.frameNumber! > 0;
+	};
+	const sameSession = (left: IJScene3DViewportSessionIdentity | undefined, right: IJScene3DViewportSessionIdentity): boolean =>
+		left?.sessionId === right.sessionId && left.rendererGeneration === right.rendererGeneration;
+
+	sharedTexture.setSharedTextureReceiver(async (data: Electron.ReceivedSharedTextureData, identity: unknown) => {
+		const texture = data.importedSharedTexture;
+		let frame: VideoFrame | undefined;
+		try {
+			if (!validFrameIdentity(identity)) {
+				return;
+			}
+			const registration = jscene3dPanes.get(identity.paneId);
+			if (!registration || !sameSession(registration.session, identity)
+				|| identity.surfaceGeneration < registration.surfaceGeneration
+				|| (identity.surfaceGeneration === registration.surfaceGeneration && identity.frameNumber <= registration.frameNumber)) {
+				return;
+			}
+			frame = texture.getVideoFrame();
+			registration.surfaceGeneration = identity.surfaceGeneration;
+			registration.frameNumber = identity.frameNumber;
+			await registration.onFrame(frame, identity);
+		} finally {
+			frame?.close();
+			texture.release();
+		}
+	});
+
+	ipcRenderer.on('vscode:jscene3dViewport:failed', (_event: Electron.IpcRendererEvent, failure: unknown) => {
+		if (!failure || typeof failure !== 'object') {
+			return;
+		}
+		const candidate = failure as Partial<IJScene3DViewportFailure>;
+		if (!validPaneId(candidate.paneId) || typeof candidate.message !== 'string' || candidate.message.length === 0) {
+			return;
+		}
+		const registration = jscene3dPanes.get(candidate.paneId);
+		if (!registration || (candidate.session && !sameSession(registration.session, candidate.session))) {
+			return;
+		}
+		registration.onFailure(candidate as IJScene3DViewportFailure);
+		registration.session = undefined;
+	});
+
+	const jscene3dViewport: IJScene3DViewportBridge = {
+		registerPane(paneId, onFrame, onFailure): void {
+			if (!validPaneId(paneId) || typeof onFrame !== 'function' || typeof onFailure !== 'function' || jscene3dPanes.has(paneId)) {
+				throw new Error('Invalid or duplicate JScene3D native viewport pane registration');
+			}
+			jscene3dPanes.set(paneId, { onFrame, onFailure, surfaceGeneration: 0, frameNumber: 0 });
+		},
+
+		unregisterPane(paneId): void {
+			if (validPaneId(paneId)) {
+				jscene3dPanes.delete(paneId);
+			}
+		},
+
+		async start(paneId, width, height): Promise<IJScene3DViewportSessionIdentity> {
+			const registration = jscene3dPanes.get(paneId);
+			if (!registration || !validDimension(width) || !validDimension(height)) {
+				throw new Error('Invalid JScene3D native viewport start request');
+			}
+			const session = await ipcRenderer.invoke('vscode:jscene3dViewport:start', paneId, width, height);
+			if (!validSession(session)) {
+				throw new Error('Invalid JScene3D native viewport session identity');
+			}
+			registration.session = session;
+			registration.surfaceGeneration = 0;
+			registration.frameNumber = 0;
+			return session;
+		},
+
+		resize(paneId, session, width, height): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validDimension(width) && validDimension(height)) {
+				ipcRenderer.send('vscode:jscene3dViewport:resize', paneId, session, width, height);
+			}
+		},
+
+		pause(paneId, session): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session)) {
+				ipcRenderer.send('vscode:jscene3dViewport:pause', paneId, session);
+			}
+		},
+
+		resume(paneId, session): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session)) {
+				ipcRenderer.send('vscode:jscene3dViewport:resume', paneId, session);
+			}
+		},
+
+		async stop(paneId, session): Promise<void> {
+			const registration = jscene3dPanes.get(paneId);
+			if (!registration || (session && !sameSession(registration.session, session))) {
+				return;
+			}
+			registration.session = undefined;
+			registration.surfaceGeneration = 0;
+			registration.frameNumber = 0;
+			await ipcRenderer.invoke('vscode:jscene3dViewport:stop', paneId, session);
+		}
+	};
+
 	// #######################################################################
 	// ###                                                                 ###
 	// ###       !!! DO NOT USE GET/SET PROPERTIES ANYWHERE HERE !!!       ###
@@ -101,6 +234,7 @@
 	// #######################################################################
 
 	const globals = {
+		jscene3dViewport,
 
 		/**
 		 * A minimal set of methods exposed from Electron's `ipcRenderer`

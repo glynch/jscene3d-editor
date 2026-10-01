@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { ipcRenderer, process, webFrame, webUtils } from '../../electron-browser/globals.js';
+import { ipcRenderer, jscene3dViewport, process, webFrame, webUtils } from '../../electron-browser/globals.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('Sandbox', () => {
@@ -14,6 +14,8 @@ suite('Sandbox', () => {
 		assert.ok(typeof webFrame.setZoomLevel === 'function');
 		assert.ok(typeof process.platform === 'string');
 		assert.ok(typeof webUtils.getPathForFile === 'function');
+		assert.ok(typeof jscene3dViewport.start === 'function');
+		assert.ok(typeof jscene3dViewport.stop === 'function');
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();

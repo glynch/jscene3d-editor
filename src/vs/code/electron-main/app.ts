@@ -117,6 +117,7 @@ import { IExtensionsScannerService } from '../../platform/extensionManagement/co
 import { ExtensionsScannerService } from '../../platform/extensionManagement/node/extensionsScannerService.js';
 import { UserDataProfilesHandler } from '../../platform/userDataProfile/electron-main/userDataProfilesHandler.js';
 import { ProfileStorageChangesListenerChannel } from '../../platform/userDataProfile/electron-main/userDataProfileStorageIpc.js';
+import { JScene3DViewportController } from './jscene3dViewport.js';
 import { Promises, RunOnceScheduler, runWhenGlobalIdle } from '../../base/common/async.js';
 import { CancellationToken } from '../../base/common/cancellation.js';
 import { resolveMachineId, resolveSqmId, resolveDevDeviceId, validateDevDeviceId } from '../../platform/telemetry/electron-main/telemetryUtils.js';
@@ -742,6 +743,7 @@ export class CodeApplication extends Disposable {
 
 		// Services
 		const appInstantiationService = await this.initServices(machineId, sqmId, devDeviceId, sharedProcessReady);
+		this._register(new JScene3DViewportController(() => this.windowsMainService, this.logService));
 
 		// Error telemetry
 		appInstantiationService.invokeFunction(accessor => this._register(new ErrorTelemetry(accessor.get(ILogService), accessor.get(ITelemetryService))));

@@ -19,10 +19,10 @@ function code() {
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		NAME=`node -p "require('./product.json').nameLong"`
 		EXE_NAME=`node -p "require('./product.json').nameShort"`
-		CODE="./.build/electron/$NAME.app/Contents/MacOS/$EXE_NAME"
+		CODE="${JSCENE3D_ELECTRON_EXECUTABLE:-./.build/electron/$NAME.app/Contents/MacOS/$EXE_NAME}"
 	else
 		NAME=`node -p "require('./product.json').applicationName"`
-		CODE=".build/electron/$NAME"
+		CODE="${JSCENE3D_ELECTRON_EXECUTABLE:-.build/electron/$NAME}"
 	fi
 
 	# Get electron, compile, built-in extensions

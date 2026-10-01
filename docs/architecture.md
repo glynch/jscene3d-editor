@@ -5,9 +5,9 @@ JScene3D project authoring. The editor combines Code OSS presentation and
 document lifecycle facilities with Java-owned JScene3D project semantics.
 
 This document describes the architecture present in this repository. It also
-identifies the editable-document lifecycle and native viewport architecture
-that are currently being integrated. In-progress architecture is distinguished
-from functionality available in the editor today.
+identifies the editable-document lifecycle and the project-world viewport work
+that remain under integration. In-progress architecture is distinguished from
+functionality available in the editor today.
 
 ## System overview
 
@@ -376,8 +376,10 @@ viewport needs macOS process and surface integration below the
 TypeScript/JavaScript boundary. The downstream owns that narrow integration; it
 does not replace Electron's existing generic SharedTexture implementation.
 
-This architecture is being implemented and validated. It does not describe a
-viewport that users can open in the current editor.
+This architecture now backs the renderer-preview pane available through
+`JScene3D: Open Native Viewport`. The pane deliberately renders the packaged
+Java renderer's deterministic validation scene; it is not yet a view of the
+active project world.
 
 ### Rendering resource path
 
@@ -524,13 +526,13 @@ features.
 
 ### Renderer process model
 
-The selected model is one Java renderer process per concrete viewport. It gives
+The implemented model is one Java renderer process per concrete viewport. It gives
 each viewport independent lifecycle and OpenGL/context ownership, isolates a
 renderer failure from other viewports, and keeps runtime or game extension
-execution outside the safe authoring-service process. The earlier proof of
-concept demonstrated this process model. A multi-session Java renderer service
-would introduce coordination and failure-domain complexity that is not needed
-at this stage.
+execution outside the safe authoring-service process. Closing a pane stops its
+exact renderer child, while hiding the pane pauses and later resumes that
+session. A multi-session Java renderer service would introduce coordination and
+failure-domain complexity that is not needed at this stage.
 
 The viewport renderer is separate from the persistent Java authoring service.
 The authoring service interprets projects and owns safe authoring semantics; a
@@ -566,16 +568,17 @@ downstream have not yet been implemented.
 
 ### Current integration status
 
-The native path was proven in an earlier standalone Electron and Code OSS proof
-of concept. It is now being ported to the Electron version used by the current
-editor. The native Electron renderer-session and IOSurface foundation is under
-integration and validation in the separate JScene3D Electron checkout.
+The current editor mounts a native renderer-preview pane. It launches the
+packaged Stage 2 Java renderer runtime through the JScene3D Electron 42
+downstream, routes each pane to its exact renderer session, presents transferred
+SharedTextures as `VideoFrame` instances through WebGPU, applies DPR-aware
+resize, pauses and resumes with pane visibility, and stops the renderer child on
+close. Failures remain local to the affected pane.
 
-This Code OSS checkout does not yet mount a native viewport pane. The preload,
-SharedTexture-to-`VideoFrame`, WebGPU canvas presentation, and real project-world
-viewport integration remain later integration work. Initial native support is
-macOS-specific. These status boundaries keep the proven architecture distinct
-from functionality currently available to editor users.
+The preview still uses the renderer-owned deterministic validation scene. It
+does not yet prepare or render the active project's world, synchronize authored
+working copies, or connect Hierarchy and Inspector selection to rendering.
+Initial native support is macOS-specific.
 
 ## Relationship to the JScene3D repository
 
@@ -601,9 +604,10 @@ belong in the JScene3D repository rather than being duplicated here.
 ## Current development dependencies
 
 The current source launcher is a development convenience, not the standalone
-distribution contract. It resolves an explicit version of the installed
-`jscene3d-editor-authoring-runtime` artifact from `$HOME/.m2/repository`, or
-from the repository selected by `JSCENE3D_MAVEN_LOCAL_REPOSITORY`.
+distribution contract. It resolves explicit versions of the installed
+`jscene3d-editor-authoring-runtime` and `jscene3d-editor-renderer-runtime`
+artifacts from `$HOME/.m2/repository`, or from the repository selected by
+`JSCENE3D_MAVEN_LOCAL_REPOSITORY`.
 
 The installed runtime archive provides:
 
@@ -616,15 +620,16 @@ consumed without consulting that source checkout. The launcher does not invoke
 Maven. The editor repository records its expected Java version in one
 launcher-specific version file.
 
-Environment overrides can replace the local Maven repository, service module
-path, extension metadata path, and Java executable. The launcher does not build
-Java, the extension, or Code OSS; it launches existing output with an isolated
-profile. A final packaged editor may bundle the Java runtime differently.
+Environment overrides can replace the local Maven repository, authoring-service
+module path, extension metadata path, Java executables, renderer runtime archive
+or directory, and Electron executable. The launcher does not build Java, the
+extension, Code OSS, or Electron; it launches existing output with an isolated
+profile. A final packaged editor may bundle these runtimes differently.
 
 ## Current limitations
 
-- The native JScene3D viewport pane is not yet integrated into this checkout;
-  its Electron foundation is being integrated and validated separately.
+- The native viewport presents a deterministic validation scene rather than the
+  active project world.
 - The editable-document lifecycle remains under active development and manual
   UI verification.
 - The source launcher requires the versioned authoring runtime to have been

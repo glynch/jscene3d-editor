@@ -36,6 +36,7 @@ The committed editor baseline includes:
 - a read-only semantic Inspector;
 - structured project and definition diagnostics in Problems;
 - authored-definition custom editors;
+- a macOS native renderer-preview pane backed by the packaged Java renderer;
 - a persistent Java authoring-service connection; and
 - connection, project, and definition identity checks that reject stale work.
 
@@ -75,11 +76,10 @@ in-progress authored-document lifecycle.
 
 ## Native viewport status
 
-A native JScene3D viewport is not integrated into this repository. This
-checkout contains no JScene3D native-surface transport or native renderer-view
-session implementation.
-
-The rendering direction was proven separately in an earlier proof of concept:
+The editor now includes the first native viewport presentation slice. The
+`JScene3D: Open Native Viewport` command opens a renderer preview whose
+validation scene is produced by the packaged Java renderer and presented
+through the JScene3D Electron downstream:
 
 ```text
 JScene3D / LWJGL / OpenGL
@@ -89,9 +89,11 @@ native shared rendering surface
 Electron / Code OSS presentation
 ```
 
-The long-term objective is to present the real Java JScene3D renderer inside
-the editor, not to implement a second browser renderer. The earlier proof was
-macOS-specific; it does not establish Windows or Linux native viewport support.
+This Stage 3 surface validates presentation, resize, visibility, failure, and
+renderer-child lifecycle behavior. It does not yet load the active project's
+world; real project/world viewport integration is the next architectural step.
+The current integration is macOS-specific and does not establish Windows or
+Linux native viewport support.
 
 ## Relationship to JScene3D
 
@@ -109,14 +111,15 @@ This repository owns:
 - workbench and workspace integration;
 - the built-in JScene3D extension;
 - editor presentation and document-lifecycle integration; and
-- the Code OSS side of future native viewport integration.
+- the Code OSS pane and presentation side of native viewport integration.
 
 The authoring protocol and stable semantic identities form the boundary between
 the repositories.
 
 ## Current limitations
 
-- The native JScene3D viewport is not present in this checkout.
+- The native viewport currently renders a deterministic validation scene, not
+  an active project world.
 - Editable authored-document behavior is being integrated and manually
   validated.
 - Project creation is not implemented.
@@ -193,9 +196,13 @@ The current snapshot runtime must be installed locally. A future published
 runtime artifact can remove the need for developers to build the Java
 repository themselves; it is not currently available from Maven Central.
 
-Current authoring development and testing target macOS. The absence of a native
-viewport here means this repository does not yet make native viewport support
-claims for any shipping platform.
+Native viewport development additionally requires the packaged
+`jscene3d-editor-renderer-runtime` ZIP and the JScene3D Electron downstream.
+The launcher resolves their installed defaults independently, or accepts
+`JSCENE3D_RENDERER_RUNTIME_ARCHIVE`, `JSCENE3D_RENDERER_RUNTIME_DIRECTORY`,
+`JSCENE3D_RENDERER_JAVA_EXECUTABLE`, and `JSCENE3D_ELECTRON_EXECUTABLE`
+overrides. Current authoring and native viewport development target macOS; no
+shipping-platform support claim is made yet.
 
 ## Documentation
 
