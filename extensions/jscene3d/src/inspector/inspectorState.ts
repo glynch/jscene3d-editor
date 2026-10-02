@@ -64,6 +64,7 @@ export class InspectorState {
 		if (!current.inspector.groups.some(group => group.identity === identity)) {
 			throw new Error('Inspector group does not belong to the current snapshot');
 		}
+		this.definitions.rememberInspectorGroup(identity);
 		this.value = { ...current, selectedGroupId: identity };
 		this.emit();
 	}
@@ -88,9 +89,7 @@ export class InspectorState {
 			return;
 		}
 
-		const previous = this.value.status === 'ready' && sameTarget(this.value.selection.target, selection.target)
-			? this.value.selectedGroupId
-			: undefined;
+		const previous = this.definitions.selectedInspectorGroupId;
 		this.set({ status: 'loading', selection });
 		void this.reader.readInspector(selection.projectGeneration, active.snapshot.revision, selection.target)
 			.then(result => this.accept(token, selection, active.snapshot.revision, previous, result))
@@ -143,6 +142,7 @@ export class InspectorState {
 			});
 			return;
 		}
+		this.definitions.rememberInspectorGroup(selectedGroupId);
 		this.set({ status: 'ready', selection, inspector: result.snapshot, selectedGroupId });
 	}
 

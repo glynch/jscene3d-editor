@@ -51,7 +51,10 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 				await this.lifecycle.recover(resource, generation, assetId, Buffer.from(backup).toString('base64'));
 			}
 		}
-		const document = new AuthoredDefinitionDocument(uri, this.state.resolve(resource), () => this.documents.delete(resource));
+		const document = new AuthoredDefinitionDocument(uri, this.state.resolve(resource), () => {
+			this.documents.delete(resource);
+			this.state.unregister(resource);
+		});
 		this.documents.set(resource, document);
 		return document;
 	}

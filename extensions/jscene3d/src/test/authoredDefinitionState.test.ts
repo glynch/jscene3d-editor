@@ -6,66 +6,123 @@
 import * as assert from 'assert';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { definitionResourceUri } from '../definition/definitionResource';
-import { DefinitionSnapshotDto } from '../protocol/authoringProtocol';
+import { DefinitionContextDto, DefinitionSnapshotDto, HierarchyNodeDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authored definition state', () => {
-	test('tracks active mapped resources and TypeScript-owned semantic selection', () => {
-		const state = new AuthoredDefinitionState();
-		const snapshot = definition('world-a');
-		state.setProjectGeneration(3);
-		state.register('file:///world.scene.json?generation=3', 3, snapshot);
+	test('restores independent selections while switching between two Scene definitions', () => {
+		const state = stateWithGeneration();
+		const map = definition('scene-map', 'scene-definition', ['player', 'door']);
+		const menu = definition('scene-menu', 'scene-definition', ['title', 'start-button']);
+		state.register('definition:/map', 3, map);
+		state.register('definition:/menu', 3, menu);
 
-		state.activate('file:///world.scene.json?generation=3');
-		state.select(snapshot.roots[0]);
+		state.activate('definition:/map');
+		state.select(map.roots[0]);
+		state.activate('definition:/menu');
+		state.select(menu.roots[1]);
+		state.activate('definition:/map');
+		assert.strictEqual(state.selection?.target.identity, 'player');
+		assert.strictEqual(state.selectedNode, map.roots[0]);
 
-		assert.strictEqual(state.active?.assetId, 'world-a');
-		assert.deepStrictEqual(state.selection?.occurrence.entityPath, ['entity-a']);
-		assert.strictEqual(state.selection?.target.identity, 'entity-a');
+		state.activate('definition:/menu');
+		assert.strictEqual(state.selection?.target.identity, 'start-button');
+		assert.strictEqual(state.selectedNode, menu.roots[1]);
 	});
 
-	test('invalidates mappings, hierarchy, and selection when project generation changes', () => {
-		const state = new AuthoredDefinitionState();
-		const snapshot = definition('world-a');
-		const resource = 'file:///world.scene.json?generation=3';
-		state.setProjectGeneration(3);
-		state.register(resource, 3, snapshot);
-		state.activate(resource);
-		state.select(snapshot.roots[0]);
+	test('keeps Scene and EntityDefinition contexts independent', () => {
+		const state = stateWithGeneration();
+		const scene = definition('scene-map', 'scene-definition', ['player']);
+		const entity = definition('entity-player', 'entity-definition', ['camera', 'weapon']);
+		state.register('definition:/map', 3, scene);
+		state.register('definition:/player', 3, entity);
 
-		state.setProjectGeneration(4);
+		state.activate('definition:/map');
+		state.select(scene.roots[0]);
+		state.activate('definition:/player');
+		state.select(entity.roots[1]);
+		state.activate('definition:/map');
+		assert.strictEqual(state.active?.snapshot.context.kind, 'scene-definition');
+		assert.strictEqual(state.selection?.target.identity, 'player');
+		state.activate('definition:/player');
+		assert.strictEqual(state.active?.snapshot.context.kind, 'entity-definition');
+		assert.strictEqual(state.selection?.target.identity, 'weapon');
+	});
 
-		assert.strictEqual(state.resolve(resource), undefined);
-		assert.strictEqual(state.resolveAsset(4, 'world-a'), undefined);
+	test('does not inherit selection when activating a definition with no selection', () => {
+		const state = stateWithGeneration();
+		const first = definition('scene-first', 'scene-definition', ['selected']);
+		const emptyContext = definition('scene-second', 'scene-definition', ['unselected']);
+		state.register('definition:/first', 3, first);
+		state.register('definition:/second', 3, emptyContext);
+		state.activate('definition:/first');
+		state.select(first.roots[0]);
+
+		state.activate('definition:/second');
+
+		assert.strictEqual(activeAssetId(state), 'scene-second');
+		assert.strictEqual(state.selection, undefined);
+		assert.strictEqual(state.selectedNode, undefined);
+	});
+
+	test('releases one closed definition without disturbing another context', () => {
+		const state = stateWithGeneration();
+		const first = definition('scene-first', 'scene-definition', ['first-selection']);
+		const second = definition('scene-second', 'scene-definition', ['second-selection']);
+		state.register('definition:/first', 3, first);
+		state.register('definition:/second', 3, second);
+		state.activate('definition:/first');
+		state.select(first.roots[0]);
+		state.activate('definition:/second');
+		state.select(second.roots[0]);
+		state.activate('definition:/first');
+
+		state.unregister('definition:/first');
+
+		assert.strictEqual(state.active, undefined);
+		state.activate('definition:/second');
+		assert.strictEqual(activeAssetId(state), 'scene-second');
+		assert.strictEqual(state.selection?.target.identity, 'second-selection');
+		assert.strictEqual(state.resolve('definition:/first'), undefined);
+	});
+
+	test('retains a stable occurrence across refresh and clears it when deleted', () => {
+		const state = stateWithGeneration();
+		const initial = definition('scene-map', 'scene-definition', ['player']);
+		state.register('definition:/map', 3, initial);
+		state.activate('definition:/map');
+		state.select(initial.roots[0]);
+		state.rememberInspectorGroup('transform');
+		const moved = definition('scene-map', 'scene-definition', ['player'], 1, 'file:///moved/map.scene.json');
+		state.update('definition:/map', moved);
+
+		assert.strictEqual(state.active?.snapshot.revision, 1);
+		assert.strictEqual(state.selectedNode, moved.roots[0]);
+		assert.strictEqual(state.selection?.target.source, 'file:///moved/map.scene.json');
+		assert.strictEqual(state.selectedInspectorGroupId, 'transform');
+
+		state.update('definition:/map', definition('scene-map', 'scene-definition', ['door'], 2));
+		assert.strictEqual(state.selection, undefined);
+		assert.strictEqual(state.selectedNode, undefined);
+		assert.strictEqual(state.selectedInspectorGroupId, undefined);
+	});
+
+	test('uses a deliberate empty supporting context when no definition is active', () => {
+		const state = stateWithGeneration();
+		const scene = definition('scene-map', 'scene-definition', ['player']);
+		state.register('definition:/map', 3, scene);
+		state.activate('definition:/map');
+		state.select(scene.roots[0]);
+
+		state.activate(undefined);
+
 		assert.strictEqual(state.active, undefined);
 		assert.strictEqual(state.selection, undefined);
+		assert.strictEqual(state.selectedNode, undefined);
 	});
 
-	test('explicitly clears semantic selection when native Hierarchy selection becomes empty', () => {
+	test('keeps a stale prior-connection context isolated after project generation resets', () => {
 		const state = new AuthoredDefinitionState();
-		const snapshot = definition('world-a');
-		state.setProjectGeneration(3);
-		state.register('jscene3d-definition:/world-a', 3, snapshot);
-		state.activate('jscene3d-definition:/world-a');
-		state.select(snapshot.roots[0]);
-
-		state.clearSelection();
-
-		assert.strictEqual(state.selection, undefined);
-	});
-
-	test('uses a deliberate no-active state for unrelated or stale tabs', () => {
-		const state = new AuthoredDefinitionState();
-		state.setProjectGeneration(3);
-		state.register('jscene3d-definition:/world-a', 3, definition('world-a'));
-
-		state.activate('file:///ordinary.txt');
-
-		assert.strictEqual(state.active, undefined);
-	});
-
-	test('keeps a stale prior-connection tab isolated when project generation resets', () => {
-		const state = new AuthoredDefinitionState();
-		const snapshot = definition('world-a');
+		const snapshot = definition('scene-map', 'scene-definition', ['player']);
 		const staleResource = definitionResourceUri('connection-a', 1, snapshot);
 		const currentResource = definitionResourceUri('connection-b', 1, snapshot);
 		state.setProjectGeneration(1);
@@ -76,48 +133,60 @@ suite('JScene3D authored definition state', () => {
 		state.setProjectGeneration(undefined);
 		state.setProjectGeneration(1);
 		state.register(currentResource, 1, snapshot);
-		assert.strictEqual(state.resolveAsset(1, 'world-a')?.resource, currentResource);
 		state.activate(staleResource);
-		const stale = { active: state.active, selection: state.selection };
-		state.activate(currentResource);
+		assert.strictEqual(state.active, undefined);
+		assert.strictEqual(state.selection, undefined);
 
-		assert.deepStrictEqual({
-			resourcesDiffer: staleResource !== currentResource,
-			staleActive: stale.active,
-			staleSelection: stale.selection,
-			currentAssetId: state.active?.assetId
-		}, {
-			resourcesDiffer: true,
-			staleActive: undefined,
-			staleSelection: undefined,
-			currentAssetId: 'world-a'
-		});
+		state.activate(currentResource);
+		assert.strictEqual(activeAssetId(state), 'scene-map');
+		assert.strictEqual(state.selection, undefined);
+		assert.strictEqual(state.resolveAsset(1, 'scene-map')?.resource, currentResource);
 	});
 });
 
-function definition(assetId: string): DefinitionSnapshotDto {
-	const occurrence = { definitionAssetId: assetId, entityPath: ['entity-a'] };
+function stateWithGeneration(): AuthoredDefinitionState {
+	const state = new AuthoredDefinitionState();
+	state.setProjectGeneration(3);
+	return state;
+}
+
+function activeAssetId(state: AuthoredDefinitionState): string | undefined {
+	return state.active?.assetId;
+}
+
+function definition(
+	assetId: string,
+	kind: DefinitionContextDto['kind'],
+	entityIds: readonly string[],
+	revision = 0,
+	source = `file:///${assetId}.json`
+): DefinitionSnapshotDto {
 	return {
-		revision: 0,
+		revision,
 		context: {
 			assetId,
-			kind: 'scene-definition',
+			kind,
 			origin: 'authored',
 			editable: true,
-			source: 'file:///world.scene.json',
-			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
+			source,
+			label: { kind: 'literal', text: assetId, messageCode: null, arguments: [] }
 		},
-		roots: [{
-			occurrence,
-			kind: 'local-entity',
-			entityId: 'entity-a',
-			definitionId: null,
-			label: { kind: 'literal', text: 'Entity', messageCode: null, arguments: [] },
-			enabled: true,
-			modified: false,
-			editable: true,
-			target: { kind: 'local-entity', source: 'file:///world.scene.json', identity: 'entity-a', occurrence },
-			children: []
-		}]
+		roots: entityIds.map(entityId => node(assetId, entityId, source))
+	};
+}
+
+function node(definitionAssetId: string, identity: string, source: string): HierarchyNodeDto {
+	const occurrence = { definitionAssetId, entityPath: [identity] };
+	return {
+		occurrence,
+		kind: 'local-entity',
+		entityId: identity,
+		definitionId: null,
+		label: { kind: 'literal', text: identity, messageCode: null, arguments: [] },
+		enabled: true,
+		modified: false,
+		editable: true,
+		target: { kind: 'local-entity', source, identity, occurrence },
+		children: []
 	};
 }

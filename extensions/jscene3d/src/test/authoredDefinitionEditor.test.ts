@@ -36,6 +36,7 @@ suite('JScene3D authored definition editor', () => {
 		assert.match(source, /backupCustomDocument/);
 		assert.match(source, /lifecycle\.recover/);
 		assert.match(source, /tabGroups\.close\(tabs\)/);
+		assert.match(source, /this\.state\.unregister\(resource\)/);
 		assert.match(source, /await this\.waitForPendingMutations\(\)/);
 		assert.match(source, /tab\.isDirty/);
 		assert.doesNotMatch(source, /tabs\.length === 0 \|\| vscode\.window\.tabGroups\.close/);

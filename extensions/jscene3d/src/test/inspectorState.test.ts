@@ -31,6 +31,18 @@ suite('JScene3D Inspector state', () => {
 		assert.strictEqual(invalidated.status, 'empty');
 	});
 
+	test('is empty when no authored definition is active', async () => {
+		const definitions = activeDefinitions();
+		const state = new InspectorState(new ImmediateReader(), definitions);
+		definitions.select(definitions.active!.snapshot.roots[0]);
+		await settled();
+		assert.strictEqual(state.snapshot.status, 'ready');
+
+		definitions.activate(undefined);
+
+		assert.strictEqual(state.snapshot.status, 'empty');
+	});
+
 	test('prevents an older response from replacing a newer selection', async () => {
 		const definitions = activeDefinitions();
 		const reader = new DeferredReader();
@@ -54,21 +66,49 @@ suite('JScene3D Inspector state', () => {
 		const definitions = activeDefinitions();
 		const reader = new DeferredReader();
 		const state = new InspectorState(reader, definitions);
-		const [first, second] = definitions.active!.snapshot.roots;
+		const [first] = definitions.active!.snapshot.roots;
 		definitions.select(first);
 		reader.requests[0].resolve(success(first.target, 'First'));
 		await settled();
 		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'entity');
 		state.selectGroup('component-a');
 
-		definitions.select(first);
-		reader.requests[1].resolve(success(first.target, 'First refreshed'));
+		definitions.update('jscene3d-definition:/world-a', { ...definition(), revision: 5 });
+		reader.requests[1].resolve(success(first.target, 'First refreshed', 7, 5));
 		await settled();
 		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'component-a');
 
-		definitions.select(second);
-		reader.requests[2].resolve(success(second.target, 'Second'));
+		const refreshedSecond = definitions.active!.snapshot.roots[1];
+		definitions.select(refreshedSecond);
+		reader.requests[2].resolve(success(refreshedSecond.target, 'Second', 7, 5));
 		await settled();
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'entity');
+	});
+
+	test('restores each definition Inspector target and focused group independently', async () => {
+		const definitions = activeDefinitions();
+		const secondDefinition = definition('entity-b');
+		definitions.register('jscene3d-definition:/entity-b', 7, secondDefinition);
+		const reader = new ImmediateReader();
+		const state = new InspectorState(reader, definitions);
+		definitions.select(definitions.active!.snapshot.roots[0]);
+		await settled();
+		state.selectGroup('component-a');
+
+		definitions.activate('jscene3d-definition:/entity-b');
+		definitions.select(secondDefinition.roots[1]);
+		await settled();
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'entity');
+
+		definitions.activate('jscene3d-definition:/world-a');
+		await settled();
+		assert.strictEqual(state.snapshot.status, 'ready');
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selection.target.identity : '', 'entity-a');
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'component-a');
+
+		definitions.activate('jscene3d-definition:/entity-b');
+		await settled();
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selection.target.identity : '', 'entity-b');
 		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'entity');
 	});
 });
@@ -113,19 +153,19 @@ function activeDefinitions(): AuthoredDefinitionState {
 	return definitions;
 }
 
-function definition(): DefinitionSnapshotDto {
+function definition(assetId = 'world-a'): DefinitionSnapshotDto {
 	return {
 		revision: 4,
 		context: {
-			assetId: 'world-a', kind: 'scene-definition', origin: 'authored', editable: true,
+			assetId, kind: assetId === 'world-a' ? 'scene-definition' : 'entity-definition', origin: 'authored', editable: true,
 			source: 'file:///world.json', label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
-		roots: [node('entity-a', 'First'), node('entity-b', 'Second')]
+		roots: [node(assetId, 'entity-a', 'First'), node(assetId, 'entity-b', 'Second')]
 	};
 }
 
-function node(identity: string, label: string): HierarchyNodeDto {
-	const occurrence = { definitionAssetId: 'world-a', entityPath: [identity] };
+function node(definitionAssetId: string, identity: string, label: string): HierarchyNodeDto {
+	const occurrence = { definitionAssetId, entityPath: [identity] };
 	return {
 		occurrence, kind: 'local-entity', entityId: identity, definitionId: null,
 		label: { kind: 'literal', text: label, messageCode: null, arguments: [] },

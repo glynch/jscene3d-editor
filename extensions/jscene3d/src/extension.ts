@@ -82,6 +82,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: projectProvider });
 	const hierarchyProvider = new HierarchyTreeDataProvider(definitionState);
 	const hierarchyTree = vscode.window.createTreeView(hierarchyViewId, { treeDataProvider: hierarchyProvider });
+	hierarchyProvider.attach(hierarchyTree, error => output.appendLine(
+		`Failed to restore JScene3D Hierarchy selection: ${error instanceof Error ? error.message : String(error)}`));
 	const inspectorProvider = new InspectorViewProvider(
 		inspectorState,
 		vscode.env.language,
@@ -193,7 +195,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				definitionState.select(selected);
 				void revealInspector(command => vscode.commands.executeCommand(command))
 					.catch(error => output.appendLine(`Failed to reveal JScene3D Inspector: ${error instanceof Error ? error.message : String(error)}`));
-			} else {
+			} else if (!hierarchyProvider.isRestoringSelection) {
 				definitionState.clearSelection();
 			}
 		}),
