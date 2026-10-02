@@ -132,7 +132,7 @@ export class AuthoringWorkflow {
 		}
 	}
 
-	async openDefinition(requestedAssetId?: string): Promise<void> {
+	async openDefinition(requestedAssetId?: string, expectedProjectGeneration?: number): Promise<void> {
 		const snapshot = this.projectState.snapshot;
 		if (snapshot.status !== 'open') {
 			await this.host.notify('projectRequired');
@@ -141,6 +141,13 @@ export class AuthoringWorkflow {
 
 		this.host.publishDefinitionDiagnostics([]);
 		if (requestedAssetId === undefined) {
+			await this.host.notify('definitionOpenRejected');
+			return;
+		}
+		if (expectedProjectGeneration !== undefined && expectedProjectGeneration !== snapshot.generation) {
+			this.logger.appendLine(
+				`Definition open rejected: Project generation ${expectedProjectGeneration} is stale; active generation is ${snapshot.generation}`
+			);
 			await this.host.notify('definitionOpenRejected');
 			return;
 		}

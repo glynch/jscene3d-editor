@@ -12,7 +12,20 @@
 			"root": "/projects/small",
 			"descriptor": "/projects/small/small.j3d",
 			"mainScene": { "id": "world:main", "name": "Main World" },
-			"assetCounts": { "authored": 3, "projected": 4 }
+			"assetCounts": { "authored": 3, "projected": 4 },
+			"catalog": {
+				"scenes": [
+					{
+						"id": "world:main",
+						"name": "Main World",
+						"source": "file:///projects/small/content/main.scene.json",
+						"origin": "authored",
+						"editable": true,
+						"mainScene": true
+					}
+				],
+				"entityDefinitions": []
+			}
 		},
 		"diagnostics": [
 			{

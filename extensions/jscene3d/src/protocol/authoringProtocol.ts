@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 2, minor: 0 } as const;
+export const authoringProtocolVersion = { major: 2, minor: 1 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -70,6 +70,22 @@ export interface AssetCountsDto {
 	readonly projected: number;
 }
 
+/** One Java-classified semantic definition exposed in the Project catalog. */
+export interface ProjectCatalogEntryDto {
+	readonly id: string;
+	readonly name: string;
+	readonly source: string;
+	readonly origin: 'authored' | 'generated';
+	readonly editable: boolean;
+	readonly mainScene: boolean;
+}
+
+/** Java-owned semantic groups displayed by the Project view. */
+export interface ProjectCatalogDto {
+	readonly scenes: readonly ProjectCatalogEntryDto[];
+	readonly entityDefinitions: readonly ProjectCatalogEntryDto[];
+}
+
 /** Wire summary of the Java-retained authoring project. */
 export interface ProjectSummaryDto {
 	readonly id: string;
@@ -79,6 +95,7 @@ export interface ProjectSummaryDto {
 	readonly descriptor: string;
 	readonly mainScene: SceneSummaryDto | null;
 	readonly assetCounts: AssetCountsDto;
+	readonly catalog: ProjectCatalogDto;
 }
 
 /** Exact validated result for a project-open attempt, including validation diagnostics. */
@@ -401,7 +418,8 @@ export class AuthoringProtocolClient {
 			clientLanguage: requiredLanguageTag(clientLanguage)
 		}, validateInitializeResult);
 		const result = response.result;
-		if (result.protocolVersion.major !== authoringProtocolVersion.major) {
+		if (result.protocolVersion.major !== authoringProtocolVersion.major
+			|| result.protocolVersion.minor < authoringProtocolVersion.minor) {
 			throw new Error(`Incompatible authoring protocol ${result.protocolVersion.major}.${result.protocolVersion.minor}`);
 		}
 		if (result.processKind !== 'authoring') {
@@ -1139,25 +1157,62 @@ function validateProtocolVersion(value: JsonValue | undefined): ProtocolVersionD
 	};
 }
 
-/** Validates the narrow project summary used by the first editor slice. */
+/** Validates the project summary and its Java-owned semantic catalog. */
 function validateProjectSummary(value: JsonValue | undefined): ProjectSummaryDto {
 	const object = requiredObject(value, 'project');
 	const mainScene = object.mainScene === null ? null : requiredObject(object.mainScene, 'mainScene');
+	const validatedMainScene = mainScene === null ? null : {
+		id: requiredString(mainScene.id, 'mainScene.id'),
+		name: requiredString(mainScene.name, 'mainScene.name')
+	};
 	const assetCounts = requiredObject(object.assetCounts, 'assetCounts');
+	const catalog = requiredObject(object.catalog, 'catalog');
+	const scenes = requiredArray(catalog.scenes, 'catalog.scenes').map(validateProjectCatalogEntry);
+	const entityDefinitions = requiredArray(catalog.entityDefinitions, 'catalog.entityDefinitions').map(validateProjectCatalogEntry);
+	if (scenes.filter(entry => entry.mainScene).length > 1) {
+		throw new Error('catalog.scenes cannot contain multiple Main Scenes');
+	}
+	if (entityDefinitions.some(entry => entry.mainScene)) {
+		throw new Error('catalog.entityDefinitions cannot contain a Main Scene');
+	}
+	const selectedScenes = scenes.filter(entry => entry.mainScene);
+	if (validatedMainScene === null && selectedScenes.length !== 0) {
+		throw new Error('catalog cannot identify a Main Scene when none is configured');
+	}
+	if (validatedMainScene !== null
+		&& (selectedScenes.length !== 1 || selectedScenes[0].id !== validatedMainScene.id)) {
+		throw new Error('catalog Main Scene must match stable configured identity');
+	}
 	return {
 		id: requiredString(object.id, 'project.id'),
 		name: requiredString(object.name, 'project.name'),
 		version: requiredString(object.version, 'project.version'),
 		root: requiredString(object.root, 'project.root'),
 		descriptor: requiredString(object.descriptor, 'project.descriptor'),
-		mainScene: mainScene === null ? null : {
-			id: requiredString(mainScene.id, 'mainScene.id'),
-			name: requiredString(mainScene.name, 'mainScene.name')
-		},
+		mainScene: validatedMainScene,
 		assetCounts: {
 			authored: requiredInteger(assetCounts.authored, 'assetCounts.authored'),
 			projected: requiredInteger(assetCounts.projected, 'assetCounts.projected')
-		}
+		},
+		catalog: { scenes, entityDefinitions }
+	};
+}
+
+/** Validates one Java-owned semantic definition entry without deriving its kind from source layout. */
+function validateProjectCatalogEntry(value: JsonValue): ProjectCatalogEntryDto {
+	const object = requiredObject(value, 'catalog entry');
+	const origin = requiredDefinitionOrigin(object.origin, 'catalog entry.origin');
+	const editable = requiredBoolean(object.editable, 'catalog entry.editable');
+	if (origin === 'generated' && editable) {
+		throw new Error('a generated catalog entry cannot be editable');
+	}
+	return {
+		id: requiredNonEmptyString(object.id, 'catalog entry.id'),
+		name: requiredNonEmptyString(object.name, 'catalog entry.name'),
+		source: requiredNonEmptyString(object.source, 'catalog entry.source'),
+		origin,
+		editable,
+		mainScene: requiredBoolean(object.mainScene, 'catalog entry.mainScene')
 	};
 }
 
@@ -1199,9 +1254,12 @@ function requiredDefinitionKind(value: JsonValue | undefined): DefinitionContext
 }
 
 /** Requires one definition-level origin. */
-function requiredDefinitionOrigin(value: JsonValue | undefined): DefinitionContextDto['origin'] {
+function requiredDefinitionOrigin(
+	value: JsonValue | undefined,
+	name = 'definition.context.origin'
+): DefinitionContextDto['origin'] {
 	if (value !== 'authored' && value !== 'generated') {
-		throw new Error('definition.context.origin is invalid');
+		throw new Error(`${name} is invalid`);
 	}
 	return value;
 }

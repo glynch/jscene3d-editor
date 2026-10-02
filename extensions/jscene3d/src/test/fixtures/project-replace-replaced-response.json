@@ -12,7 +12,20 @@
 			"root": "/projects/replacement",
 			"descriptor": "/projects/replacement/replacement.j3d",
 			"mainScene": { "id": "world:replacement", "name": "Replacement World" },
-			"assetCounts": { "authored": 2, "projected": 1 }
+			"assetCounts": { "authored": 2, "projected": 1 },
+			"catalog": {
+				"scenes": [
+					{
+						"id": "world:replacement",
+						"name": "Replacement World",
+						"source": "file:///projects/replacement/worlds/replacement.scene.json",
+						"origin": "authored",
+						"editable": true,
+						"mainScene": true
+					}
+				],
+				"entityDefinitions": []
+			}
 		},
 		"diagnostics": [],
 		"failureCode": null

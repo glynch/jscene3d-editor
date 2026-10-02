@@ -198,12 +198,48 @@ suite('JScene3D project state', () => {
 		await replacing;
 	});
 
-	test('shows an unconfigured Main Scene without an open-definition command', () => {
-		const snapshot = openSnapshot({ ...summaryA, mainScene: null }, 7, []);
+	test('projects Java semantic groups and generation-bound AssetId open commands', () => {
+		const root = projectTree(openSnapshot(summaryA, 7, []), labels)[0];
+		const scenes = root.children?.[0];
+		const entityDefinitions = root.children?.[1];
 
-		const mainScene = projectTree(snapshot, labels)[0].children?.find(node => node.label === labels.mainScene);
+		assert.strictEqual(scenes?.label, 'Scenes');
+		assert.deepStrictEqual(scenes?.children?.[0], {
+			label: 'World A',
+			description: 'Main Scene',
+			tooltip: 'file:///projects/a/content/maps/world-a.scene.json',
+			command: {
+				command: 'jscene3d.openDefinition',
+				title: 'World A',
+				arguments: ['world:a', 7]
+			}
+		});
+		assert.strictEqual(entityDefinitions?.label, 'Entity Definitions');
+		assert.deepStrictEqual(entityDefinitions?.children?.[0], {
+			label: 'Player',
+			description: 'Generated · Read-only',
+			tooltip: 'published:entities/player',
+			command: {
+				command: 'jscene3d.openDefinition',
+				title: 'Player',
+				arguments: ['entity:player', 7]
+			}
+		});
+	});
 
-		assert.deepStrictEqual(mainScene, { label: 'Main Scene', description: 'Not configured' });
+	test('shows explicit empty states for Projects without Scenes or Entity Definitions', () => {
+		const snapshot = openSnapshot({
+			...summaryA,
+			mainScene: null,
+			catalog: { scenes: [], entityDefinitions: [] }
+		}, 7, []);
+
+		const groups = projectTree(snapshot, labels)[0].children;
+
+		assert.deepStrictEqual(groups, [
+			{ label: 'Scenes', children: [{ label: 'No Scenes' }] },
+			{ label: 'Entity Definitions', children: [{ label: 'No Entity Definitions' }] }
+		]);
 	});
 
 });
@@ -322,7 +358,25 @@ const summaryA: ProjectSummaryDto = {
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
 	mainScene: { id: 'world:a', name: 'World A' },
-	assetCounts: { authored: 3, projected: 4 }
+	assetCounts: { authored: 3, projected: 4 },
+	catalog: {
+		scenes: [{
+			id: 'world:a',
+			name: 'World A',
+			source: 'file:///projects/a/content/maps/world-a.scene.json',
+			origin: 'authored',
+			editable: true,
+			mainScene: true
+		}],
+		entityDefinitions: [{
+			id: 'entity:player',
+			name: 'Player',
+			source: 'published:entities/player',
+			origin: 'generated',
+			editable: false,
+			mainScene: false
+		}]
+	}
 };
 
 const summaryB: ProjectSummaryDto = {
@@ -366,13 +420,11 @@ const labels: ProjectViewLabels = {
 	unavailable: 'Project unavailable',
 	openFailed: 'See Problems and JScene3D Output for details',
 	noProject: 'No JScene3D project is open',
-	name: 'Name',
-	id: 'ID',
-	version: 'Version',
-	descriptor: 'Descriptor',
-	projectRoot: 'Project Root',
+	scenes: 'Scenes',
+	entityDefinitions: 'Entity Definitions',
+	noScenes: 'No Scenes',
+	noEntityDefinitions: 'No Entity Definitions',
 	mainScene: 'Main Scene',
-	notConfigured: 'Not configured',
-	authoredAssets: 'Authored Assets',
-	projectedAssets: 'Projected Assets'
+	generated: 'Generated',
+	readOnly: 'Read-only'
 };

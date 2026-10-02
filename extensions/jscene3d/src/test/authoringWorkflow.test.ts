@@ -167,6 +167,18 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.host.notifications, ['projectRequired']);
 	});
 
+	test('rejects a Project-tree command from a stale project generation before protocol dispatch', async () => {
+		const fixture = workflowFixture(openSnapshot(8));
+
+		await fixture.workflow.openDefinition('world:a', 7);
+
+		assert.deepStrictEqual(fixture.opener.calls, []);
+		assert.deepStrictEqual(fixture.host.notifications, ['definitionOpenRejected']);
+		assert.ok(fixture.logger.lines.includes(
+			'Definition open rejected: Project generation 7 is stale; active generation is 8'
+		));
+	});
+
 	test('clears definition diagnostics when the authoritative project generation changes', () => {
 		const fixture = workflowFixture(openSnapshot());
 
@@ -329,7 +341,14 @@ const projectSummary: ProjectSummaryDto = {
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
 	mainScene: { id: 'world:a', name: 'World A' },
-	assetCounts: { authored: 1, projected: 0 }
+	assetCounts: { authored: 1, projected: 0 },
+	catalog: {
+		scenes: [{
+			id: 'world:a', name: 'World A', source: 'file:///projects/a/worlds/a.scene.json',
+			origin: 'authored', editable: true, mainScene: true
+		}],
+		entityDefinitions: []
+	}
 };
 
 const definitionSnapshot: DefinitionSnapshotDto = {

@@ -46,14 +46,12 @@ function labels(): ProjectViewLabels {
 		unavailable: vscode.l10n.t('Project unavailable'),
 		openFailed: vscode.l10n.t('See Problems and JScene3D Output for details'),
 		noProject: vscode.l10n.t('No JScene3D project is open'),
-		name: vscode.l10n.t('Name'),
-		id: vscode.l10n.t('ID'),
-		version: vscode.l10n.t('Version'),
-		descriptor: vscode.l10n.t('Descriptor'),
-		projectRoot: vscode.l10n.t('Project Root'),
+		scenes: vscode.l10n.t('Scenes'),
+		entityDefinitions: vscode.l10n.t('Entity Definitions'),
+		noScenes: vscode.l10n.t('No Scenes'),
+		noEntityDefinitions: vscode.l10n.t('No Entity Definitions'),
 		mainScene: vscode.l10n.t('Main Scene'),
-		notConfigured: vscode.l10n.t('Not configured'),
-		authoredAssets: vscode.l10n.t('Authored Assets'),
-		projectedAssets: vscode.l10n.t('Projected Assets')
+		generated: vscode.l10n.t('Generated'),
+		readOnly: vscode.l10n.t('Read-only')
 	};
 }

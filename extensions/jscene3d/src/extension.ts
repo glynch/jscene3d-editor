@@ -201,7 +201,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(openProjectCommandId, () => workflow.openProject()),
 		vscode.commands.registerCommand(closeProjectCommandId, () => workflow.closeProject()),
 		vscode.commands.registerCommand(openDefinitionCommandId,
-			(requestedAssetId?: string) => workflow.openDefinition(requestedAssetId)),
+			(requestedAssetId?: string, expectedProjectGeneration?: number) =>
+				workflow.openDefinition(requestedAssetId, expectedProjectGeneration)),
 		vscode.commands.registerCommand(runProjectCommandId,
 			() => viewportWorkflow.runProject()),
 		vscode.commands.registerCommand(gettingStartedCommandId, () => workflow.gettingStarted())

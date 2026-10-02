@@ -565,7 +565,14 @@ const summaryA: ProjectSummaryDto = {
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
 	mainScene: { id: 'world:a', name: 'World A' },
-	assetCounts: { authored: 1, projected: 0 }
+	assetCounts: { authored: 1, projected: 0 },
+	catalog: {
+		scenes: [{
+			id: 'world:a', name: 'World A', source: 'file:///projects/a/worlds/a.scene.json',
+			origin: 'authored', editable: true, mainScene: true
+		}],
+		entityDefinitions: []
+	}
 };
 
 const summaryB: ProjectSummaryDto = {

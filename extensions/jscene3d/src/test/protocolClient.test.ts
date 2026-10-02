@@ -17,7 +17,7 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 2, minor: 0 },
+			protocolVersion: { major: 2, minor: 1 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
@@ -31,7 +31,7 @@ suite('JScene3D authoring protocol client', () => {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 2, minor: 0 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 2, minor: 1 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
@@ -397,6 +397,16 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(initialization, /Incompatible authoring protocol 3.0/);
 	});
 
+	test('rejects a service below the required compatible minor version', async () => {
+		const transport = new TestTransport();
+		const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
+		const initialization = client.initialize('en');
+		const response = fixture('initialize-response.json');
+		const result = object(response.result);
+		transport.respond({ ...response, result: { ...result, protocolVersion: { major: 2, minor: 0 } } });
+		await assert.rejects(initialization, /Incompatible authoring protocol 2.0/);
+	});
+
 	test('rejects malformed client language tags before serialization', async () => {
 		for (const language of ['', ' en', 'en_US', 'und']) {
 			const transport = new TestTransport();
@@ -644,6 +654,31 @@ suite('JScene3D authoring protocol client', () => {
 		await assert.rejects(opened, /assetCounts.authored must be a non-negative integer/);
 	});
 
+	test('validates Java-owned semantic project catalog entries', async () => {
+		const response = fixture('project-open-response.json');
+		const result = object(response.result);
+		const project = object(result.project);
+		const catalog = object(project.catalog);
+		const scene = object(jsonArray(catalog.scenes)[0]);
+		for (const [entry, error] of [
+			[{ ...scene, origin: 'unknown' }, /origin is invalid/],
+			[{ ...scene, origin: 'generated', editable: true }, /generated catalog entry cannot be editable/],
+			[{ ...scene, id: 'world:other' }, /stable configured identity/]
+		] as const) {
+			const transport = new TestTransport();
+			const client = await initializedClient(transport);
+			const opened = client.openProject('/projects/small/small.j3d');
+			transport.respond({
+				...response,
+				result: {
+					...result,
+					project: { ...project, catalog: { ...catalog, scenes: [entry] } }
+				}
+			});
+			await assert.rejects(opened, error);
+		}
+	});
+
 	test('accepts exact project-close success and failure results', async () => {
 		for (const result of [
 			{ closed: true, invalidatedProjectGeneration: 7 },
@@ -679,7 +714,16 @@ suite('JScene3D authoring protocol client', () => {
 
 		const opened = client.openProject('/projects/small/small.j3d');
 		transport.respond(fixture('project-open-response.json'));
-		assert.deepStrictEqual((await opened).project?.assetCounts, { authored: 3, projected: 4 });
+		const project = (await opened).project;
+		assert.deepStrictEqual(project?.assetCounts, { authored: 3, projected: 4 });
+		assert.deepStrictEqual(project?.catalog.scenes, [{
+			id: 'world:main',
+			name: 'Main World',
+			source: 'file:///projects/small/content/main.scene.json',
+			origin: 'authored',
+			editable: true,
+			mainScene: true
+		}]);
 
 		const closed = client.closeProject();
 		transport.respond(fixture('project-close-response.json'));

@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as path from 'path';
 import { openDefinitionCommandId } from '../definition/authoredDefinitionOpener';
+import { ProjectCatalogEntryDto } from '../protocol/authoringProtocol';
 import { ProjectSnapshot } from './projectState';
 
 export const projectViewId = 'jscene3d.project';
@@ -25,18 +25,16 @@ export interface ProjectViewLabels {
 	readonly unavailable: string;
 	readonly openFailed: string;
 	readonly noProject: string;
-	readonly name: string;
-	readonly id: string;
-	readonly version: string;
-	readonly descriptor: string;
-	readonly projectRoot: string;
+	readonly scenes: string;
+	readonly entityDefinitions: string;
+	readonly noScenes: string;
+	readonly noEntityDefinitions: string;
 	readonly mainScene: string;
-	readonly notConfigured: string;
-	readonly authoredAssets: string;
-	readonly projectedAssets: string;
+	readonly generated: string;
+	readonly readOnly: string;
 }
 
-/** Projects the authoritative project snapshot into the minimal Stage 1 tree. */
+/** Projects the authoritative project snapshot into the semantic Project tree. */
 export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels): readonly ProjectTreeNode[] {
 	if (snapshot.status === 'opening') {
 		return [{ label: labels.opening }];
@@ -51,25 +49,57 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 		return [{ label: labels.noProject }];
 	}
 	const project = snapshot.project;
-	const mainScene = project.mainScene === null
-		? { label: labels.mainScene, description: labels.notConfigured }
-		: {
-			label: labels.mainScene,
-			description: `${project.mainScene.name} (${project.mainScene.id})`,
-			command: { command: openDefinitionCommandId, title: labels.mainScene, arguments: [project.mainScene.id] }
-		};
 	return [{
 		label: project.name,
 		description: project.version,
 		children: [
-			{ label: labels.name, description: project.name },
-			{ label: labels.id, description: project.id },
-			{ label: labels.version, description: project.version },
-			{ label: labels.descriptor, description: path.basename(project.descriptor), tooltip: project.descriptor },
-			{ label: labels.projectRoot, description: project.root, tooltip: project.root },
-			mainScene,
-			{ label: labels.authoredAssets, description: String(project.assetCounts.authored) },
-			{ label: labels.projectedAssets, description: String(project.assetCounts.projected) }
+			catalogGroup(labels.scenes, labels.noScenes, project.catalog.scenes, snapshot.generation, labels),
+			catalogGroup(
+				labels.entityDefinitions,
+				labels.noEntityDefinitions,
+				project.catalog.entityDefinitions,
+				snapshot.generation,
+				labels
+			)
 		]
 	}];
+}
+
+/** Builds one fixed semantic group, including an explicit empty state. */
+function catalogGroup(
+	label: string,
+	emptyLabel: string,
+	entries: readonly ProjectCatalogEntryDto[],
+	projectGeneration: number,
+	labels: ProjectViewLabels
+): ProjectTreeNode {
+	return {
+		label,
+		children: entries.length === 0
+			? [{ label: emptyLabel }]
+			: entries.map(entry => catalogEntry(entry, projectGeneration, labels))
+	};
+}
+
+/** Presents Java-owned semantics while retaining stable AssetId and generation for opening. */
+function catalogEntry(
+	entry: ProjectCatalogEntryDto,
+	projectGeneration: number,
+	labels: ProjectViewLabels
+): ProjectTreeNode {
+	const qualifiers = [
+		entry.mainScene ? labels.mainScene : undefined,
+		entry.origin === 'generated' ? labels.generated : undefined,
+		entry.editable ? undefined : labels.readOnly
+	].filter((value): value is string => value !== undefined);
+	return {
+		label: entry.name,
+		description: qualifiers.length === 0 ? undefined : qualifiers.join(' · '),
+		tooltip: entry.source,
+		command: {
+			command: openDefinitionCommandId,
+			title: entry.name,
+			arguments: [entry.id, projectGeneration]
+		}
+	};
 }

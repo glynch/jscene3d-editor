@@ -189,7 +189,14 @@ function openSnapshot(generation = 7): ProjectSnapshot {
 			root: '/projects/a',
 			descriptor: '/projects/a/project.j3d',
 			mainScene: { id: 'world:a', name: 'Scene A' },
-			assetCounts: { authored: 1, projected: 0 }
+			assetCounts: { authored: 1, projected: 0 },
+			catalog: {
+				scenes: [{
+					id: 'world:a', name: 'Scene A', source: 'file:///projects/a/worlds/a.scene.json',
+					origin: 'authored', editable: true, mainScene: true
+				}],
+				entityDefinitions: []
+			}
 		},
 		activeDiagnostics: [],
 		attemptDiagnostics: []
