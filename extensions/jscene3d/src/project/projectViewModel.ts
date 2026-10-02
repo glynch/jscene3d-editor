@@ -30,7 +30,8 @@ export interface ProjectViewLabels {
 	readonly version: string;
 	readonly descriptor: string;
 	readonly projectRoot: string;
-	readonly startupWorld: string;
+	readonly mainScene: string;
+	readonly notConfigured: string;
 	readonly authoredAssets: string;
 	readonly projectedAssets: string;
 }
@@ -50,6 +51,13 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 		return [{ label: labels.noProject }];
 	}
 	const project = snapshot.project;
+	const mainScene = project.mainScene === null
+		? { label: labels.mainScene, description: labels.notConfigured }
+		: {
+			label: labels.mainScene,
+			description: `${project.mainScene.name} (${project.mainScene.id})`,
+			command: { command: openDefinitionCommandId, title: labels.mainScene, arguments: [project.mainScene.id] }
+		};
 	return [{
 		label: project.name,
 		description: project.version,
@@ -59,11 +67,7 @@ export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels
 			{ label: labels.version, description: project.version },
 			{ label: labels.descriptor, description: path.basename(project.descriptor), tooltip: project.descriptor },
 			{ label: labels.projectRoot, description: project.root, tooltip: project.root },
-			{
-				label: labels.startupWorld,
-				description: `${project.startupWorld.name} (${project.startupWorld.id})`,
-				command: { command: openDefinitionCommandId, title: labels.startupWorld, arguments: [project.startupWorld.id] }
-			},
+			mainScene,
 			{ label: labels.authoredAssets, description: String(project.assetCounts.authored) },
 			{ label: labels.projectedAssets, description: String(project.assetCounts.projected) }
 		]

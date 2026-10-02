@@ -51,7 +51,8 @@ function labels(): ProjectViewLabels {
 		version: vscode.l10n.t('Version'),
 		descriptor: vscode.l10n.t('Descriptor'),
 		projectRoot: vscode.l10n.t('Project Root'),
-		startupWorld: vscode.l10n.t('Startup World'),
+		mainScene: vscode.l10n.t('Main Scene'),
+		notConfigured: vscode.l10n.t('Not configured'),
 		authoredAssets: vscode.l10n.t('Authored Assets'),
 		projectedAssets: vscode.l10n.t('Projected Assets')
 	};

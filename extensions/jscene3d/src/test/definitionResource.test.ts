@@ -19,7 +19,7 @@ suite('JScene3D definition resources', () => {
 		const resource = new URL(definitionResourceUri('connection-a', 7, definition('authored')));
 
 		assert.strictEqual(resource.protocol, 'file:');
-		assert.strictEqual(resource.pathname, '/projects/game/worlds/main.world.json');
+		assert.strictEqual(resource.pathname, '/projects/game/worlds/main.scene.json');
 		assert.strictEqual(resource.searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
 		assert.strictEqual(resource.searchParams.get('jscene3dGeneration'), '7');
 		assert.strictEqual(resource.searchParams.get('jscene3dAssetId'), 'definition-a');
@@ -30,16 +30,16 @@ suite('JScene3D definition resources', () => {
 
 		assert.strictEqual(resource.protocol, 'jscene3d-definition:');
 		assert.strictEqual(resource.hostname, 'generated');
-		assert.match(resource.pathname, /definition-a\.world\.json$/);
+		assert.match(resource.pathname, /definition-a\.scene\.json$/);
 		assert.strictEqual(resource.searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
 		assert.strictEqual(resource.searchParams.get('jscene3dGeneration'), '8');
 	});
 
 	test('maps every current definition kind to an explicit generated suffix', () => {
-		const world = new URL(definitionResourceUri('connection-a', 8, definition('generated', 'world-definition')));
+		const scene = new URL(definitionResourceUri('connection-a', 8, definition('generated', 'scene-definition')));
 		const entity = new URL(definitionResourceUri('connection-a', 8, definition('generated', 'entity-definition')));
 
-		assert.match(world.pathname, /definition-a\.world\.json$/);
+		assert.match(scene.pathname, /definition-a\.scene\.json$/);
 		assert.match(entity.pathname, /definition-a\.entity\.json$/);
 	});
 
@@ -58,8 +58,8 @@ suite('JScene3D definition resources', () => {
 	});
 
 	test('distinguishes AssetIds within one connection and project generation', () => {
-		const resourceA = definitionResourceUri('connection-a', 7, definition('authored', 'world-definition', 'definition-a'));
-		const resourceB = definitionResourceUri('connection-a', 7, definition('authored', 'world-definition', 'definition-b'));
+		const resourceA = definitionResourceUri('connection-a', 7, definition('authored', 'scene-definition', 'definition-a'));
+		const resourceB = definitionResourceUri('connection-a', 7, definition('authored', 'scene-definition', 'definition-b'));
 
 		assert.notStrictEqual(resourceA, resourceB);
 	});
@@ -69,8 +69,8 @@ suite('JScene3D definition resources', () => {
 	});
 
 	test('uses the unencoded Code OSS URI form for resource-state lookup', () => {
-		const raw = 'file:///projects/game/worlds/main.world.json?generation=1';
-		const encoded = 'file:///projects/game/worlds/main.world.json?generation%3D1';
+		const raw = 'file:///projects/game/worlds/main.scene.json?generation=1';
+		const encoded = 'file:///projects/game/worlds/main.scene.json?generation%3D1';
 		const calls: Array<boolean | undefined> = [];
 
 		const key = definitionResourceKey({
@@ -91,7 +91,7 @@ function resourceForConnection(connectionGeneration: string): string {
 
 function definition(
 	origin: 'authored' | 'generated',
-	kind: DefinitionSnapshotDto['context']['kind'] = 'world-definition',
+	kind: DefinitionSnapshotDto['context']['kind'] = 'scene-definition',
 	assetId = 'definition-a'
 ): DefinitionSnapshotDto {
 	return {
@@ -101,7 +101,7 @@ function definition(
 			kind,
 			origin,
 			editable: origin === 'authored',
-			source: 'file:///projects/game/worlds/main.world.json',
+			source: 'file:///projects/game/worlds/main.scene.json',
 			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
 		roots: []

@@ -37,7 +37,7 @@ suite('JScene3D authored definition opener', () => {
 			severity: 'error' as const,
 			code: 'definition.invalid',
 			message: 'The definition is invalid',
-			source: 'file:///projects/game/worlds/main.world.json',
+			source: 'file:///projects/game/worlds/main.scene.json',
 			location: '/root',
 			details: {}
 		}];
@@ -112,10 +112,10 @@ function definition(assetId: string): DefinitionSnapshotDto {
 		revision: 0,
 		context: {
 			assetId,
-			kind: 'world-definition',
+			kind: 'scene-definition',
 			origin: 'authored',
 			editable: true,
-			source: 'file:///projects/game/worlds/main.world.json',
+			source: 'file:///projects/game/worlds/main.scene.json',
 			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
 		roots: []

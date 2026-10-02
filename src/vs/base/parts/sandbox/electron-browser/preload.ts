@@ -127,7 +127,7 @@
 			&& Number.isInteger(candidate.projectGeneration) && candidate.projectGeneration! > 0
 			&& nonEmpty(candidate.projectId) && nonEmpty(candidate.projectName)
 			&& nonEmpty(candidate.projectRoot) && nonEmpty(candidate.publishedContentRoot)
-			&& nonEmpty(candidate.engineVersion) && nonEmpty(candidate.worldAssetId) && nonEmpty(candidate.worldName)
+			&& nonEmpty(candidate.engineVersion) && nonEmpty(candidate.sceneAssetId) && nonEmpty(candidate.sceneName)
 			&& Array.isArray(candidate.runtimeArtifacts) && candidate.runtimeArtifacts.every(nonEmpty);
 	};
 	const validFrameIdentity = (value: unknown): value is IJScene3DViewportFrameIdentity => {

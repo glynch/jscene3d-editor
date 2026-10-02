@@ -198,6 +198,14 @@ suite('JScene3D project state', () => {
 		await replacing;
 	});
 
+	test('shows an unconfigured Main Scene without an open-definition command', () => {
+		const snapshot = openSnapshot({ ...summaryA, mainScene: null }, 7, []);
+
+		const mainScene = projectTree(snapshot, labels)[0].children?.find(node => node.label === labels.mainScene);
+
+		assert.deepStrictEqual(mainScene, { label: 'Main Scene', description: 'Not configured' });
+	});
+
 });
 
 class TestProjectClient implements ProjectAuthoringClient {
@@ -313,7 +321,7 @@ const summaryA: ProjectSummaryDto = {
 	version: '1.0.0',
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
-	startupWorld: { id: 'world:a', name: 'World A' },
+	mainScene: { id: 'world:a', name: 'World A' },
 	assetCounts: { authored: 3, projected: 4 }
 };
 
@@ -363,7 +371,8 @@ const labels: ProjectViewLabels = {
 	version: 'Version',
 	descriptor: 'Descriptor',
 	projectRoot: 'Project Root',
-	startupWorld: 'Startup World',
+	mainScene: 'Main Scene',
+	notConfigured: 'Not configured',
 	authoredAssets: 'Authored Assets',
 	projectedAssets: 'Projected Assets'
 };

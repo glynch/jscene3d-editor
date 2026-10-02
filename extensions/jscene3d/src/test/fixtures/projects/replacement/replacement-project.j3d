@@ -11,7 +11,10 @@
 	},
 	"runtime": {
 		"applicationExtension": "example.replacement-test",
-		"entryScene": "worlds/replacement.world.json"
+		"mainScene": {
+			"assetId": "d7319691-da5f-4423-9843-7f16440fe8f6",
+			"pathHint": "worlds/replacement.scene.json"
+		}
 	},
 	"extensions": [
 		{

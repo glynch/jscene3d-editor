@@ -17,15 +17,15 @@ const launch = {
 	projectRoot: '/projects/example',
 	publishedContentRoot: '/projects/example/.jscene3d/published',
 	engineVersion: '0.1.0-SNAPSHOT',
-	worldAssetId: 'e890c4c3-fb32-49d8-88b8-4e04e7a29656',
-	worldName: 'Opening World',
+	sceneAssetId: 'e890c4c3-fb32-49d8-88b8-4e04e7a29656',
+	sceneName: 'Opening Scene',
 	runtimeArtifacts: ['/runtime/example.jar']
 };
 
 suite('JScene3DViewportEditorInput', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('includes service, project, world, and viewport identity without becoming a singleton', () => {
+	test('includes service, project, Scene, and viewport identity without becoming a singleton', () => {
 		const first = new JScene3DViewportEditorInput(launch);
 		const sameViewport = new JScene3DViewportEditorInput({ ...launch });
 		const otherViewport = new JScene3DViewportEditorInput({ ...launch, viewportId: 'viewport-b' });
@@ -35,7 +35,7 @@ suite('JScene3DViewportEditorInput', () => {
 			assert.strictEqual(first.matches(sameViewport), true);
 			assert.strictEqual(first.matches(otherViewport), false);
 			assert.strictEqual(first.matches(staleGeneration), false);
-			assert.strictEqual(first.getName(), 'Example Project — Opening World');
+			assert.strictEqual(first.getName(), 'Example Project — Opening Scene');
 			assert.strictEqual(first.hasCapability(EditorInputCapabilities.Singleton), false);
 			assert.strictEqual(first.hasCapability(EditorInputCapabilities.Readonly), true);
 		} finally {

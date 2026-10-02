@@ -155,11 +155,11 @@ export class AuthoringService implements Disposable {
 
 	async prepareViewportLaunch(
 		expectedProjectGeneration: number,
-		worldAssetId: string
+		sceneAssetId: string
 	): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
 		await this.ensureReady();
 		try {
-			return await this.requireClient().prepareViewportLaunch(expectedProjectGeneration, worldAssetId);
+			return await this.requireClient().prepareViewportLaunch(expectedProjectGeneration, sceneAssetId);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}
@@ -374,7 +374,7 @@ export class AuthoringService implements Disposable {
 
 	private validateInitialization(initialization: InitializeResultDto): void {
 		if (initialization.protocolVersion.minor > 0) {
-			this.logger.appendLine(`Authoring service negotiated protocol 1.${initialization.protocolVersion.minor}`);
+			this.logger.appendLine(`Authoring service negotiated protocol ${initialization.protocolVersion.major}.${initialization.protocolVersion.minor}`);
 		}
 	}
 

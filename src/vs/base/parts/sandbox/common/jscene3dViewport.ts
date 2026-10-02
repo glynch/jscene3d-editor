@@ -30,8 +30,8 @@ export interface IJScene3DViewportLaunch {
 	readonly projectRoot: string;
 	readonly publishedContentRoot: string;
 	readonly engineVersion: string;
-	readonly worldAssetId: string;
-	readonly worldName: string;
+	readonly sceneAssetId: string;
+	readonly sceneName: string;
 	readonly runtimeArtifacts: readonly string[];
 }
 
@@ -82,8 +82,8 @@ export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaun
 		&& nonEmpty(candidate.projectRoot)
 		&& nonEmpty(candidate.publishedContentRoot)
 		&& nonEmpty(candidate.engineVersion)
-		&& nonEmpty(candidate.worldAssetId)
-		&& nonEmpty(candidate.worldName)
+		&& nonEmpty(candidate.sceneAssetId)
+		&& nonEmpty(candidate.sceneName)
 		&& Array.isArray(candidate.runtimeArtifacts)
 		&& candidate.runtimeArtifacts.every(nonEmpty);
 }

@@ -36,7 +36,7 @@ import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './pro
 import {
 	closeProjectViewportsWorkbenchCommandId,
 	openProjectViewportWorkbenchCommandId,
-	openStartupWorldViewportCommandId,
+	runProjectCommandId,
 	ProjectViewportLaunch,
 	ViewportWorkflow,
 	ViewportWorkflowHost
@@ -202,8 +202,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(closeProjectCommandId, () => workflow.closeProject()),
 		vscode.commands.registerCommand(openDefinitionCommandId,
 			(requestedAssetId?: string) => workflow.openDefinition(requestedAssetId)),
-		vscode.commands.registerCommand(openStartupWorldViewportCommandId,
-			() => viewportWorkflow.openStartupWorld()),
+		vscode.commands.registerCommand(runProjectCommandId,
+			() => viewportWorkflow.runProject()),
 		vscode.commands.registerCommand(gettingStartedCommandId, () => workflow.gettingStarted())
 	);
 
@@ -244,13 +244,16 @@ class VsCodeViewportWorkflowHost implements ViewportWorkflowHost {
 		publishProjectDiagnostics(this.diagnostics, diagnostics);
 	}
 
-	async notifyFailure(kind: 'projectRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void> {
+	async notifyFailure(kind: 'projectRequired' | 'mainSceneRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void> {
 		switch (kind) {
 			case 'projectRequired':
 				await vscode.window.showErrorMessage(vscode.l10n.t('Open a JScene3D project before opening a native viewport.'));
 				return;
+			case 'mainSceneRequired':
+				await vscode.window.showErrorMessage(vscode.l10n.t('Configure a valid Main Scene before running the project.'));
+				return;
 			case 'preparationRejected':
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not prepare the startup world for rendering. See Problems and JScene3D Output for details.'));
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not prepare the Main Scene for rendering. See Problems and JScene3D Output for details.'));
 				return;
 			case 'stale':
 				await vscode.window.showWarningMessage(vscode.l10n.t('The JScene3D project changed before the native viewport could open.'));

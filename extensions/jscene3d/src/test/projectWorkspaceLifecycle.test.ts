@@ -564,7 +564,7 @@ const summaryA: ProjectSummaryDto = {
 	version: '1.0.0',
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
-	startupWorld: { id: 'world:a', name: 'World A' },
+	mainScene: { id: 'world:a', name: 'World A' },
 	assetCounts: { authored: 1, projected: 0 }
 };
 

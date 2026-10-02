@@ -11,7 +11,7 @@
 			"version": "2.0.0",
 			"root": "/projects/replacement",
 			"descriptor": "/projects/replacement/replacement.j3d",
-			"startupWorld": { "id": "world:replacement", "name": "Replacement World" },
+			"mainScene": { "id": "world:replacement", "name": "Replacement World" },
 			"assetCounts": { "authored": 2, "projected": 1 }
 		},
 		"diagnostics": [],

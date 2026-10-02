@@ -3,7 +3,7 @@
 	"id": 1,
 	"connectionGeneration": "connection-1",
 	"result": {
-		"protocolVersion": { "major": 1, "minor": 5 },
+		"protocolVersion": { "major": 2, "minor": 0 },
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",

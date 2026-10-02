@@ -11,7 +11,7 @@
 			"version": "1.0.0",
 			"root": "/projects/small",
 			"descriptor": "/projects/small/small.j3d",
-			"startupWorld": { "id": "world:main", "name": "Main World" },
+			"mainScene": { "id": "world:main", "name": "Main World" },
 			"assetCounts": { "authored": 3, "projected": 4 }
 		},
 		"diagnostics": [

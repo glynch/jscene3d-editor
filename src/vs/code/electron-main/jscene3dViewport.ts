@@ -214,7 +214,7 @@ export class JScene3DViewportController extends Disposable {
 				`--published-content-root=${launch.publishedContentRoot}`,
 				`--engine-version=${launch.engineVersion}`,
 				`--project-id=${launch.projectId}`,
-				`--world-asset-id=${launch.worldAssetId}`
+				`--scene-asset-id=${launch.sceneAssetId}`
 			],
 			width,
 			height

@@ -9,10 +9,10 @@
 			"revision": 0,
 			"context": {
 				"assetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
-				"kind": "world-definition",
+				"kind": "scene-definition",
 				"origin": "authored",
 				"editable": true,
-				"source": "file:///projects/small/worlds/main.world.json",
+				"source": "file:///projects/small/worlds/main.scene.json",
 				"label": {
 					"kind": "literal",
 					"text": "Opening World",
@@ -40,7 +40,7 @@
 					"editable": true,
 					"target": {
 						"kind": "local-entity",
-						"source": "file:///projects/small/worlds/main.world.json",
+						"source": "file:///projects/small/worlds/main.scene.json",
 						"identity": "0b295328-b5a3-4f41-9f34-e9b4abc430a7",
 						"occurrence": {
 							"definitionAssetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",

@@ -42,7 +42,7 @@ suite('JScene3D authoring service process', () => {
 			const definitionResponse = await service.openDefinition(generationA, 'e890c4c3-fb32-49d8-88b8-4e04e7a29656');
 			const definition = definitionResponse.result;
 			assert.notStrictEqual(definitionResponse.connectionGeneration.length, 0);
-			assert.strictEqual(definition.definition?.context.kind, 'world-definition');
+			assert.strictEqual(definition.definition?.context.kind, 'scene-definition');
 			assert.strictEqual(definition.definition?.context.origin, 'authored');
 			assert.deepStrictEqual(definition.definition?.roots.map(root => root.label.text), ['Player']);
 

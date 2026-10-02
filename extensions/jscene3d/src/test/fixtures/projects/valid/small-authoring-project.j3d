@@ -11,7 +11,10 @@
 	},
 	"runtime": {
 		"applicationExtension": "example.authoring-test",
-		"entryScene": "worlds/main.world.json"
+		"mainScene": {
+			"assetId": "e890c4c3-fb32-49d8-88b8-4e04e7a29656",
+			"pathHint": "worlds/main.scene.json"
+		}
 	},
 	"extensions": [
 		{

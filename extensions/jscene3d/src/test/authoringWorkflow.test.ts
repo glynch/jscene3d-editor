@@ -29,6 +29,7 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[]]);
 		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
+		assert.deepStrictEqual(fixture.opener.calls, []);
 	});
 
 	test('treats project selection cancellation as a no-op', async () => {
@@ -150,7 +151,7 @@ suite('JScene3D authoring workflow', () => {
 		const fixture = workflowFixture(openSnapshot());
 		fixture.opener.error = new Error('protocol disconnected');
 
-		await fixture.workflow.openDefinition();
+		await fixture.workflow.openDefinition('world:a');
 
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[]]);
 		assert.deepStrictEqual(fixture.host.notifications, ['definitionOpenFailed']);
@@ -304,7 +305,7 @@ function openedDefinitionOutcome(diagnostics: readonly ProjectDiagnosticDto[]): 
 	return {
 		status: 'opened',
 		resource: {
-			resource: 'file:///projects/a/worlds/main.world.json?jscene3dConnectionGeneration=connection-a&jscene3dGeneration=7&jscene3dAssetId=world%3Aa',
+			resource: 'file:///projects/a/worlds/main.scene.json?jscene3dConnectionGeneration=connection-a&jscene3dGeneration=7&jscene3dAssetId=world%3Aa',
 			projectGeneration: 7,
 			assetId: 'world:a',
 			snapshot: definitionSnapshot
@@ -327,7 +328,7 @@ const projectSummary: ProjectSummaryDto = {
 	version: '1.0.0',
 	root: '/projects/a',
 	descriptor: '/projects/a/a.j3d',
-	startupWorld: { id: 'world:a', name: 'World A' },
+	mainScene: { id: 'world:a', name: 'World A' },
 	assetCounts: { authored: 1, projected: 0 }
 };
 
@@ -335,10 +336,10 @@ const definitionSnapshot: DefinitionSnapshotDto = {
 	revision: 0,
 	context: {
 		assetId: 'world:a',
-		kind: 'world-definition',
+		kind: 'scene-definition',
 		origin: 'authored',
 		editable: true,
-		source: 'file:///projects/a/worlds/main.world.json',
+		source: 'file:///projects/a/worlds/main.scene.json',
 		label: { kind: 'literal', text: 'World A', messageCode: null, arguments: [] }
 	},
 	roots: []
@@ -348,7 +349,7 @@ const definitionWarning: ProjectDiagnosticDto = {
 	severity: 'warning',
 	code: 'definition.warning',
 	message: 'Java-resolved definition warning',
-	source: 'file:///projects/a/worlds/main.world.json',
+	source: 'file:///projects/a/worlds/main.scene.json',
 	location: '/root',
 	details: {}
 };

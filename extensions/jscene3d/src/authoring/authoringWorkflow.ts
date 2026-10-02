@@ -140,7 +140,11 @@ export class AuthoringWorkflow {
 		}
 
 		this.host.publishDefinitionDiagnostics([]);
-		const assetId = requestedAssetId ?? snapshot.project.startupWorld.id;
+		if (requestedAssetId === undefined) {
+			await this.host.notify('definitionOpenRejected');
+			return;
+		}
+		const assetId = requestedAssetId;
 		let outcome: AuthoredDefinitionOpenOutcome;
 		try {
 			outcome = await this.definitionOpener.open(snapshot.generation, assetId);

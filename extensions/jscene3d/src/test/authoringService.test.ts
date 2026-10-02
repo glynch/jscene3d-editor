@@ -291,7 +291,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 				this.initializationLanguages.push(requiredString(jsonObject(message.params).clientLanguage));
 				if (this.respondToInitialize) {
 					this.respond(id, {
-						protocolVersion: { major: 1, minor: 5 },
+						protocolVersion: { major: 2, minor: 0 },
 						processKind: 'authoring',
 						serviceVersion: 'test',
 						engineVersion: 'test',
@@ -321,7 +321,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 							version: '1.0.0',
 							root: '/projects/sample',
 							descriptor: '/projects/sample/sample.j3d',
-							startupWorld: { id: 'world:main', name: 'Main' },
+							mainScene: { id: 'world:main', name: 'Main' },
 							assetCounts: { authored: 1, projected: 1 }
 						},
 						diagnostics: [],
@@ -339,7 +339,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						version: '1.0.0',
 						root: '/projects/replacement',
 						descriptor: '/projects/replacement/replacement.j3d',
-						startupWorld: { id: 'world:main', name: 'Main' },
+						mainScene: { id: 'world:main', name: 'Main' },
 						assetCounts: { authored: 1, projected: 1 }
 					},
 					diagnostics: [],
@@ -354,10 +354,10 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						revision: 0,
 						context: {
 							assetId: 'world:main',
-							kind: 'world-definition',
+							kind: 'scene-definition',
 							origin: 'authored',
 							editable: true,
-							source: 'file:///projects/sample/worlds/main.world.json',
+							source: 'file:///projects/sample/worlds/main.scene.json',
 							label: { kind: 'literal', text: 'Main', messageCode: null, arguments: [] }
 						},
 						roots: []

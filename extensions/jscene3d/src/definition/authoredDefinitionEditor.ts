@@ -219,8 +219,8 @@ function documentHtml(label: AuthoringTextDto, kind: DefinitionContextDto['kind'
 
 function definitionKindText(kind: DefinitionContextDto['kind']): string {
 	switch (kind) {
-		case 'world-definition':
-			return vscode.l10n.t('World Definition');
+		case 'scene-definition':
+			return vscode.l10n.t('Scene Definition');
 		case 'entity-definition':
 			return vscode.l10n.t('Entity Definition');
 	}

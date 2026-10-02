@@ -11,7 +11,10 @@
 	},
 	"runtime": {
 		"applicationExtension": "missing.extension",
-		"entryScene": "worlds/missing.world.json"
+		"mainScene": {
+			"assetId": "00000000-0000-4000-8000-000000000001",
+			"pathHint": "worlds/missing.scene.json"
+		}
 	},
 	"extensions": []
 }

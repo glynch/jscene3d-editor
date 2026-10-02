@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 1, minor: 5 } as const;
+export const authoringProtocolVersion = { major: 2, minor: 0 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -58,8 +58,8 @@ export interface ProjectDiagnosticDto {
 	readonly details: Readonly<Record<string, string>>;
 }
 
-/** Narrow wire summary of the configured startup world. */
-export interface WorldSummaryDto {
+/** Narrow wire summary of the configured Main Scene. */
+export interface SceneSummaryDto {
 	readonly id: string;
 	readonly name: string;
 }
@@ -77,7 +77,7 @@ export interface ProjectSummaryDto {
 	readonly version: string;
 	readonly root: string;
 	readonly descriptor: string;
-	readonly startupWorld: WorldSummaryDto;
+	readonly mainScene: SceneSummaryDto | null;
 	readonly assetCounts: AssetCountsDto;
 }
 
@@ -133,7 +133,7 @@ export type ProjectCloseResultDto =
 	| { readonly closed: true; readonly invalidatedProjectGeneration: number }
 	| { readonly closed: false; readonly invalidatedProjectGeneration: null };
 
-/** Java-owned semantic launch specification for one isolated project-world renderer. */
+/** Java-owned semantic launch specification for one isolated project renderer. */
 export interface ViewportLaunchSpecificationDto {
 	readonly projectGeneration: number;
 	readonly projectId: string;
@@ -141,8 +141,8 @@ export interface ViewportLaunchSpecificationDto {
 	readonly projectRoot: string;
 	readonly publishedContentRoot: string;
 	readonly engineVersion: string;
-	readonly worldAssetId: string;
-	readonly worldName: string;
+	readonly sceneAssetId: string;
+	readonly sceneName: string;
 	readonly runtimeArtifacts: readonly string[];
 }
 
@@ -177,7 +177,7 @@ export interface HierarchyOccurrenceDto {
 
 /** Semantic target retained for a future Inspector without transferring UI selection to Java. */
 export interface HierarchySemanticTargetDto {
-	readonly kind: 'world' | 'local-entity' | 'generated-entity' | 'placement' | 'asset';
+	readonly kind: 'scene' | 'local-entity' | 'generated-entity' | 'placement' | 'asset';
 	readonly source: string;
 	readonly identity: string;
 	readonly occurrence: HierarchyOccurrenceDto | null;
@@ -200,7 +200,7 @@ export interface HierarchyNodeDto {
 /** Definition/document context kept separate from actual hierarchy roots. */
 export interface DefinitionContextDto {
 	readonly assetId: string;
-	readonly kind: 'world-definition' | 'entity-definition';
+	readonly kind: 'scene-definition' | 'entity-definition';
 	readonly origin: 'authored' | 'generated';
 	readonly editable: boolean;
 	readonly source: string;
@@ -437,11 +437,11 @@ export class AuthoringProtocolClient {
 
 	async prepareViewportLaunch(
 		expectedProjectGeneration: number,
-		worldAssetId: string
+		sceneAssetId: string
 	): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
 		return this.request(authoringProtocolMethods.prepareViewportLaunch, {
 			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
-			worldAssetId: requiredNonEmptyString(worldAssetId, 'worldAssetId')
+			sceneAssetId: requiredNonEmptyString(sceneAssetId, 'sceneAssetId')
 		}, validateViewportLaunchResult);
 	}
 
@@ -656,8 +656,8 @@ function validateViewportLaunchSpecification(value: JsonValue | undefined): View
 		projectRoot: requiredNonEmptyString(object.projectRoot, 'projectRoot'),
 		publishedContentRoot: requiredNonEmptyString(object.publishedContentRoot, 'publishedContentRoot'),
 		engineVersion: requiredNonEmptyString(object.engineVersion, 'engineVersion'),
-		worldAssetId: requiredNonEmptyString(object.worldAssetId, 'worldAssetId'),
-		worldName: requiredNonEmptyString(object.worldName, 'worldName'),
+		sceneAssetId: requiredNonEmptyString(object.sceneAssetId, 'sceneAssetId'),
+		sceneName: requiredNonEmptyString(object.sceneName, 'sceneName'),
 		runtimeArtifacts: requiredStringArray(object.runtimeArtifacts, 'runtimeArtifacts')
 	};
 }
@@ -1142,7 +1142,7 @@ function validateProtocolVersion(value: JsonValue | undefined): ProtocolVersionD
 /** Validates the narrow project summary used by the first editor slice. */
 function validateProjectSummary(value: JsonValue | undefined): ProjectSummaryDto {
 	const object = requiredObject(value, 'project');
-	const startupWorld = requiredObject(object.startupWorld, 'startupWorld');
+	const mainScene = object.mainScene === null ? null : requiredObject(object.mainScene, 'mainScene');
 	const assetCounts = requiredObject(object.assetCounts, 'assetCounts');
 	return {
 		id: requiredString(object.id, 'project.id'),
@@ -1150,9 +1150,9 @@ function validateProjectSummary(value: JsonValue | undefined): ProjectSummaryDto
 		version: requiredString(object.version, 'project.version'),
 		root: requiredString(object.root, 'project.root'),
 		descriptor: requiredString(object.descriptor, 'project.descriptor'),
-		startupWorld: {
-			id: requiredString(startupWorld.id, 'startupWorld.id'),
-			name: requiredString(startupWorld.name, 'startupWorld.name')
+		mainScene: mainScene === null ? null : {
+			id: requiredString(mainScene.id, 'mainScene.id'),
+			name: requiredString(mainScene.name, 'mainScene.name')
 		},
 		assetCounts: {
 			authored: requiredInteger(assetCounts.authored, 'assetCounts.authored'),
@@ -1192,7 +1192,7 @@ function requiredReplaceOutcome(value: JsonValue | undefined): ProjectReplaceRes
 
 /** Requires one supported structural-definition kind. */
 function requiredDefinitionKind(value: JsonValue | undefined): DefinitionContextDto['kind'] {
-	if (value !== 'world-definition' && value !== 'entity-definition') {
+	if (value !== 'scene-definition' && value !== 'entity-definition') {
 		throw new Error('definition.context.kind is invalid');
 	}
 	return value;
@@ -1216,7 +1216,7 @@ function requiredHierarchyKind(value: JsonValue | undefined): HierarchyNodeDto['
 
 /** Requires one semantic target kind. */
 function requiredTargetKind(value: JsonValue | undefined): HierarchySemanticTargetDto['kind'] {
-	if (value !== 'world' && value !== 'local-entity' && value !== 'generated-entity' && value !== 'placement' && value !== 'asset') {
+	if (value !== 'scene' && value !== 'local-entity' && value !== 'generated-entity' && value !== 'placement' && value !== 'asset') {
 		throw new Error('semantic target.kind is invalid');
 	}
 	return value;

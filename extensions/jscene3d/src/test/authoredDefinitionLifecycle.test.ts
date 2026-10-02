@@ -189,7 +189,7 @@ class TestLifecycleClient implements AuthoredDefinitionLifecycleClient {
 	}
 }
 
-const resource = 'file:///project/worlds/main.world.json?document=a';
+const resource = 'file:///project/worlds/main.scene.json?document=a';
 
 function activeState(editable = true): AuthoredDefinitionState {
 	const state = new AuthoredDefinitionState();
@@ -203,8 +203,8 @@ function snapshot(revision: number, editable = true): DefinitionSnapshotDto {
 	return {
 		revision,
 		context: {
-			assetId: 'world-a', kind: 'world-definition', origin: editable ? 'authored' : 'generated', editable,
-			source: 'file:///project/worlds/main.world.json',
+			assetId: 'world-a', kind: 'scene-definition', origin: editable ? 'authored' : 'generated', editable,
+			source: 'file:///project/worlds/main.scene.json',
 			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
 		roots: []
@@ -230,7 +230,7 @@ const diagnostic = {
 	severity: 'error' as const,
 	code: 'asset.component.property.range',
 	message: 'Value is below the minimum',
-	source: 'file:///project/worlds/main.world.json',
+	source: 'file:///project/worlds/main.scene.json',
 	location: '/roots/0/components/0/properties/speed',
 	details: {}
 };

@@ -57,15 +57,8 @@
 				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
 			},
 			{
-				"command": "jscene3d.openDefinition",
-				"title": "%command.openStartupWorld%",
-				"category": "JScene3D",
-				"icon": "$(symbol-structure)",
-				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
-			},
-			{
-				"command": "jscene3d.openStartupWorldViewport",
-				"title": "%command.openStartupWorldViewport%",
+				"command": "jscene3d.runProject",
+				"title": "%command.runProject%",
 				"category": "JScene3D",
 				"icon": "$(preview)",
 				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
@@ -89,7 +82,7 @@
 					"group": "navigation"
 				},
 				{
-					"command": "jscene3d.openStartupWorldViewport",
+					"command": "jscene3d.runProject",
 					"when": "view == jscene3d.project && jscene3d.projectOpen && !jscene3d.projectBusy",
 					"group": "navigation@10"
 				}
@@ -148,7 +141,7 @@
 				"viewType": "jscene3d.authoredDefinition",
 				"displayName": "%customEditor.authoredDefinition%",
 				"selector": [
-					{ "filenamePattern": "*.world.json" },
+					{ "filenamePattern": "*.scene.json" },
 					{ "filenamePattern": "*.entity.json" }
 				],
 				"priority": "option"

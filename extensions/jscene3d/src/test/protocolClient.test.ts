@@ -17,7 +17,7 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 1, minor: 5 },
+			protocolVersion: { major: 2, minor: 0 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
@@ -31,7 +31,7 @@ suite('JScene3D authoring protocol client', () => {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 5 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 2, minor: 0 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
@@ -48,8 +48,8 @@ suite('JScene3D authoring protocol client', () => {
 				projectRoot: '/projects/a',
 				publishedContentRoot: '/projects/a/.jscene3d/published',
 				engineVersion: '0.1.0-SNAPSHOT',
-				worldAssetId: 'world:a',
-				worldName: 'World A',
+				sceneAssetId: 'world:a',
+				sceneName: 'World A',
 				runtimeArtifacts: ['/runtime/application.jar']
 			},
 			diagnostics: [],
@@ -61,7 +61,7 @@ suite('JScene3D authoring protocol client', () => {
 		assert.deepStrictEqual(transport.sent[1], {
 			jsonrpc: '2.0', id: 2, method: 'viewport/prepareLaunch', params: {
 				expectedProjectGeneration: 7,
-				worldAssetId: 'world:a'
+				sceneAssetId: 'world:a'
 			}
 		});
 	});
@@ -88,7 +88,7 @@ suite('JScene3D authoring protocol client', () => {
 		const result = response.result;
 
 		assert.strictEqual(response.connectionGeneration, 'connection-1');
-		assert.strictEqual(result.definition?.context.kind, 'world-definition');
+		assert.strictEqual(result.definition?.context.kind, 'scene-definition');
 		assert.strictEqual(result.definition?.roots[0].target.kind, 'local-entity');
 		assert.deepStrictEqual(result.definition?.roots[0].occurrence.entityPath, [
 			'0b295328-b5a3-4f41-9f34-e9b4abc430a7'
@@ -393,8 +393,8 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('en');
 		const response = fixture('initialize-response.json');
 		const result = object(response.result);
-		transport.respond({ ...response, result: { ...result, protocolVersion: { major: 2, minor: 0 } } });
-		await assert.rejects(initialization, /Incompatible authoring protocol 2.0/);
+		transport.respond({ ...response, result: { ...result, protocolVersion: { major: 3, minor: 0 } } });
+		await assert.rejects(initialization, /Incompatible authoring protocol 3.0/);
 	});
 
 	test('rejects malformed client language tags before serialization', async () => {
@@ -623,8 +623,8 @@ suite('JScene3D authoring protocol client', () => {
 		const response = fixture('project-open-response.json');
 		const result = object(response.result);
 		const project = object(result.project);
-		transport.respond({ ...response, result: { ...result, project: { ...project, startupWorld: null } } });
-		await assert.rejects(opened, /startupWorld must be an object/);
+		transport.respond({ ...response, result: { ...result, project: { ...project, mainScene: { id: 7, name: 'Main' } } } });
+		await assert.rejects(opened, /mainScene.id must be a string/);
 	});
 
 	test('rejects a non-integer project asset count', async () => {
@@ -792,7 +792,7 @@ function inspectorTarget(): JsonObject & {
 } {
 	return {
 		kind: 'local-entity',
-		source: 'file:///project/worlds/main.world.json',
+		source: 'file:///project/worlds/main.scene.json',
 		identity: 'entity-a',
 		occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] }
 	};

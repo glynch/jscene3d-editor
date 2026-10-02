@@ -5649,7 +5649,7 @@ Do not attempt to mirror or serialize complete Java objects such as:
 ```text
 EditorProjectSession
 GameProject
-WorldDefinition
+SceneDefinition
 DefinitionResolver
 working-copy implementations
 descriptor registries
@@ -7559,7 +7559,7 @@ Preserve semantic or JSON location information separately where useful.
 A location such as:
 
 ```text
-/startupWorld
+/mainScene
 /components/0/type
 ```
 

@@ -12,11 +12,11 @@ import {
 	gettingStartedCommandId,
 	openProjectCommandId
 } from '../authoring/authoringWorkflow';
-import { authoredDefinitionViewType, openDefinitionCommandId } from '../definition/authoredDefinitionOpener';
+import { authoredDefinitionViewType } from '../definition/authoredDefinitionOpener';
 import { hierarchyViewId } from '../hierarchy/hierarchyViewModel';
 import { inspectorViewId } from '../inspector/inspectorView';
 import { projectViewId } from '../project/projectViewModel';
-import { openStartupWorldViewportCommandId } from '../viewport/viewportWorkflow';
+import { runProjectCommandId } from '../viewport/viewportWorkflow';
 
 suite('JScene3D extension contributions', () => {
 	test('contributes the JScene3D Java tooling defaults', () => {
@@ -40,14 +40,12 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(close?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
 	});
 
-	test('registers the read-only authored-definition editor and native Hierarchy view', () => {
+	test('registers the authored-definition editor and native Hierarchy view', () => {
 		const contributions = extensionManifest().contributes;
 		const editor = contributions.customEditors.find(candidate => candidate.viewType === authoredDefinitionViewType);
-		const openDefinition = contributions.commands.find(command => command.command === openDefinitionCommandId);
 
 		assert.strictEqual(editor?.priority, 'option');
-		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.world.json', '*.entity.json']);
-		assert.strictEqual(openDefinition?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
+		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.scene.json', '*.entity.json']);
 	});
 
 	test('keeps Project available and makes Hierarchy conditional on an open project', () => {
@@ -117,7 +115,7 @@ suite('JScene3D extension contributions', () => {
 				{
 					contents: '%view.hierarchy.noActiveDefinition%',
 					when: 'jscene3d.projectOpen && !jscene3d.definitionActive',
-					localized: `Open a JScene3D authored definition to show its hierarchy.\n[Open Startup World](command:${openDefinitionCommandId})`
+					localized: 'Open a JScene3D authored definition to show its hierarchy.'
 				}
 			]
 		);
@@ -128,7 +126,7 @@ suite('JScene3D extension contributions', () => {
 				hasRawLocalization: welcomes.some(welcome => localizedContribution(welcome.contents, messages)?.includes('%'))
 			},
 			{
-				noActiveDefinition: ['{Locked="](command:jscene3d.openDefinition)"}'],
+				noActiveDefinition: [],
 				hasNoProjectMessage: false,
 				hasRawLocalization: false
 			}
@@ -142,8 +140,7 @@ suite('JScene3D extension contributions', () => {
 			createProjectCommandId,
 			openProjectCommandId,
 			closeProjectCommandId,
-			openDefinitionCommandId,
-			openStartupWorldViewportCommandId,
+			runProjectCommandId,
 			gettingStartedCommandId
 		]);
 	});

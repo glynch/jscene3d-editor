@@ -7,15 +7,15 @@ import { randomUUID } from 'crypto';
 import { ProjectSnapshot } from '../project/projectState';
 import { ConnectionScopedResult, ProjectDiagnosticDto, ViewportLaunchResultDto } from '../protocol/authoringProtocol';
 
-export const openStartupWorldViewportCommandId = 'jscene3d.openStartupWorldViewport';
+export const runProjectCommandId = 'jscene3d.runProject';
 export const openProjectViewportWorkbenchCommandId = 'jscene3d.workbench.openProjectViewport';
 export const closeProjectViewportsWorkbenchCommandId = 'jscene3d.workbench.closeProjectViewports';
 
-/** Java operation required to prepare one authoritative project-world launch. */
+/** Java operation required to prepare one authoritative project-Scene launch. */
 export interface ViewportAuthoringClient {
 	prepareViewportLaunch(
 		expectedProjectGeneration: number,
-		worldAssetId: string
+		sceneAssetId: string
 	): Promise<ConnectionScopedResult<ViewportLaunchResultDto>>;
 }
 
@@ -28,7 +28,7 @@ export interface ViewportProjectState {
 export interface ViewportWorkflowHost {
 	open(launch: ProjectViewportLaunch): Promise<void>;
 	publishDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
-	notifyFailure(kind: 'projectRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void>;
+	notifyFailure(kind: 'projectRequired' | 'mainSceneRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void>;
 }
 
 /** Closed launch value accepted by the trusted Code OSS native viewport bridge. */
@@ -41,8 +41,8 @@ export interface ProjectViewportLaunch {
 	readonly projectRoot: string;
 	readonly publishedContentRoot: string;
 	readonly engineVersion: string;
-	readonly worldAssetId: string;
-	readonly worldName: string;
+	readonly sceneAssetId: string;
+	readonly sceneName: string;
 	readonly runtimeArtifacts: readonly string[];
 }
 
@@ -56,17 +56,21 @@ export class ViewportWorkflow {
 		private readonly createViewportId: () => string = randomUUID
 	) { }
 
-	async openStartupWorld(): Promise<void> {
+	async runProject(): Promise<void> {
 		const initial = this.projectState.snapshot;
 		if (initial.status !== 'open') {
 			await this.host.notifyFailure('projectRequired');
+			return;
+		}
+		if (initial.project.mainScene === null) {
+			await this.host.notifyFailure('mainSceneRequired');
 			return;
 		}
 
 		this.host.publishDiagnostics([]);
 		let scoped: ConnectionScopedResult<ViewportLaunchResultDto>;
 		try {
-			scoped = await this.client.prepareViewportLaunch(initial.generation, initial.project.startupWorld.id);
+			scoped = await this.client.prepareViewportLaunch(initial.generation, initial.project.mainScene.id);
 		} catch (error) {
 			this.logger.appendLine(`Native viewport preparation failed: ${errorMessage(error)}`);
 			await this.host.notifyFailure('openFailed');
@@ -82,7 +86,7 @@ export class ViewportWorkflow {
 		}
 
 		const current = this.projectState.snapshot;
-		if (!isSameOpenProject(current, initial.generation, initial.project.id, initial.project.startupWorld.id)) {
+		if (!isSameOpenProject(current, initial.generation, initial.project.id, initial.project.mainScene.id)) {
 			this.logger.appendLine('Discarding stale native viewport launch after the active project changed');
 			await this.host.notifyFailure('stale');
 			return;
@@ -105,12 +109,12 @@ function isSameOpenProject(
 	snapshot: ProjectSnapshot,
 	generation: number,
 	projectId: string,
-	worldAssetId: string
+	sceneAssetId: string
 ): boolean {
 	return snapshot.status === 'open'
 		&& snapshot.generation === generation
 		&& snapshot.project.id === projectId
-		&& snapshot.project.startupWorld.id === worldAssetId;
+		&& snapshot.project.mainScene?.id === sceneAssetId;
 }
 
 function errorMessage(error: unknown): string {

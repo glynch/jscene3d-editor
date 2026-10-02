@@ -14,15 +14,15 @@ import {
 } from '../viewport/viewportWorkflow';
 
 suite('JScene3D native viewport workflow', () => {
-	test('opens the Java-prepared startup world with complete generation identity', async () => {
+	test('opens the Java-prepared Main Scene with complete generation identity', async () => {
 		const state = new TestProjectState(openSnapshot());
 		const client = new TestClient(preparedResult());
 		const host = new TestHost();
 		const workflow = new ViewportWorkflow(client, state, host, new TestLogger(), () => 'viewport-a');
 
-		await workflow.openStartupWorld();
+		await workflow.runProject();
 
-		assert.deepStrictEqual(client.requests, [{ generation: 7, worldAssetId: 'world:a' }]);
+		assert.deepStrictEqual(client.requests, [{ generation: 7, sceneAssetId: 'world:a' }]);
 		assert.deepStrictEqual(host.opened, {
 			viewportId: 'viewport-a',
 			connectionGeneration: 'connection-a',
@@ -32,8 +32,8 @@ suite('JScene3D native viewport workflow', () => {
 			projectRoot: '/projects/a',
 			publishedContentRoot: '/projects/a/.jscene3d/published',
 			engineVersion: '0.1.0-SNAPSHOT',
-			worldAssetId: 'world:a',
-			worldName: 'World A',
+			sceneAssetId: 'world:a',
+			sceneName: 'Scene A',
 			runtimeArtifacts: ['/runtime/application.jar']
 		});
 		assert.deepStrictEqual(host.notifications, []);
@@ -44,10 +44,31 @@ suite('JScene3D native viewport workflow', () => {
 		const host = new TestHost();
 		const workflow = new ViewportWorkflow(client, new TestProjectState(closedSnapshot()), host, new TestLogger());
 
-		await workflow.openStartupWorld();
+		await workflow.runProject();
 
 		assert.deepStrictEqual(client.requests, []);
 		assert.deepStrictEqual(host.notifications, ['projectRequired']);
+		assert.strictEqual(host.opened, undefined);
+	});
+
+	test('rejects Run Project before contacting Java when no Main Scene is configured', async () => {
+		const client = new TestClient(preparedResult());
+		const host = new TestHost();
+		const snapshot = openSnapshot();
+		assert.strictEqual(snapshot.status, 'open');
+		if (snapshot.status !== 'open') {
+			throw new Error('Expected an open project snapshot');
+		}
+		const workflow = new ViewportWorkflow(
+			client,
+			new TestProjectState({ ...snapshot, project: { ...snapshot.project, mainScene: null } }),
+			host,
+			new TestLogger());
+
+		await workflow.runProject();
+
+		assert.deepStrictEqual(client.requests, []);
+		assert.deepStrictEqual(host.notifications, ['mainSceneRequired']);
 		assert.strictEqual(host.opened, undefined);
 	});
 
@@ -58,14 +79,14 @@ suite('JScene3D native viewport workflow', () => {
 				prepared: false,
 				launch: null,
 				diagnostics: [],
-				failureCode: 'authoring.viewport.worldUnavailable'
+				failureCode: 'authoring.viewport.sceneUnavailable'
 			}
 		};
 		const host = new TestHost();
 		const workflow = new ViewportWorkflow(
 			new TestClient(rejected), new TestProjectState(openSnapshot()), host, new TestLogger());
 
-		await workflow.openStartupWorld();
+		await workflow.runProject();
 
 		assert.strictEqual(host.opened, undefined);
 		assert.deepStrictEqual(host.notifications, ['preparationRejected']);
@@ -76,7 +97,7 @@ suite('JScene3D native viewport workflow', () => {
 		const client = new DeferredClient();
 		const host = new TestHost();
 		const workflow = new ViewportWorkflow(client, state, host, new TestLogger());
-		const pending = workflow.openStartupWorld();
+		const pending = workflow.runProject();
 		state.snapshot = openSnapshot(8);
 		client.resolve(preparedResult());
 
@@ -88,12 +109,12 @@ suite('JScene3D native viewport workflow', () => {
 });
 
 class TestClient implements ViewportAuthoringClient {
-	readonly requests: { generation: number; worldAssetId: string }[] = [];
+	readonly requests: { generation: number; sceneAssetId: string }[] = [];
 
 	constructor(private readonly response: ConnectionScopedResult<ViewportLaunchResultDto>) { }
 
-	prepareViewportLaunch(generation: number, worldAssetId: string): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
-		this.requests.push({ generation, worldAssetId });
+	prepareViewportLaunch(generation: number, sceneAssetId: string): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
+		this.requests.push({ generation, sceneAssetId });
 		return Promise.resolve(this.response);
 	}
 }
@@ -125,7 +146,7 @@ class TestHost implements ViewportWorkflowHost {
 
 	publishDiagnostics(): void { }
 
-	notifyFailure(kind: 'projectRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void> {
+	notifyFailure(kind: 'projectRequired' | 'mainSceneRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void> {
 		this.notifications.push(kind);
 		return Promise.resolve();
 	}
@@ -147,8 +168,8 @@ function preparedResult(): ConnectionScopedResult<ViewportLaunchResultDto> {
 				projectRoot: '/projects/a',
 				publishedContentRoot: '/projects/a/.jscene3d/published',
 				engineVersion: '0.1.0-SNAPSHOT',
-				worldAssetId: 'world:a',
-				worldName: 'World A',
+				sceneAssetId: 'world:a',
+				sceneName: 'Scene A',
 				runtimeArtifacts: ['/runtime/application.jar']
 			},
 			diagnostics: [],
@@ -167,7 +188,7 @@ function openSnapshot(generation = 7): ProjectSnapshot {
 			version: '1.0.0',
 			root: '/projects/a',
 			descriptor: '/projects/a/project.j3d',
-			startupWorld: { id: 'world:a', name: 'World A' },
+			mainScene: { id: 'world:a', name: 'Scene A' },
 			assetCounts: { authored: 1, projected: 0 }
 		},
 		activeDiagnostics: [],

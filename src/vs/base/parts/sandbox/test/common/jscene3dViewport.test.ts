@@ -19,8 +19,8 @@ suite('JScene3DViewportFrameRouter', () => {
 			projectRoot: '/projects/example',
 			publishedContentRoot: '/projects/example/target/import-cache',
 			engineVersion: '0.1.0-SNAPSHOT',
-			worldAssetId: '2f26576c-570d-4338-bc30-52bc41def3a5',
-			worldName: 'Opening World',
+			sceneAssetId: '2f26576c-570d-4338-bc30-52bc41def3a5',
+			sceneName: 'Opening Scene',
 			runtimeArtifacts: ['/runtime/application.jar']
 		};
 

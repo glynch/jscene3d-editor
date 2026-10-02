@@ -117,7 +117,7 @@ function definition(): DefinitionSnapshotDto {
 	return {
 		revision: 4,
 		context: {
-			assetId: 'world-a', kind: 'world-definition', origin: 'authored', editable: true,
+			assetId: 'world-a', kind: 'scene-definition', origin: 'authored', editable: true,
 			source: 'file:///world.json', label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
 		roots: [node('entity-a', 'First'), node('entity-b', 'Second')]

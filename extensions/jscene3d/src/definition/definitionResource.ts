@@ -37,8 +37,8 @@ export function definitionResourceUri(
 /** Maps every supported definition kind to its authored filename suffix. */
 export function definitionKindFileExtension(kind: DefinitionContextDto['kind']): string {
 	switch (kind) {
-		case 'world-definition':
-			return 'world.json';
+		case 'scene-definition':
+			return 'scene.json';
 		case 'entity-definition':
 			return 'entity.json';
 	}

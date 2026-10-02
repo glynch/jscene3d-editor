@@ -13,9 +13,9 @@ suite('JScene3D authored definition state', () => {
 		const state = new AuthoredDefinitionState();
 		const snapshot = definition('world-a');
 		state.setProjectGeneration(3);
-		state.register('file:///world.world.json?generation=3', 3, snapshot);
+		state.register('file:///world.scene.json?generation=3', 3, snapshot);
 
-		state.activate('file:///world.world.json?generation=3');
+		state.activate('file:///world.scene.json?generation=3');
 		state.select(snapshot.roots[0]);
 
 		assert.strictEqual(state.active?.assetId, 'world-a');
@@ -26,7 +26,7 @@ suite('JScene3D authored definition state', () => {
 	test('invalidates mappings, hierarchy, and selection when project generation changes', () => {
 		const state = new AuthoredDefinitionState();
 		const snapshot = definition('world-a');
-		const resource = 'file:///world.world.json?generation=3';
+		const resource = 'file:///world.scene.json?generation=3';
 		state.setProjectGeneration(3);
 		state.register(resource, 3, snapshot);
 		state.activate(resource);
@@ -101,10 +101,10 @@ function definition(assetId: string): DefinitionSnapshotDto {
 		revision: 0,
 		context: {
 			assetId,
-			kind: 'world-definition',
+			kind: 'scene-definition',
 			origin: 'authored',
 			editable: true,
-			source: 'file:///world.world.json',
+			source: 'file:///world.scene.json',
 			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
 		},
 		roots: [{
@@ -116,7 +116,7 @@ function definition(assetId: string): DefinitionSnapshotDto {
 			enabled: true,
 			modified: false,
 			editable: true,
-			target: { kind: 'local-entity', source: 'file:///world.world.json', identity: 'entity-a', occurrence },
+			target: { kind: 'local-entity', source: 'file:///world.scene.json', identity: 'entity-a', occurrence },
 			children: []
 		}]
 	};

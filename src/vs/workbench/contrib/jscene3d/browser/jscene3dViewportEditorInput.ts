@@ -9,7 +9,7 @@ import { localize } from '../../../../nls.js';
 import { EditorInputCapabilities } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 
-/** One generation-scoped native viewport for a Java-prepared project world. */
+/** One generation-scoped native viewport for a Java-prepared project Scene. */
 export class JScene3DViewportEditorInput extends EditorInput {
 	static readonly ID = 'workbench.input.jscene3dRendererPreview';
 
@@ -20,14 +20,14 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		this.resource = URI.from({
 			scheme: 'jscene3d-viewport',
 			authority: encodeURIComponent(launch.connectionGeneration),
-			path: `/${launch.projectGeneration}/${encodeURIComponent(launch.worldAssetId)}/${launch.viewportId}`
+			path: `/${launch.projectGeneration}/${encodeURIComponent(launch.sceneAssetId)}/${launch.viewportId}`
 		});
 	}
 
 	override get typeId(): string { return JScene3DViewportEditorInput.ID; }
 	override get editorId(): string { return JScene3DViewportEditorInput.ID; }
 	override getName(): string {
-		return localize('jscene3dProjectViewportName', "{0} — {1}", this.launch.projectName, this.launch.worldName);
+		return localize('jscene3dProjectViewportName', "{0} — {1}", this.launch.projectName, this.launch.sceneName);
 	}
 	override get capabilities(): EditorInputCapabilities { return EditorInputCapabilities.Readonly; }
 	override matches(other: EditorInput | unknown): boolean {
