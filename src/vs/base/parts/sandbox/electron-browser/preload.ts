@@ -13,6 +13,7 @@
 	type IJScene3DViewportBridge = import('../common/jscene3dViewport.js').IJScene3DViewportBridge;
 	type IJScene3DViewportFailure = import('../common/jscene3dViewport.js').IJScene3DViewportFailure;
 	type IJScene3DViewportFrameIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportFrameIdentity;
+	type IJScene3DViewportLaunch = import('../common/jscene3dViewport.js').IJScene3DViewportLaunch;
 	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
 
 	//#region Utilities
@@ -115,6 +116,20 @@
 		return Number.isInteger(candidate.sessionId) && candidate.sessionId! > 0
 			&& Number.isInteger(candidate.rendererGeneration) && candidate.rendererGeneration! > 0;
 	};
+	const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+	const validLaunch = (value: unknown): value is IJScene3DViewportLaunch => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DViewportLaunch>;
+		return validPaneId(candidate.viewportId)
+			&& nonEmpty(candidate.connectionGeneration)
+			&& Number.isInteger(candidate.projectGeneration) && candidate.projectGeneration! > 0
+			&& nonEmpty(candidate.projectId) && nonEmpty(candidate.projectName)
+			&& nonEmpty(candidate.projectRoot) && nonEmpty(candidate.publishedContentRoot)
+			&& nonEmpty(candidate.engineVersion) && nonEmpty(candidate.worldAssetId) && nonEmpty(candidate.worldName)
+			&& Array.isArray(candidate.runtimeArtifacts) && candidate.runtimeArtifacts.every(nonEmpty);
+	};
 	const validFrameIdentity = (value: unknown): value is IJScene3DViewportFrameIdentity => {
 		if (!validSession(value)) {
 			return false;
@@ -180,12 +195,12 @@
 			}
 		},
 
-		async start(paneId, width, height): Promise<IJScene3DViewportSessionIdentity> {
+		async start(paneId, launch, width, height): Promise<IJScene3DViewportSessionIdentity> {
 			const registration = jscene3dPanes.get(paneId);
-			if (!registration || !validDimension(width) || !validDimension(height)) {
+			if (!registration || !validLaunch(launch) || !validDimension(width) || !validDimension(height)) {
 				throw new Error('Invalid JScene3D native viewport start request');
 			}
-			const session = await ipcRenderer.invoke('vscode:jscene3dViewport:start', paneId, width, height);
+			const session = await ipcRenderer.invoke('vscode:jscene3dViewport:start', paneId, launch, width, height);
 			if (!validSession(session)) {
 				throw new Error('Invalid JScene3D native viewport session identity');
 			}

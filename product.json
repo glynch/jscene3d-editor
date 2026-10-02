@@ -35,6 +35,25 @@
 	"electronArtifactFeed": "",
 	"urlProtocol": "jscene3d-editor",
 	"agentsTelemetryAppName": "agents",
+	"defaultLayout": {
+		"views": [
+			{
+				"id": "jscene3d.project"
+			}
+		],
+		"editors": [
+			{
+				"uri": {
+					"scheme": "walkThrough",
+					"authority": "vscode_getting_started_page"
+				},
+				"options": {
+					"override": "workbench.editors.gettingStartedInput",
+					"pinned": false
+				}
+			}
+		]
+	},
 	"webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",
 	"builtInExtensions": [
 		{

@@ -33,6 +33,14 @@ import { ProjectTreeDataProvider } from './project/projectView';
 import { projectViewId } from './project/projectViewModel';
 import { CoordinatedProjectDocumentLifecycle, ProjectWorkspaceLifecycle } from './project/projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './project/vsCodeProjectWorkspace';
+import {
+	closeProjectViewportsWorkbenchCommandId,
+	openProjectViewportWorkbenchCommandId,
+	openStartupWorldViewportCommandId,
+	ProjectViewportLaunch,
+	ViewportWorkflow,
+	ViewportWorkflowHost
+} from './viewport/viewportWorkflow';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
@@ -44,6 +52,7 @@ interface ActiveExtensionRuntime {
 	readonly workspaceLifecycle: ProjectWorkspaceLifecycle;
 	readonly definitionState: AuthoredDefinitionState;
 	readonly inspectorState: InspectorState;
+	readonly closeProjectViewports: () => Promise<void>;
 }
 
 let activeRuntime: ActiveExtensionRuntime | undefined;
@@ -54,6 +63,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const activeDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.activeProject');
 	const attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
 	const definitionDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.definitionAttempt');
+	const viewportDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.viewportAttempt');
 	const service = new AuthoringService(authoringLaunchConfiguration, new NodeAuthoringProcessLauncher(), output);
 	const projectState = new ProjectState(service, output);
 	const definitionState = new AuthoredDefinitionState();
@@ -92,12 +102,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 		}
 	);
+	const closeProjectViewports = async (): Promise<void> => {
+		await vscode.commands.executeCommand(closeProjectViewportsWorkbenchCommandId);
+	};
 	const workspaceLifecycle = new ProjectWorkspaceLifecycle(
 		projectState,
 		new VsCodeProjectWorkspace(),
 		new ExtensionProjectReopenIntentStore(context.globalState),
 		output,
-		new CoordinatedProjectDocumentLifecycle(inspectorProvider, definitionEditorProvider)
+		new CoordinatedProjectDocumentLifecycle(inspectorProvider, definitionEditorProvider),
+		{ closeProjectViewports }
 	);
 	const definitionOpener = new AuthoredDefinitionOpener(
 		service,
@@ -111,7 +125,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		new VsCodeAuthoringWorkflowHost(definitionDiagnostics),
 		output
 	);
-	activeRuntime = { service, projectState, workspaceLifecycle, definitionState, inspectorState };
+	const viewportWorkflow = new ViewportWorkflow(
+		service,
+		projectState,
+		new VsCodeViewportWorkflowHost(viewportDiagnostics),
+		output
+	);
+	activeRuntime = { service, projectState, workspaceLifecycle, definitionState, inspectorState, closeProjectViewports };
 
 	const updateActiveDefinition = () => {
 		const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
@@ -128,6 +148,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		publishProjectDiagnostics(attemptDiagnostics, snapshot.attemptDiagnostics);
 		const projectOpen = snapshot.status === 'open' || snapshot.status === 'replacing' || snapshot.status === 'closing';
 		definitionState.setProjectGeneration(projectOpen ? snapshot.generation : undefined);
+		if (snapshot.status === 'serviceUnavailable') {
+			void closeProjectViewports().catch(error => output.appendLine(
+				`Failed to close JScene3D project viewports: ${error instanceof Error ? error.message : String(error)}`));
+		}
 		void Promise.all([
 			vscode.commands.executeCommand('setContext', projectOpenContext, projectOpen),
 			vscode.commands.executeCommand('setContext', projectBusyContext,
@@ -145,6 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		activeDiagnostics,
 		attemptDiagnostics,
 		definitionDiagnostics,
+		viewportDiagnostics,
 		service,
 		projectState,
 		workspaceLifecycle,
@@ -177,6 +202,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(closeProjectCommandId, () => workflow.closeProject()),
 		vscode.commands.registerCommand(openDefinitionCommandId,
 			(requestedAssetId?: string) => workflow.openDefinition(requestedAssetId)),
+		vscode.commands.registerCommand(openStartupWorldViewportCommandId,
+			() => viewportWorkflow.openStartupWorld()),
 		vscode.commands.registerCommand(gettingStartedCommandId, () => workflow.gettingStarted())
 	);
 
@@ -199,7 +226,40 @@ export async function deactivate(): Promise<void> {
 	runtime?.projectState.dispose();
 	runtime?.inspectorState.dispose();
 	runtime?.definitionState.dispose();
-	await runtime?.service.shutdown();
+	try {
+		await runtime?.closeProjectViewports();
+	} finally {
+		await runtime?.service.shutdown();
+	}
+}
+
+class VsCodeViewportWorkflowHost implements ViewportWorkflowHost {
+	constructor(private readonly diagnostics: vscode.DiagnosticCollection) { }
+
+	async open(launch: ProjectViewportLaunch): Promise<void> {
+		await vscode.commands.executeCommand(openProjectViewportWorkbenchCommandId, launch);
+	}
+
+	publishDiagnostics(diagnostics: readonly import('./protocol/authoringProtocol').ProjectDiagnosticDto[]): void {
+		publishProjectDiagnostics(this.diagnostics, diagnostics);
+	}
+
+	async notifyFailure(kind: 'projectRequired' | 'preparationRejected' | 'stale' | 'openFailed'): Promise<void> {
+		switch (kind) {
+			case 'projectRequired':
+				await vscode.window.showErrorMessage(vscode.l10n.t('Open a JScene3D project before opening a native viewport.'));
+				return;
+			case 'preparationRejected':
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not prepare the startup world for rendering. See Problems and JScene3D Output for details.'));
+				return;
+			case 'stale':
+				await vscode.window.showWarningMessage(vscode.l10n.t('The JScene3D project changed before the native viewport could open.'));
+				return;
+			case 'openFailed':
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the native viewport. See JScene3D Output for details.'));
+				return;
+		}
+	}
 }
 
 /** Resolves the isolated development launch configuration from environment and settings. */
@@ -211,6 +271,9 @@ function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
 		modulePath: process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH?.trim()
 			|| configuration.get<string>('modulePath', ''),
 		installedExtensionMetadata: installedExtensionMetadata(configuration),
+		runtimeArtifacts: configuredPathList(
+			process.env.JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH,
+			configuration.get<readonly string[]>('runtimeArtifacts', [])),
 		clientLanguage: vscode.env.language
 	};
 }
@@ -218,8 +281,9 @@ function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
 /** Resolves ordered descriptor-only extension artifacts independently of the JPMS module path. */
 function installedExtensionMetadata(configuration: vscode.WorkspaceConfiguration): readonly string[] {
 	const environmentPath = process.env.JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH;
-	if (environmentPath !== undefined) {
-		return environmentPath.length === 0 ? [] : environmentPath.split(path.delimiter);
-	}
-	return configuration.get<readonly string[]>('installedExtensionMetadata', []);
+	return configuredPathList(environmentPath, configuration.get<readonly string[]>('installedExtensionMetadata', []));
+}
+
+function configuredPathList(environmentPath: string | undefined, fallback: readonly string[]): readonly string[] {
+	return environmentPath === undefined ? fallback : environmentPath.length === 0 ? [] : environmentPath.split(path.delimiter);
 }

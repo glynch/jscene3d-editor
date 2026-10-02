@@ -19,7 +19,8 @@ import {
 	InspectorMutationTargetDto,
 	ProjectCloseResultDto,
 	ProjectOpenResultDto,
-	ProjectReplaceResultDto
+	ProjectReplaceResultDto,
+	ViewportLaunchResultDto
 } from '../protocol/authoringProtocol';
 import { JsonRpcClient } from '../protocol/jsonRpcClient';
 import { StreamMessageTransport } from '../protocol/messageTransport';
@@ -45,6 +46,7 @@ export interface AuthoringLaunchConfiguration {
 	readonly javaExecutable: string;
 	readonly modulePath: string;
 	readonly installedExtensionMetadata: readonly string[];
+	readonly runtimeArtifacts?: readonly string[];
 	readonly clientLanguage: string;
 }
 
@@ -78,7 +80,8 @@ export class NodeAuthoringProcessLauncher implements AuthoringProcessLauncher {
 		return spawn(configuration.javaExecutable, [
 			'--module-path', configuration.modulePath,
 			'--module', serviceModule,
-			...configuration.installedExtensionMetadata.map(artifact => `--extension-metadata=${artifact}`)
+			...configuration.installedExtensionMetadata.map(artifact => `--extension-metadata=${artifact}`),
+			...(configuration.runtimeArtifacts ?? []).map(artifact => `--runtime-artifact=${artifact}`)
 		], {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			windowsHide: true
@@ -145,6 +148,18 @@ export class AuthoringService implements Disposable {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().closeProject();
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
+		}
+	}
+
+	async prepareViewportLaunch(
+		expectedProjectGeneration: number,
+		worldAssetId: string
+	): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
+		await this.ensureReady();
+		try {
+			return await this.requireClient().prepareViewportLaunch(expectedProjectGeneration, worldAssetId);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}

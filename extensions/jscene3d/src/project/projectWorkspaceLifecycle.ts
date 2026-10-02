@@ -69,6 +69,11 @@ export interface ProjectDocumentPreparation {
 	prepareForDocumentClose(): Promise<boolean>;
 }
 
+/** Native project viewport boundary closed before its Java project generation is invalidated. */
+export interface ProjectViewportLifecycle {
+	closeProjectViewports(): Promise<void>;
+}
+
 /** Commits valid local editor state before delegating to VS Code's native dirty-document lifecycle. */
 export class CoordinatedProjectDocumentLifecycle implements ProjectDocumentLifecycle {
 	constructor(
@@ -111,7 +116,8 @@ export class ProjectWorkspaceLifecycle {
 		private readonly workspace: ProjectWorkspaceHost,
 		private readonly intentStore: ProjectReopenIntentStore,
 		private readonly logger: ProjectWorkspaceLogger,
-		private readonly documents: ProjectDocumentLifecycle = { closeProjectDocuments: () => Promise.resolve(true) }
+		private readonly documents: ProjectDocumentLifecycle = { closeProjectDocuments: () => Promise.resolve(true) },
+		private readonly viewports: ProjectViewportLifecycle = { closeProjectViewports: () => Promise.resolve() }
 	) {
 		this.workspaceSubscription = workspace.onDidChangeWorkspace(() => {
 			void this.runExclusive(() => this.reconcileExternalWorkspaceChange()).catch(error => {
@@ -122,9 +128,12 @@ export class ProjectWorkspaceLifecycle {
 
 	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult> {
 		return this.runExclusive(async () => {
-			if (this.projectState.snapshot.status === 'open' && !await this.documents.closeProjectDocuments()) {
-				this.logger.appendLine('Project replacement cancelled while closing authored documents');
-				return { status: 'cancelled', workspace: 'unchanged' };
+			if (this.projectState.snapshot.status === 'open') {
+				if (!await this.documents.closeProjectDocuments()) {
+					this.logger.appendLine('Project replacement cancelled while closing authored documents');
+					return { status: 'cancelled', workspace: 'unchanged' };
+				}
+				await this.viewports.closeProjectViewports();
 			}
 			const selection = await this.projectState.open(localProjectPath(location));
 			const outcome = projectSelectionOutcome(selection);
@@ -239,6 +248,7 @@ export class ProjectWorkspaceLifecycle {
 				this.logger.appendLine('Project close cancelled while closing authored documents');
 				return;
 			}
+			await this.viewports.closeProjectViewports();
 			await this.projectState.close();
 			await this.intentStore.write(undefined);
 			this.logger.appendLine('Closing project workspace');
@@ -280,6 +290,7 @@ export class ProjectWorkspaceLifecycle {
 			return;
 		}
 		this.logger.appendLine(`Workspace no longer matches open project; closing Java project: ${snapshot.project.name}`);
+		await this.viewports.closeProjectViewports();
 		await Promise.all([
 			this.intentStore.write(undefined),
 			this.projectState.close()

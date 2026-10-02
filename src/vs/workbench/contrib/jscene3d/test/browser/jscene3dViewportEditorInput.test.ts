@@ -8,20 +8,41 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { EditorInputCapabilities } from '../../../../common/editor.js';
 import { JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
 
+const launch = {
+	viewportId: 'viewport-a',
+	connectionGeneration: 'connection-a',
+	projectGeneration: 7,
+	projectId: 'example.project',
+	projectName: 'Example Project',
+	projectRoot: '/projects/example',
+	publishedContentRoot: '/projects/example/.jscene3d/published',
+	engineVersion: '0.1.0-SNAPSHOT',
+	worldAssetId: 'e890c4c3-fb32-49d8-88b8-4e04e7a29656',
+	worldName: 'Opening World',
+	runtimeArtifacts: ['/runtime/example.jar']
+};
+
 suite('JScene3DViewportEditorInput', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('has stable singleton renderer-preview identity', () => {
-		const first = new JScene3DViewportEditorInput();
-		const second = new JScene3DViewportEditorInput();
+	test('includes service, project, world, and viewport identity without becoming a singleton', () => {
+		const first = new JScene3DViewportEditorInput(launch);
+		const sameViewport = new JScene3DViewportEditorInput({ ...launch });
+		const otherViewport = new JScene3DViewportEditorInput({ ...launch, viewportId: 'viewport-b' });
+		const staleGeneration = new JScene3DViewportEditorInput({ ...launch, projectGeneration: 8 });
 		try {
-			assert.strictEqual(first.resource.toString(), 'jscene3d-renderer-preview:/native-viewport');
-			assert.strictEqual(first.matches(second), true);
-			assert.strictEqual(first.hasCapability(EditorInputCapabilities.Singleton), true);
+			assert.match(first.resource.toString(), /^jscene3d-viewport:\/\/connection-a\/7\//);
+			assert.strictEqual(first.matches(sameViewport), true);
+			assert.strictEqual(first.matches(otherViewport), false);
+			assert.strictEqual(first.matches(staleGeneration), false);
+			assert.strictEqual(first.getName(), 'Example Project — Opening World');
+			assert.strictEqual(first.hasCapability(EditorInputCapabilities.Singleton), false);
 			assert.strictEqual(first.hasCapability(EditorInputCapabilities.Readonly), true);
 		} finally {
 			first.dispose();
-			second.dispose();
+			sameViewport.dispose();
+			otherViewport.dispose();
+			staleGeneration.dispose();
 		}
 	});
 });

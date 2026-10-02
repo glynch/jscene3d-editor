@@ -17,12 +17,12 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 1, minor: 4 },
+			protocolVersion: { major: 1, minor: 5 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
 			capabilities: [
-				'project/open', 'project/replace', 'project/close', 'definition/open', 'definition/mutate',
+				'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'definition/open', 'definition/mutate',
 				'definition/undo', 'definition/redo', 'definition/save', 'definition/revert', 'definition/backup',
 				'definition/restoreBackup', 'inspector/read', 'service/shutdown'
 			]
@@ -31,7 +31,38 @@ suite('JScene3D authoring protocol client', () => {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 1, minor: 4 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 1, minor: 5 }, clientLanguage: 'fr-CA' }
+		});
+	});
+
+	test('prepares a generation-scoped Java project viewport launch', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const prepared = client.prepareViewportLaunch(7, 'world:a');
+		const result = {
+			prepared: true,
+			launch: {
+				projectGeneration: 7,
+				projectId: 'project-a',
+				projectName: 'Project A',
+				projectRoot: '/projects/a',
+				publishedContentRoot: '/projects/a/.jscene3d/published',
+				engineVersion: '0.1.0-SNAPSHOT',
+				worldAssetId: 'world:a',
+				worldName: 'World A',
+				runtimeArtifacts: ['/runtime/application.jar']
+			},
+			diagnostics: [],
+			failureCode: null
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await prepared, { connectionGeneration: 'connection-1', result });
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'viewport/prepareLaunch', params: {
+				expectedProjectGeneration: 7,
+				worldAssetId: 'world:a'
+			}
 		});
 	});
 

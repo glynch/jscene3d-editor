@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 1, minor: 4 } as const;
+export const authoringProtocolVersion = { major: 1, minor: 5 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -14,6 +14,7 @@ export const authoringProtocolMethods = {
 	openProject: 'project/open',
 	replaceProject: 'project/replace',
 	closeProject: 'project/close',
+	prepareViewportLaunch: 'viewport/prepareLaunch',
 	openDefinition: 'definition/open',
 	mutateDefinition: 'definition/mutate',
 	undoDefinition: 'definition/undo',
@@ -131,6 +132,34 @@ export type ProjectReplaceResultDto =
 export type ProjectCloseResultDto =
 	| { readonly closed: true; readonly invalidatedProjectGeneration: number }
 	| { readonly closed: false; readonly invalidatedProjectGeneration: null };
+
+/** Java-owned semantic launch specification for one isolated project-world renderer. */
+export interface ViewportLaunchSpecificationDto {
+	readonly projectGeneration: number;
+	readonly projectId: string;
+	readonly projectName: string;
+	readonly projectRoot: string;
+	readonly publishedContentRoot: string;
+	readonly engineVersion: string;
+	readonly worldAssetId: string;
+	readonly worldName: string;
+	readonly runtimeArtifacts: readonly string[];
+}
+
+/** Generation-scoped outcome of preparing a project viewport launch. */
+export type ViewportLaunchResultDto =
+	| {
+		readonly prepared: true;
+		readonly launch: ViewportLaunchSpecificationDto;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: null;
+	}
+	| {
+		readonly prepared: false;
+		readonly launch: null;
+		readonly diagnostics: readonly ProjectDiagnosticDto[];
+		readonly failureCode: string | null;
+	};
 
 /** Authored literal or Java-owned localizable semantic text. */
 export interface AuthoringTextDto {
@@ -406,6 +435,16 @@ export class AuthoringProtocolClient {
 		return (await this.request(authoringProtocolMethods.closeProject, {}, validateProjectCloseResult)).result;
 	}
 
+	async prepareViewportLaunch(
+		expectedProjectGeneration: number,
+		worldAssetId: string
+	): Promise<ConnectionScopedResult<ViewportLaunchResultDto>> {
+		return this.request(authoringProtocolMethods.prepareViewportLaunch, {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			worldAssetId: requiredNonEmptyString(worldAssetId, 'worldAssetId')
+		}, validateViewportLaunchResult);
+	}
+
 	async openDefinition(
 		expectedProjectGeneration: number,
 		assetId: string
@@ -587,6 +626,40 @@ function validateProjectCloseResult(value: JsonValue): ProjectCloseResultDto {
 		throw new Error('project/close result has an inconsistent failure shape');
 	}
 	return { closed: false, invalidatedProjectGeneration: null };
+}
+
+/** Validates the exact Java-owned renderer-launch result. */
+function validateViewportLaunchResult(value: JsonValue): ViewportLaunchResultDto {
+	const object = requiredObject(value, 'viewport/prepareLaunch result');
+	const prepared = requiredBoolean(object.prepared, 'prepared');
+	const launch = object.launch === null ? null : validateViewportLaunchSpecification(object.launch);
+	const diagnostics = requiredArray(object.diagnostics, 'diagnostics').map(validateProjectDiagnostic);
+	const failureCode = nullableString(object.failureCode, 'failureCode');
+	if (prepared) {
+		if (launch === null || failureCode !== null) {
+			throw new Error('viewport/prepareLaunch result has an inconsistent success shape');
+		}
+		return { prepared: true, launch, diagnostics, failureCode: null };
+	}
+	if (launch !== null) {
+		throw new Error('viewport/prepareLaunch result has an inconsistent failure shape');
+	}
+	return { prepared: false, launch: null, diagnostics, failureCode };
+}
+
+function validateViewportLaunchSpecification(value: JsonValue | undefined): ViewportLaunchSpecificationDto {
+	const object = requiredObject(value, 'viewport launch specification');
+	return {
+		projectGeneration: requiredPositiveInteger(object.projectGeneration, 'projectGeneration'),
+		projectId: requiredNonEmptyString(object.projectId, 'projectId'),
+		projectName: requiredNonEmptyString(object.projectName, 'projectName'),
+		projectRoot: requiredNonEmptyString(object.projectRoot, 'projectRoot'),
+		publishedContentRoot: requiredNonEmptyString(object.publishedContentRoot, 'publishedContentRoot'),
+		engineVersion: requiredNonEmptyString(object.engineVersion, 'engineVersion'),
+		worldAssetId: requiredNonEmptyString(object.worldAssetId, 'worldAssetId'),
+		worldName: requiredNonEmptyString(object.worldName, 'worldName'),
+		runtimeArtifacts: requiredStringArray(object.runtimeArtifacts, 'runtimeArtifacts')
+	};
 }
 
 /** Validates a complete generation-scoped retained-definition snapshot. */

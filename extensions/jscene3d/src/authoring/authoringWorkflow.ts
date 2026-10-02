@@ -165,8 +165,6 @@ export class AuthoringWorkflow {
 		const outcome = await this.projectLifecycle.reopenPendingProject();
 		if (outcome.status === 'failed') {
 			await this.host.notify('projectReopenFailed');
-		} else if (outcome.status === 'reopened') {
-			await this.revealProjectWorkspace();
 		}
 	}
 

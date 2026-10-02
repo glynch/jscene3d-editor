@@ -20,6 +20,21 @@ export interface IJScene3DViewportFailure {
 	readonly message: string;
 }
 
+/** Java-prepared semantic identity and runtime inputs for one project viewport. */
+export interface IJScene3DViewportLaunch {
+	readonly viewportId: string;
+	readonly connectionGeneration: string;
+	readonly projectGeneration: number;
+	readonly projectId: string;
+	readonly projectName: string;
+	readonly projectRoot: string;
+	readonly publishedContentRoot: string;
+	readonly engineVersion: string;
+	readonly worldAssetId: string;
+	readonly worldName: string;
+	readonly runtimeArtifacts: readonly string[];
+}
+
 export interface IJScene3DViewportBridge {
 	registerPane(
 		paneId: string,
@@ -27,7 +42,7 @@ export interface IJScene3DViewportBridge {
 		onFailure: (failure: IJScene3DViewportFailure) => void
 	): void;
 	unregisterPane(paneId: string): void;
-	start(paneId: string, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
+	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
 	resize(paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number): void;
 	pause(paneId: string, session: IJScene3DViewportSessionIdentity): void;
 	resume(paneId: string, session: IJScene3DViewportSessionIdentity): void;
@@ -52,6 +67,29 @@ export function isViewportPaneId(value: unknown): value is string {
 
 export function isViewportDimension(value: unknown): value is number {
 	return Number.isInteger(value) && (value as number) > 0 && (value as number) <= 16384;
+}
+
+export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaunch {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DViewportLaunch>;
+	return isViewportPaneId(candidate.viewportId)
+		&& nonEmpty(candidate.connectionGeneration)
+		&& Number.isInteger(candidate.projectGeneration) && candidate.projectGeneration! > 0
+		&& nonEmpty(candidate.projectId)
+		&& nonEmpty(candidate.projectName)
+		&& nonEmpty(candidate.projectRoot)
+		&& nonEmpty(candidate.publishedContentRoot)
+		&& nonEmpty(candidate.engineVersion)
+		&& nonEmpty(candidate.worldAssetId)
+		&& nonEmpty(candidate.worldName)
+		&& Array.isArray(candidate.runtimeArtifacts)
+		&& candidate.runtimeArtifacts.every(nonEmpty);
+}
+
+function nonEmpty(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0;
 }
 
 export function isViewportSessionIdentity(value: unknown): value is IJScene3DViewportSessionIdentity {

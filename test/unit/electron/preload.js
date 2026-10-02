@@ -10,6 +10,15 @@
 	const { ipcRenderer, webFrame, contextBridge, webUtils } = require('electron');
 
 	const globals = {
+		jscene3dViewport: {
+			registerPane() { },
+			unregisterPane() { },
+			async start() { throw new Error('Native viewport sessions are unavailable in the unit-test preload'); },
+			resize() { },
+			pause() { },
+			resume() { },
+			async stop() { }
+		},
 
 		ipcRenderer: {
 

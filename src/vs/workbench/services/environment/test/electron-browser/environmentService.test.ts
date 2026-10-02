@@ -12,8 +12,22 @@ import { TestProductService } from '../../../../test/common/workbenchTestService
 suite('NativeWorkbenchEnvironmentService', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('leaves the JScene3D product on the normal native workbench layout', () => {
-		assert.strictEqual(getNativeWorkbenchConstructionOptions(product), undefined);
+	test('maps the JScene3D product welcome editor into native workbench construction options', () => {
+		assert.deepStrictEqual(getNativeWorkbenchConstructionOptions(product), {
+			defaultLayout: {
+				views: [{ id: 'jscene3d.project' }],
+				editors: [{
+					uri: {
+						scheme: 'walkThrough',
+						authority: 'vscode_getting_started_page'
+					},
+					options: {
+						override: 'workbench.editors.gettingStartedInput',
+						pinned: false
+					}
+				}]
+			}
+		});
 	});
 
 	test('maps a generic product default view to non-forced workbench construction options', () => {

@@ -185,14 +185,14 @@ suite('JScene3D authoring workflow', () => {
 		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 	});
 
-	test('reveals the JScene3D workspace after a successful persisted project reopen', async () => {
+	test('preserves the restored view container after a successful persisted project reopen', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextReopen = { status: 'reopened' };
 
 		await fixture.workflow.reopenPendingProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, []);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 	});
 });
 

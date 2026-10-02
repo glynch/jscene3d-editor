@@ -16,6 +16,7 @@ import { authoredDefinitionViewType, openDefinitionCommandId } from '../definiti
 import { hierarchyViewId } from '../hierarchy/hierarchyViewModel';
 import { inspectorViewId } from '../inspector/inspectorView';
 import { projectViewId } from '../project/projectViewModel';
+import { openStartupWorldViewportCommandId } from '../viewport/viewportWorkflow';
 
 suite('JScene3D extension contributions', () => {
 	test('contributes the JScene3D Java tooling defaults', () => {
@@ -142,6 +143,7 @@ suite('JScene3D extension contributions', () => {
 			openProjectCommandId,
 			closeProjectCommandId,
 			openDefinitionCommandId,
+			openStartupWorldViewportCommandId,
 			gettingStartedCommandId
 		]);
 	});

@@ -4,11 +4,31 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { JScene3DViewportFrameRouter, isViewportFrameIdentity, stopViewportSessions } from '../../common/jscene3dViewport.js';
+import { JScene3DViewportFrameRouter, isViewportFrameIdentity, isViewportLaunch, stopViewportSessions } from '../../common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('JScene3DViewportFrameRouter', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
+	test('accepts only complete Java-prepared project launches', () => {
+		const launch = {
+			viewportId: 'viewport-a',
+			connectionGeneration: 'connection-a',
+			projectGeneration: 7,
+			projectId: 'example.project',
+			projectName: 'Example',
+			projectRoot: '/projects/example',
+			publishedContentRoot: '/projects/example/target/import-cache',
+			engineVersion: '0.1.0-SNAPSHOT',
+			worldAssetId: '2f26576c-570d-4338-bc30-52bc41def3a5',
+			worldName: 'Opening World',
+			runtimeArtifacts: ['/runtime/application.jar']
+		};
+
+		assert.strictEqual(isViewportLaunch(launch), true);
+		assert.strictEqual(isViewportLaunch({ ...launch, projectGeneration: 0 }), false);
+		assert.strictEqual(isViewportLaunch({ ...launch, runtimeArtifacts: ['/runtime/application.jar', ''] }), false);
+	});
+
 	test('rejects malformed identities and frames from another session', async () => {
 		const frames: number[] = [];
 		const router = new JScene3DViewportFrameRouter<number>();

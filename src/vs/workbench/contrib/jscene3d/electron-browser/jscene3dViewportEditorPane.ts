@@ -21,7 +21,7 @@ import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.
 import { JScene3DViewportEditorInput } from '../browser/jscene3dViewportEditorInput.js';
 import { JScene3DViewportLifecycleAction, JScene3DViewportModel, JScene3DViewportStopGate, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
 
-/** Presents the native JScene3D validation renderer without implementing scene rendering in the browser. */
+/** Presents one project world from the native JScene3D renderer without browser-side scene rendering. */
 export class JScene3DViewportEditorPane extends EditorPane {
 	static readonly ID = 'workbench.editor.jscene3dRendererPreview';
 
@@ -74,7 +74,7 @@ export class JScene3DViewportEditorPane extends EditorPane {
 		canvas.style.width = '100%';
 		canvas.style.height = '100%';
 		canvas.style.display = 'block';
-		canvas.setAttribute('aria-label', localize('jscene3dNativeViewportCanvas', "JScene3D native renderer preview"));
+		canvas.setAttribute('aria-label', localize('jscene3dNativeViewportCanvas', "JScene3D native project viewport"));
 		parent.appendChild(canvas);
 		this.canvas = canvas;
 
@@ -148,7 +148,7 @@ export class JScene3DViewportEditorPane extends EditorPane {
 			this.registered = true;
 			this.inputDisposeListener = input.onWillDispose(() => { void this.stop(false); });
 			this.model.setVisible(this.isVisible());
-			const session = await jscene3dViewport.start(this.paneId, size.width, size.height);
+			const session = await jscene3dViewport.start(this.paneId, input.launch, size.width, size.height);
 			if (token.isCancellationRequested || tokenValue !== this.startToken) {
 				await this.stop(false);
 				return;

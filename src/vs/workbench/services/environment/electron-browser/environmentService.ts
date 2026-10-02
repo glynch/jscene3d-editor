@@ -67,7 +67,15 @@ export function getNativeWorkbenchConstructionOptions(productConfiguration: Pick
 
 	return {
 		defaultLayout: {
-			views: defaultLayout.views?.map(view => ({ id: view.id }))
+			views: defaultLayout.views?.map(view => ({ id: view.id })),
+			...(defaultLayout.editors ? {
+				editors: defaultLayout.editors.map(editor => ({
+					uri: editor.uri,
+					...(editor.options ? { options: editor.options } : {}),
+					...(editor.viewColumn !== undefined ? { viewColumn: editor.viewColumn } : {}),
+					...(editor.openOnlyIfExists !== undefined ? { openOnlyIfExists: editor.openOnlyIfExists } : {})
+				}))
+			} : {})
 		}
 	};
 }

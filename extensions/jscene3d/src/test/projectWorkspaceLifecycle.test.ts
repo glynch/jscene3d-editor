@@ -14,6 +14,7 @@ import {
 	ProjectWorkspaceHost,
 	ProjectWorkspaceLifecycle,
 	ProjectWorkspaceResource,
+	ProjectViewportLifecycle,
 	isExactProjectWorkspace,
 	WorkspaceProjectState
 } from '../project/projectWorkspaceLifecycle';
@@ -144,6 +145,27 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.deepStrictEqual(state.snapshot, openSnapshot(sameRootB, 8));
 	});
 
+	test('closes authored documents and the old viewport before replacing the Java generation', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.snapshot = openSnapshot(summaryA, 7);
+		state.nextSelection = replaceSelection(replacedResult(summaryB, 8));
+		const workspace = new TestWorkspaceHost(events);
+		workspace.matches = true;
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state,
+			workspace,
+			new TestIntentStore(events),
+			new TestLogger(),
+			new TestDocuments(events),
+			new TestViewports(events));
+
+		await lifecycle.openProject({ scheme: 'file', fsPath: '/projects/b/b.j3d' });
+
+		assert.deepStrictEqual(events, ['document-close', 'viewport-close', 'java-open']);
+		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 8));
+	});
+
 	test('close waits for Java state, clears intent, then closes the workspace', async () => {
 		const events: string[] = [];
 		const state = new TestProjectState(events);
@@ -172,6 +194,25 @@ suite('JScene3D project workspace lifecycle', () => {
 		await lifecycle.closeProject();
 
 		assert.deepStrictEqual(events, ['document-close', 'java-close', 'intent-clear', 'workspace-close']);
+	});
+
+	test('closes native project viewports before documents and Java state', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.snapshot = openSnapshot(summaryA, 7);
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state,
+			new TestWorkspaceHost(events),
+			new TestIntentStore(events),
+			new TestLogger(),
+			new TestDocuments(events),
+			new TestViewports(events));
+
+		await lifecycle.closeProject();
+
+		assert.deepStrictEqual(events, [
+			'document-close', 'viewport-close', 'java-close', 'intent-clear', 'workspace-close'
+		]);
 	});
 
 	test('commits valid focused Inspector input before starting native dirty-document close', async () => {
@@ -312,11 +353,18 @@ suite('JScene3D project workspace lifecycle', () => {
 	});
 
 	test('external workspace change closes Java project without recursively closing workspace', async () => {
-		const state = new TestProjectState();
+		const events: string[] = [];
+		const state = new TestProjectState(events);
 		state.snapshot = openSnapshot(summaryA, 7);
 		const workspace = new TestWorkspaceHost();
 		workspace.matches = true;
-		const lifecycle = new ProjectWorkspaceLifecycle(state, workspace, new TestIntentStore(), new TestLogger());
+		const lifecycle = new ProjectWorkspaceLifecycle(
+			state,
+			workspace,
+			new TestIntentStore(),
+			new TestLogger(),
+			new TestDocuments([], true),
+			new TestViewports(events));
 		workspace.matches = false;
 
 		workspace.fireChange();
@@ -324,6 +372,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		assert.strictEqual(state.closeCalls, 1);
 		assert.strictEqual(workspace.closeCalls, 0);
+		assert.deepStrictEqual(events, ['viewport-close', 'java-close']);
 		lifecycle.dispose();
 	});
 });
@@ -341,6 +390,7 @@ class TestProjectState implements WorkspaceProjectState {
 
 	open(path: string): Promise<ProjectSelectionResult> {
 		this.openCalls.push(path);
+		this.events.push('java-open');
 		const selection = this.nextSelection;
 		const project = acceptedProject(selection);
 		if (project !== undefined) {
@@ -436,6 +486,15 @@ class TestDocuments implements ProjectDocumentLifecycle {
 	closeProjectDocuments(): Promise<boolean> {
 		this.events.push('document-close');
 		return Promise.resolve(this.accepted);
+	}
+}
+
+class TestViewports implements ProjectViewportLifecycle {
+	constructor(private readonly events: string[] = []) { }
+
+	closeProjectViewports(): Promise<void> {
+		this.events.push('viewport-close');
+		return Promise.resolve();
 	}
 }
 

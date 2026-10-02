@@ -64,6 +64,13 @@
 				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
 			},
 			{
+				"command": "jscene3d.openStartupWorldViewport",
+				"title": "%command.openStartupWorldViewport%",
+				"category": "JScene3D",
+				"icon": "$(preview)",
+				"enablement": "jscene3d.projectOpen && !jscene3d.projectBusy"
+			},
+			{
 				"command": "jscene3d.gettingStarted",
 				"title": "%command.gettingStarted%",
 				"category": "JScene3D"
@@ -80,6 +87,11 @@
 					"command": "jscene3d.closeProject",
 					"when": "view == jscene3d.project && jscene3d.projectOpen",
 					"group": "navigation"
+				},
+				{
+					"command": "jscene3d.openStartupWorldViewport",
+					"when": "view == jscene3d.project && jscene3d.projectOpen && !jscene3d.projectBusy",
+					"group": "navigation@10"
 				}
 			]
 		},
@@ -165,6 +177,15 @@
 						"default": [],
 						"scope": "machine",
 						"description": "%configuration.authoring.installedExtensionMetadata%"
+					},
+					"jscene3d.authoring.runtimeArtifacts": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"default": [],
+						"scope": "machine",
+						"description": "%configuration.authoring.runtimeArtifacts%"
 					}
 			}
 		},

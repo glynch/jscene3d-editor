@@ -5,6 +5,7 @@
 	"command.openProject": "Open Project...",
 	"command.closeProject": "Close Project",
 	"command.openStartupWorld": "Open Startup World",
+	"command.openStartupWorldViewport": "Open Startup World in Native Viewport",
 	"command.gettingStarted": "Getting Started",
 	"viewsContainer.jscene3d": "JScene3D",
 	"viewsContainer.inspector": "JScene3D Inspector",
@@ -20,5 +21,6 @@
 	"customEditor.authoredDefinition": "JScene3D Authored Definition",
 	"configuration.authoring.javaExecutable": "Java executable used to launch the development authoring service. The JSCENE3D_JAVA_EXECUTABLE environment variable takes precedence.",
 	"configuration.authoring.modulePath": "Development JPMS module path containing the JScene3D authoring service and its dependencies. The JSCENE3D_AUTHORING_SERVICE_MODULE_PATH environment variable takes precedence. Production service discovery is not yet implemented.",
-	"configuration.authoring.installedExtensionMetadata": "Ordered paths to installed descriptor-only extension metadata artifacts or directories. The path-list value in JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH takes precedence. These paths are separate from the Java module path and are never used to execute runtime extension providers."
+	"configuration.authoring.installedExtensionMetadata": "Ordered paths to installed descriptor-only extension metadata artifacts or directories. The path-list value in JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH takes precedence. These paths are separate from the Java module path and are never used to execute runtime extension providers.",
+	"configuration.authoring.runtimeArtifacts": "Ordered absolute JAR paths made available only to isolated project viewport renderer processes. The path-list value in JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH takes precedence."
 }

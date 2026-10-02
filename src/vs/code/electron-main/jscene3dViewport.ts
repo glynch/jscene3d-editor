@@ -7,7 +7,7 @@ import electron, { app, sharedTexture } from 'electron';
 import { Disposable, IDisposable } from '../../base/common/lifecycle.js';
 import { isAbsolute, join } from '../../base/common/path.js';
 import { Promises, SymlinkSupport } from '../../base/node/pfs.js';
-import { IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSessionIdentity, isViewportDimension, isViewportPaneId, isViewportSessionIdentity, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { ICodeWindow } from '../../platform/window/electron-main/window.js';
@@ -98,7 +98,7 @@ export class JScene3DViewportController extends Disposable {
 		private readonly logService: ILogService
 	) {
 		super();
-		validatedIpcMain.handle('vscode:jscene3dViewport:start', async (event, paneId: string, width: number, height: number) => this.start(event, paneId, width, height));
+		validatedIpcMain.handle('vscode:jscene3dViewport:start', async (event, paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number) => this.start(event, paneId, launch, width, height));
 		validatedIpcMain.handle('vscode:jscene3dViewport:stop', async (event, paneId: string, session?: IJScene3DViewportSessionIdentity) => this.stopFromPane(event, paneId, session));
 		validatedIpcMain.on('vscode:jscene3dViewport:pause', this.pauseListener);
 		validatedIpcMain.on('vscode:jscene3dViewport:resume', this.resumeListener);
@@ -110,10 +110,10 @@ export class JScene3DViewportController extends Disposable {
 		return `${webContents.id}:${paneId}`;
 	}
 
-	private async start(event: Electron.IpcMainInvokeEvent, paneId: string, width: number, height: number): Promise<IJScene3DViewportSessionIdentity> {
+	private async start(event: Electron.IpcMainInvokeEvent, paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity> {
 		const window = this.getWindowsMainService()?.getWindowByWebContents(event.sender);
 		const frame = event.sender.mainFrame;
-		if (!window?.win || event.senderFrame !== frame || !isViewportPaneId(paneId) || !isViewportDimension(width) || !isViewportDimension(height)) {
+		if (!window?.win || event.senderFrame !== frame || !isViewportPaneId(paneId) || !isViewportLaunch(launch) || !isViewportDimension(width) || !isViewportDimension(height)) {
 			throw new Error('JScene3D native viewport requires a valid main-frame pane and physical viewport size');
 		}
 
@@ -126,7 +126,7 @@ export class JScene3DViewportController extends Disposable {
 			return this.identity(existing);
 		}
 
-		const request = await this.createLaunchRequest(width, height);
+		const request = await this.createLaunchRequest(launch, width, height);
 		const generation = ++this.rendererGeneration;
 		let launched: IJScene3DRendererSession | undefined;
 		let session: IJScene3DMainSession | undefined;
@@ -167,7 +167,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private async createLaunchRequest(width: number, height: number): Promise<IJScene3DRendererLaunchRequest> {
+	private async createLaunchRequest(launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DRendererLaunchRequest> {
 		const javaExecutable = process.env.JSCENE3D_RENDERER_JAVA_EXECUTABLE;
 		const runtimeDirectory = process.env.JSCENE3D_RENDERER_RUNTIME_DIRECTORY;
 		if (!javaExecutable || !isAbsolute(javaExecutable) || !(await this.isFile(javaExecutable))) {
@@ -188,13 +188,34 @@ export class JScene3DViewportController extends Disposable {
 		if (classPath.length === 0) {
 			throw new Error('The JScene3D renderer runtime contains no library JARs');
 		}
+		for (const artifact of launch.runtimeArtifacts) {
+			if (!isAbsolute(artifact) || !(await this.isFile(artifact))) {
+				throw new Error('A prepared JScene3D project runtime artifact is unavailable');
+			}
+			if (!classPath.includes(artifact)) {
+				classPath.push(artifact);
+			}
+		}
+		if (!isAbsolute(launch.projectRoot) || !(await this.isDirectory(launch.projectRoot))) {
+			throw new Error('The prepared JScene3D project root is unavailable');
+		}
+		if (!isAbsolute(launch.publishedContentRoot)) {
+			throw new Error('The prepared JScene3D published-content root must be absolute');
+		}
 		return {
 			javaExecutable,
 			workingDirectory: runtimeDirectory,
 			nativeLibraryDirectory,
 			classPath,
 			mainClass: 'io.github.glynch.jscene3d.editor.renderer.process.EditorRendererMain',
-			rendererArguments: ['--protocol-version=1.0'],
+			rendererArguments: [
+				'--protocol-version=1.0',
+				`--project-root=${launch.projectRoot}`,
+				`--published-content-root=${launch.publishedContentRoot}`,
+				`--engine-version=${launch.engineVersion}`,
+				`--project-id=${launch.projectId}`,
+				`--world-asset-id=${launch.worldAssetId}`
+			],
 			width,
 			height
 		};

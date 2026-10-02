@@ -6,6 +6,7 @@
 import { IStringDictionary } from './collections.js';
 import { PlatformName } from './platform.js';
 import { IExtensionConfigurationPolicyReference, IPolicy } from './policy.js';
+import type { UriComponents } from './uri.js';
 
 export interface IBuiltInExtension {
 	readonly name: string;
@@ -99,6 +100,15 @@ export interface IDictationRuntimeProductConfig {
 /** Default workbench layout contributed by a product. */
 export interface IProductDefaultLayout {
 	readonly views?: readonly { readonly id: string }[];
+	readonly editors?: readonly {
+		readonly uri: UriComponents;
+		readonly options?: {
+			readonly override?: string;
+			readonly pinned?: boolean;
+		};
+		readonly viewColumn?: number;
+		readonly openOnlyIfExists?: boolean;
+	}[];
 }
 
 export interface IProductConfiguration {

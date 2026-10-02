@@ -46,6 +46,7 @@ Environment overrides:
   JSCENE3D_RENDERER_RUNTIME_ARCHIVE
   JSCENE3D_RENDERER_RUNTIME_DIRECTORY
   JSCENE3D_RENDERER_JAVA_EXECUTABLE
+  JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH
 
 By default, the launcher resolves the versioned JScene3D authoring runtime from
 the default local repository at $HOME/.m2/repository. It resolves the renderer
@@ -243,6 +244,17 @@ fi
 [[ -n "$renderer_java_executable" && "$renderer_java_executable" = /* && -x "$renderer_java_executable" ]] \
 	|| fail "set JSCENE3D_RENDERER_JAVA_EXECUTABLE to an absolute Java executable."
 
+project_runtime_artifact_path="${JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH:-}"
+if [[ -n "$project_runtime_artifact_path" ]]; then
+	IFS=':' read -r -a project_runtime_artifacts <<<"$project_runtime_artifact_path"
+	for project_runtime_artifact in "${project_runtime_artifacts[@]}"; do
+		[[ "$project_runtime_artifact" = /* ]] \
+			|| fail "project runtime artifact must be an absolute path: $project_runtime_artifact"
+		[[ -f "$project_runtime_artifact" && "$project_runtime_artifact" == *.jar ]] \
+			|| fail "project runtime artifact must be an existing JAR: $project_runtime_artifact"
+	done
+fi
+
 [[ -n "$module_path" ]] || fail "the authoring-service module path is empty."
 IFS=':' read -r -a module_path_entries <<<"$module_path"
 for module_path_entry in "${module_path_entries[@]}"; do
@@ -289,6 +301,11 @@ echo "  Renderer runtime version: $renderer_runtime_version"
 echo "  Renderer runtime source:  $renderer_runtime_source"
 echo "  Renderer runtime:         $renderer_runtime_directory"
 echo "  Renderer Java:            $renderer_java_executable"
+if [[ -n "$project_runtime_artifact_path" ]]; then
+	echo "  Project runtime artifacts: $project_runtime_artifact_path"
+else
+	echo "  Project runtime artifacts: none"
+fi
 echo "  Electron executable:      $source_binary"
 echo "  Isolated profile:   $profile"
 echo "  Restart command:    ./scripts/jscene3d/launch-source-editor.sh --profile '$profile'"
@@ -306,6 +323,7 @@ exec env -u ELECTRON_RUN_AS_NODE \
 	JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH="$extension_metadata_path" \
 	JSCENE3D_RENDERER_RUNTIME_DIRECTORY="$renderer_runtime_directory" \
 	JSCENE3D_RENDERER_JAVA_EXECUTABLE="$renderer_java_executable" \
+	JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH="$project_runtime_artifact_path" \
 	VSCODE_SKIP_PRELAUNCH=1 \
 	"$repository_root/scripts/code.sh" \
 	--user-data-dir "$profile/user-data" \

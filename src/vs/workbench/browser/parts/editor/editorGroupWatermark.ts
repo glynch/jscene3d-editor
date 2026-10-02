@@ -16,9 +16,11 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import product from '../../../../platform/product/common/product.js';
 import { IStorageService, StorageScope, StorageTarget, WillSaveStateReason } from '../../../../platform/storage/common/storage.js';
 import { defaultKeybindingLabelStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
+import { shouldRegisterChatWorkbenchSurfaces } from '../../../common/jscene3dProduct.js';
 
 interface WatermarkEntry {
 	readonly id: string;
@@ -45,7 +47,7 @@ const startDebugging: WatermarkEntry = { text: localize('watermark.startDebuggin
 const openSettings: WatermarkEntry = { text: localize('watermark.openSettings', "Open Settings"), id: 'workbench.action.openSettings' };
 
 const baseEntries: WatermarkEntry[] = [
-	openChat,
+	...(shouldRegisterChatWorkbenchSurfaces(product.applicationName) ? [openChat] : []),
 	showCommands,
 ];
 
