@@ -99,9 +99,11 @@
 	//#region Globals Definition
 
 	type JScene3DPaneRegistration = {
+		readonly onReady: (session: IJScene3DViewportSessionIdentity) => void;
 		readonly onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>;
 		readonly onFailure: (failure: IJScene3DViewportFailure) => void;
 		session?: IJScene3DViewportSessionIdentity;
+		pendingReady?: IJScene3DViewportSessionIdentity;
 		surfaceGeneration: number;
 		frameNumber: number;
 	};
@@ -192,14 +194,36 @@
 		}
 		registration.onFailure(candidate as IJScene3DViewportFailure);
 		registration.session = undefined;
+		registration.pendingReady = undefined;
+	});
+
+	ipcRenderer.on('vscode:jscene3dViewport:ready', (_event: Electron.IpcRendererEvent, ready: unknown) => {
+		if (!ready || typeof ready !== 'object') {
+			return;
+		}
+		const candidate = ready as Partial<IJScene3DViewportSessionIdentity> & { paneId?: unknown };
+		const paneId = candidate.paneId;
+		if (!validPaneId(paneId) || !validSession(candidate)) {
+			return;
+		}
+		const registration = jscene3dPanes.get(paneId);
+		if (!registration) {
+			return;
+		}
+		if (registration.session === undefined) {
+			registration.pendingReady = candidate;
+		} else if (sameSession(registration.session, candidate)) {
+			registration.onReady(candidate);
+		}
 	});
 
 	const jscene3dViewport: IJScene3DViewportBridge = {
-		registerPane(paneId, onFrame, onFailure): void {
-			if (!validPaneId(paneId) || typeof onFrame !== 'function' || typeof onFailure !== 'function' || jscene3dPanes.has(paneId)) {
+		registerPane(paneId, onReady, onFrame, onFailure): void {
+			if (!validPaneId(paneId) || typeof onReady !== 'function' || typeof onFrame !== 'function'
+				|| typeof onFailure !== 'function' || jscene3dPanes.has(paneId)) {
 				throw new Error('Invalid or duplicate JScene3D native viewport pane registration');
 			}
-			jscene3dPanes.set(paneId, { onFrame, onFailure, surfaceGeneration: 0, frameNumber: 0 });
+			jscene3dPanes.set(paneId, { onReady, onFrame, onFailure, surfaceGeneration: 0, frameNumber: 0 });
 		},
 
 		unregisterPane(paneId): void {
@@ -220,6 +244,11 @@
 			registration.session = session;
 			registration.surfaceGeneration = 0;
 			registration.frameNumber = 0;
+			const pendingReady = registration.pendingReady;
+			registration.pendingReady = undefined;
+			if (pendingReady && sameSession(session, pendingReady)) {
+				registration.onReady(pendingReady);
+			}
 			return session;
 		},
 
@@ -253,6 +282,7 @@
 				return;
 			}
 			registration.session = undefined;
+			registration.pendingReady = undefined;
 			registration.surfaceGeneration = 0;
 			registration.frameNumber = 0;
 			await ipcRenderer.invoke('vscode:jscene3dViewport:stop', paneId, session);

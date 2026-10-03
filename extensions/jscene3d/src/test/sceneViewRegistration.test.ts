@@ -5,6 +5,7 @@
 
 import * as assert from 'assert';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from '../definition/authoredDefinitionState';
+import { SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
 import { SceneViewLifecycleOperations, SceneViewRegistration } from '../sceneView/sceneViewRegistration';
 
 suite('JScene3D Scene View feature registration', () => {
@@ -49,9 +50,9 @@ class TestLifecycle implements SceneViewLifecycleOperations {
 	readonly closed: string[] = [];
 	closeAllCount = 0;
 
-	synchronize(definition: AuthoredDefinitionResource): Promise<void> {
+	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome> {
 		this.synchronized.push(definition);
-		return Promise.resolve();
+		return Promise.resolve({ status: 'unchanged' });
 	}
 
 	close(resource: string): Promise<void> {

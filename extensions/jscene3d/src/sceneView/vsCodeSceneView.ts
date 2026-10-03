@@ -7,17 +7,18 @@ import * as vscode from 'vscode';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { publishProjectDiagnostics } from '../project/projectDiagnostics';
 import { ProjectDiagnosticDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
-import { openProjectViewportWorkbenchCommandId } from '../viewport/viewportWorkflow';
 import {
 	SceneViewportLaunch,
 	SceneViewAuthoringClient,
 	SceneViewHost,
-	SceneViewLifecycle
+	SceneViewLifecycle,
+	SceneViewSynchronizationOutcome
 } from './sceneViewLifecycle';
 import { SceneViewLifecycleOperations, SceneViewRegistration } from './sceneViewRegistration';
 
 const updateSceneViewWorkbenchCommandId = 'jscene3d.workbench.updateSceneView';
 const closeViewportWorkbenchCommandId = 'jscene3d.workbench.closeViewport';
+const openSceneEditorWorkbenchCommandId = 'jscene3d.workbench.openSceneEditor';
 
 /** Registered Scene View feature owned by extension activation. */
 export interface RegisteredSceneViewFeature extends SceneViewLifecycleOperations, vscode.Disposable { }
@@ -40,7 +41,7 @@ class RegisteredVsCodeSceneViewFeature implements RegisteredSceneViewFeature {
 		private readonly diagnostics: vscode.DiagnosticCollection
 	) { }
 
-	synchronize(definition: Parameters<SceneViewRegistration['synchronize']>[0]): Promise<void> {
+	synchronize(definition: Parameters<SceneViewRegistration['synchronize']>[0]): Promise<SceneViewSynchronizationOutcome> {
 		return this.registration.synchronize(definition);
 	}
 
@@ -61,8 +62,8 @@ class RegisteredVsCodeSceneViewFeature implements RegisteredSceneViewFeature {
 class VsCodeSceneViewHost implements SceneViewHost {
 	constructor(private readonly diagnostics: vscode.DiagnosticCollection) { }
 
-	async open(launch: SceneViewportLaunch): Promise<void> {
-		await vscode.commands.executeCommand(openProjectViewportWorkbenchCommandId, launch);
+	async open(ownerResource: string, launch: SceneViewportLaunch): Promise<void> {
+		await vscode.commands.executeCommand(openSceneEditorWorkbenchCommandId, ownerResource, launch);
 	}
 
 	async update(viewportId: string, snapshot: SceneViewSnapshotDto): Promise<boolean | undefined> {

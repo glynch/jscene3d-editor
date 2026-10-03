@@ -27,4 +27,41 @@ suite('JScene3D workbench product integration', () => {
 			}]
 		});
 	});
+
+	test('routes Scene View into its authored Scene editor instead of opening a standalone viewport tab', () => {
+		const source = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', 'src', 'sceneView', 'vsCodeSceneView.ts'),
+			'utf8'
+		);
+
+		assert.match(source, /openSceneEditorWorkbenchCommandId, ownerResource, launch/);
+		assert.doesNotMatch(source, /openProjectViewportWorkbenchCommandId/);
+
+		const contribution = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', '..', '..', 'src', 'vs', 'workbench', 'contrib', 'jscene3d', 'electron-browser', 'jscene3dViewport.contribution.ts'),
+			'utf8'
+		);
+		const sceneCommand = contribution.slice(
+			contribution.indexOf('CommandsRegistry.registerCommand(JSCENE3D_OPEN_SCENE_EDITOR_COMMAND_ID'),
+			contribution.indexOf('CommandsRegistry.registerCommand(JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID')
+		);
+		assert.match(sceneCommand, /new JScene3DViewportEditorInput\(launch\)/);
+		assert.match(sceneCommand, /JScene3DSceneEditorInput/);
+		assert.match(sceneCommand, /replaceEditors/);
+		assert.doesNotMatch(sceneCommand, /openEditor\(\s*new JScene3DViewportEditorInput/);
+
+		const sceneInput = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', '..', '..', 'src', 'vs', 'workbench', 'contrib', 'jscene3d', 'browser', 'jscene3dSceneEditorInput.ts'),
+			'utf8'
+		);
+		assert.match(sceneInput, /get editorId\(\): string \{ return this\.authored\.editorId; \}/);
+		assert.match(sceneInput, /get resource\(\): URI \{ return this\.authored\.resource; \}/);
+
+		const tabs = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', '..', '..', 'src', 'vs', 'workbench', 'api', 'browser', 'mainThreadEditorTabs.ts'),
+			'utf8'
+		);
+		assert.match(tabs, /editor instanceof JScene3DSceneEditorInput/);
+		assert.match(tabs, /viewType: editor\.authored\.viewType/);
+	});
 });

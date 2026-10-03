@@ -12,7 +12,7 @@ import {
 	gettingStartedCommandId,
 	openProjectCommandId
 } from '../authoring/authoringWorkflow';
-import { authoredDefinitionViewType } from '../definition/authoredDefinitionOpener';
+import { authoredDefinitionViewType, sceneDefinitionViewType } from '../definition/authoredDefinitionOpener';
 import { hierarchyViewId } from '../hierarchy/hierarchyViewModel';
 import { inspectorViewId } from '../inspector/inspectorView';
 import { projectViewId } from '../project/projectViewModel';
@@ -40,12 +40,17 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(close?.enablement, 'jscene3d.projectOpen && !jscene3d.projectBusy');
 	});
 
-	test('registers the authored-definition editor and native Hierarchy view', () => {
+	test('registers distinct Scene and EntityDefinition editor identities', () => {
 		const contributions = extensionManifest().contributes;
-		const editor = contributions.customEditors.find(candidate => candidate.viewType === authoredDefinitionViewType);
+		const sceneEditor = contributions.customEditors.find(candidate => candidate.viewType === sceneDefinitionViewType);
+		const entityEditor = contributions.customEditors.find(candidate => candidate.viewType === authoredDefinitionViewType);
+		const messages = extensionMessages();
 
-		assert.strictEqual(editor?.priority, 'option');
-		assert.deepStrictEqual(editor?.selector.map(entry => entry.filenamePattern), ['*.scene.json', '*.entity.json']);
+		assert.strictEqual(sceneEditor?.priority, 'default');
+		assert.deepStrictEqual(sceneEditor?.selector.map(entry => entry.filenamePattern), ['*.scene.json']);
+		assert.strictEqual(localizedMessage(messages['customEditor.sceneDefinition']), 'JScene3D Scene');
+		assert.strictEqual(entityEditor?.priority, 'option');
+		assert.deepStrictEqual(entityEditor?.selector.map(entry => entry.filenamePattern), ['*.entity.json']);
 	});
 
 	test('keeps Project available and makes Hierarchy conditional on an open project', () => {

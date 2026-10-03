@@ -4,10 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from '../definition/authoredDefinitionState';
+import { SceneViewSynchronizationOutcome } from './sceneViewLifecycle';
 
 /** Scene View lifecycle operations coordinated by the feature registration. */
 export interface SceneViewLifecycleOperations {
-	synchronize(definition: AuthoredDefinitionResource): Promise<void>;
+	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome>;
 	close(resource: string): Promise<void>;
 	closeAll(): Promise<void>;
 }
@@ -29,7 +30,7 @@ export class SceneViewRegistration implements SceneViewLifecycleOperations {
 		});
 	}
 
-	synchronize(definition: AuthoredDefinitionResource): Promise<void> {
+	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome> {
 		return this.lifecycle.synchronize(definition);
 	}
 

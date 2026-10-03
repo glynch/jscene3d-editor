@@ -19,6 +19,7 @@ import { AbstractTextResourceEditorInput } from '../../common/editor/textResourc
 import { ChatEditorInput } from '../../contrib/chat/browser/widgetHosts/editor/chatEditorInput.js';
 import { CustomEditorInput } from '../../contrib/customEditor/browser/customEditorInput.js';
 import { InteractiveEditorInput } from '../../contrib/interactive/browser/interactiveEditorInput.js';
+import { JScene3DSceneEditorInput } from '../../contrib/jscene3d/browser/jscene3dSceneEditorInput.js';
 import { MergeEditorInput } from '../../contrib/mergeEditor/browser/mergeEditorInput.js';
 import { MultiDiffEditorInput } from '../../contrib/multiDiffEditor/browser/multiDiffEditorInput.js';
 import { NotebookEditorInput } from '../../contrib/notebook/common/notebookEditorInput.js';
@@ -122,6 +123,14 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 			return {
 				kind: TabInputKind.TextInput,
 				uri: editor.resource
+			};
+		}
+
+		if (editor instanceof JScene3DSceneEditorInput) {
+			return {
+				kind: TabInputKind.CustomEditorInput,
+				viewType: editor.authored.viewType,
+				uri: editor.authored.resource,
 			};
 		}
 

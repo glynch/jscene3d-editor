@@ -164,13 +164,15 @@ authoring runtime are available, verify the complete launch configuration
 without opening the GUI:
 
 ```bash
-./scripts/jscene3d/launch-source-editor.sh --check --fresh-profile
+JSCENE3D_ELECTRON_EXECUTABLE=/absolute/path/to/Electron.app/Contents/MacOS/Electron \
+  ./scripts/jscene3d/launch-source-editor.sh --check --fresh-profile
 ```
 
 Then launch the editor with an isolated development profile:
 
 ```bash
-./scripts/jscene3d/launch-source-editor.sh --fresh-profile
+JSCENE3D_ELECTRON_EXECUTABLE=/absolute/path/to/Electron.app/Contents/MacOS/Electron \
+  ./scripts/jscene3d/launch-source-editor.sh --fresh-profile
 ```
 
 The [source launcher](scripts/jscene3d/launch-source-editor.sh) resolves the
@@ -200,8 +202,10 @@ Native viewport development additionally requires the packaged
 `jscene3d-editor-renderer-runtime` ZIP and the JScene3D Electron downstream.
 The launcher resolves their installed defaults independently, or accepts
 `JSCENE3D_RENDERER_RUNTIME_ARCHIVE`, `JSCENE3D_RENDERER_RUNTIME_DIRECTORY`,
-`JSCENE3D_RENDERER_JAVA_EXECUTABLE`, and `JSCENE3D_ELECTRON_EXECUTABLE`
-overrides. Current authoring and native viewport development target macOS; no
+and `JSCENE3D_RENDERER_JAVA_EXECUTABLE` overrides. Select the downstream
+executable explicitly with `JSCENE3D_ELECTRON_EXECUTABLE`; the standard source
+Electron under `.build/electron` does not contain the native renderer API.
+Current authoring and native viewport development target macOS; no
 shipping-platform support claim is made yet.
 
 ## Documentation

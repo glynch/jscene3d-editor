@@ -5,10 +5,8 @@
 
 import { Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { generateUuid } from '../../../../base/common/uuid.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
-import { IJScene3DViewportFailure, IJScene3DViewportFrameIdentity } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DViewportFrameIdentity } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -18,15 +16,14 @@ import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
-import { JScene3DViewportEditorInput } from '../browser/jscene3dViewportEditorInput.js';
-import { JScene3DViewportLifecycleAction, JScene3DViewportModel, JScene3DViewportStopGate, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
+import { IJScene3DViewportPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
+import { JScene3DSceneEditorInput } from '../browser/jscene3dSceneEditorInput.js';
+import { physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
 
 /** Presents one project world from the native JScene3D renderer without browser-side scene rendering. */
-export class JScene3DViewportEditorPane extends EditorPane {
+export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DViewportPresentation {
 	static readonly ID = 'workbench.editor.jscene3dRendererPreview';
 
-	private readonly paneId = generateUuid();
-	private model = new JScene3DViewportModel();
 	private canvas: HTMLCanvasElement | undefined;
 	private errorElement: HTMLElement | undefined;
 	private context: GPUCanvasContext | undefined;
@@ -36,12 +33,6 @@ export class JScene3DViewportEditorPane extends EditorPane {
 	private sampler: GPUSampler | undefined;
 	private resizeObserver: ResizeObserver | undefined;
 	private resizeTimer: number | undefined;
-	private inputDisposeListener: IDisposable | undefined;
-	private readonly sceneViewUpdateListener = this._register(new MutableDisposable<IDisposable>());
-	private readonly stopGate = new JScene3DViewportStopGate();
-	private registered = false;
-	private startToken = 0;
-	private disposed = false;
 
 	constructor(
 		group: IEditorGroup,
@@ -53,12 +44,13 @@ export class JScene3DViewportEditorPane extends EditorPane {
 		super(JScene3DViewportEditorPane.ID, group, telemetryService, themeService, storageService);
 		this._register(group.onWillCloseEditor(event => {
 			if (this.input && event.editor.matches(this.input)) {
-				void this.stop(false);
+				void this.viewportInput()?.stop();
 			}
 		}));
 		this._register(lifecycleService.onWillShutdown(event => {
-			if (this.registered || this.stopGate.current) {
-				event.join(this.stop(false), {
+			const input = this.viewportInput();
+			if (input) {
+				event.join(input.stop(), {
 					id: 'jscene3dNativeViewport',
 					label: localize('jscene3dNativeViewportShutdown', "Stopping JScene3D native viewport")
 				});
@@ -106,40 +98,24 @@ export class JScene3DViewportEditorPane extends EditorPane {
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
-		this.applyLifecycleAction(this.model.setVisible(visible));
+		this.viewportInput()?.setVisible(this, visible);
 		if (visible) {
 			this.scheduleResize();
 		}
 	}
 
-	override async setInput(input: JScene3DViewportEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+		const viewport = this.viewportInput(input);
 		await super.setInput(input, options, context, token);
-		this.sceneViewUpdateListener.value = input.onDidChangeSceneViewSnapshot(snapshot => {
-			const session = this.model.sessionIdentity;
-			if (session) {
-				jscene3dViewport.updateSceneView(this.paneId, session, snapshot);
-			}
-		});
-		let tokenValue = ++this.startToken;
 		if (token.isCancellationRequested || !this.canvas) {
-			return;
-		}
-		if (this.stopGate.current) {
-			await this.stopGate.current;
-			if (token.isCancellationRequested) {
-				return;
-			}
-			tokenValue = ++this.startToken;
-		}
-		if (this.registered) {
-			this.applyLifecycleAction(this.model.setVisible(this.isVisible()));
 			return;
 		}
 
 		try {
 			this.hideFailure();
+			this.showStartupState(this.viewportInput(input)?.startupState ?? 'renderer-starting');
 			await this.initializeWebGPU();
-			if (token.isCancellationRequested || tokenValue !== this.startToken) {
+			if (token.isCancellationRequested) {
 				return;
 			}
 			const size = this.currentSize();
@@ -147,32 +123,16 @@ export class JScene3DViewportEditorPane extends EditorPane {
 				throw new Error(localize('jscene3dNativeViewportNoSize', "The viewport has no visible size."));
 			}
 			synchronizeCanvasBackingStore(this.canvas, size);
-			jscene3dViewport.registerPane(
-				this.paneId,
-				async (frame, identity) => this.presentFrame(frame, identity),
-				failure => this.onFailure(failure)
-			);
-			this.registered = true;
-			this.inputDisposeListener = input.onWillDispose(() => { void this.stop(false); });
-			this.model.setVisible(this.isVisible());
-			const session = await jscene3dViewport.start(this.paneId, input.launch, size.width, size.height);
-			if (token.isCancellationRequested || tokenValue !== this.startToken) {
-				await this.stop(false);
-				return;
-			}
-			this.applyLifecycleAction(this.model.bindSession(session));
-			if (this.model.requestResize(size)) {
-				jscene3dViewport.resize(this.paneId, session, size.width, size.height);
+			if (viewport) {
+				await viewport.attach(this, size, jscene3dViewport);
 			}
 		} catch (error) {
 			this.showFailure(error instanceof Error ? error.message : String(error));
-			await this.stop(true);
 		}
 	}
 
 	override clearInput(): void {
-		this.sceneViewUpdateListener.clear();
-		void this.stop(false);
+		this.viewportInput()?.detach(this);
 		super.clearInput();
 	}
 
@@ -188,9 +148,6 @@ export class JScene3DViewportEditorPane extends EditorPane {
 		}
 		this.resizeTimer = this.window.setTimeout(() => {
 			this.resizeTimer = undefined;
-			if (this.model.isTerminal) {
-				return;
-			}
 			const size = this.currentSize();
 			if (!size) {
 				return;
@@ -198,30 +155,8 @@ export class JScene3DViewportEditorPane extends EditorPane {
 			if (this.canvas) {
 				synchronizeCanvasBackingStore(this.canvas, size);
 			}
-			const session = this.model.sessionIdentity;
-			if (!session || !this.model.requestResize(size)) {
-				return;
-			}
-			jscene3dViewport.resize(this.paneId, session, size.width, size.height);
+			this.viewportInput()?.resize(this, size);
 		}, 75);
-	}
-
-	private applyLifecycleAction(action: JScene3DViewportLifecycleAction | undefined): void {
-		const session = this.model.sessionIdentity;
-		if (!session || !action) {
-			return;
-		}
-		switch (action) {
-			case 'pause':
-				jscene3dViewport.pause(this.paneId, session);
-				break;
-			case 'resume':
-				jscene3dViewport.resume(this.paneId, session);
-				break;
-			case 'stop':
-				void this.stop(true);
-				break;
-		}
 	}
 
 	private async initializeWebGPU(): Promise<void> {
@@ -284,16 +219,19 @@ export class JScene3DViewportEditorPane extends EditorPane {
 		this.bindGroupLayout = bindGroupLayout;
 		this.pipeline = pipeline;
 		this.sampler = device.createSampler({ minFilter: 'linear', magFilter: 'linear' });
-		void device.lost.then(info => this.onFailure({ paneId: this.paneId, message: info.message || localize('jscene3dNativeViewportDeviceLost', "The WebGPU device was lost.") }));
+		void device.lost.then(info => {
+			this.showFailure(info.message || localize('jscene3dNativeViewportDeviceLost', "The WebGPU device was lost."));
+			void this.viewportInput()?.stop(true);
+		});
 	}
 
-	private async presentFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void> {
+	async presentFrame(frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<void> {
 		const device = this.device;
 		const context = this.context;
 		const pipeline = this.pipeline;
 		const bindGroupLayout = this.bindGroupLayout;
 		const sampler = this.sampler;
-		if (!this.model.acceptsRendererWork || !device || !context || !pipeline || !bindGroupLayout || !sampler || !this.isVisible()) {
+		if (!device || !context || !pipeline || !bindGroupLayout || !sampler || !this.isVisible()) {
 			return;
 		}
 		const bindGroup = device.createBindGroup({
@@ -319,63 +257,46 @@ export class JScene3DViewportEditorPane extends EditorPane {
 		device.queue.submit([encoder.finish()]);
 	}
 
-	private onFailure(failure: IJScene3DViewportFailure): void {
-		if (this.model.isTerminal) {
+	showStartupState(state: JScene3DViewportStartupState): void {
+		if (!this.errorElement || state === 'failed') {
 			return;
 		}
-		this.showFailure(failure.message);
-		this.applyLifecycleAction(this.model.fail());
+		if (state === 'rendered' || state === 'disposed') {
+			this.hideFailure();
+			return;
+		}
+		this.errorElement.textContent = state === 'renderer-starting'
+			? localize('jscene3dNativeViewportStarting', "Starting renderer…")
+			: localize('jscene3dNativeViewportWaitingForFrame', "Waiting for first frame…");
+		this.errorElement.style.color = 'var(--vscode-foreground)';
+		this.errorElement.style.display = 'flex';
+		this.errorElement.setAttribute('role', 'status');
 	}
 
-	private showFailure(detail: string): void {
+	showFailure(detail: string): void {
 		if (this.errorElement) {
 			this.errorElement.textContent = localize('jscene3dNativeViewportFailure', "The native viewport stopped: {0}", detail);
+			this.errorElement.style.color = 'var(--vscode-errorForeground)';
 			this.errorElement.style.display = 'flex';
+			this.errorElement.setAttribute('role', 'alert');
 		}
 	}
 
-	private hideFailure(): void {
+	hideFailure(): void {
 		if (this.errorElement) {
 			this.errorElement.style.display = 'none';
 			this.errorElement.textContent = '';
 		}
 	}
 
-	private stop(preserveFailure: boolean): Promise<void> {
-		return this.stopGate.run(async () => {
-			this.startToken++;
-			if (this.resizeTimer !== undefined) {
-				this.window.clearTimeout(this.resizeTimer);
-				this.resizeTimer = undefined;
-			}
-			const session = this.model.sessionIdentity;
-			this.model.dispose();
-			this.inputDisposeListener?.dispose();
-			this.inputDisposeListener = undefined;
-			try {
-				if (this.registered) {
-					await jscene3dViewport.stop(this.paneId, session);
-				}
-			} finally {
-				if (this.registered) {
-					jscene3dViewport.unregisterPane(this.paneId);
-				}
-				this.registered = false;
-				if (!this.disposed) {
-					this.model = new JScene3DViewportModel();
-				}
-				if (!preserveFailure) {
-					this.hideFailure();
-				}
-			}
-		});
+	private viewportInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput | undefined = this.input as JScene3DViewportEditorInput | JScene3DSceneEditorInput | undefined): JScene3DViewportEditorInput | undefined {
+		return input instanceof JScene3DSceneEditorInput ? input.viewport : input;
 	}
 
 	override dispose(): void {
-		this.disposed = true;
+		this.viewportInput()?.detach(this);
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = undefined;
-		void this.stop(false);
 		this.device?.destroy();
 		this.device = undefined;
 		super.dispose();

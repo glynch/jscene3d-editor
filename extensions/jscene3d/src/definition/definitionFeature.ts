@@ -18,7 +18,9 @@ import { AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './author
 import {
 	AuthoredDefinitionOpener,
 	authoredDefinitionViewType,
-	openDefinitionCommandId
+	isDefinitionViewType,
+	openDefinitionCommandId,
+	sceneDefinitionViewType
 } from './authoredDefinitionOpener';
 import { AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceKey } from './definitionResource';
@@ -81,12 +83,13 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 			service,
 			state,
 			(resource, viewType) => Promise.resolve(vscode.commands.executeCommand(
-				'vscode.openWith', vscode.Uri.parse(resource), viewType))
+				'vscode.openWith', vscode.Uri.parse(resource), viewType)),
+			logger
 		);
 		const updateActiveDefinition = () => {
 			const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
 			state.activate(
-				input instanceof vscode.TabInputCustom && input.viewType === authoredDefinitionViewType
+				input instanceof vscode.TabInputCustom && isDefinitionViewType(input.viewType)
 					? definitionResourceKey(input.uri)
 					: undefined
 			);
@@ -141,11 +144,11 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 			throw new Error('The authored-definition editor provider is already registered');
 		}
 		this.editorProviderRegistered = true;
-		this.disposables.push(vscode.window.registerCustomEditorProvider(
-			authoredDefinitionViewType,
-			this.editorProvider,
-			{ supportsMultipleEditorsPerDocument: true }
-		));
+		const options = { supportsMultipleEditorsPerDocument: true };
+		this.disposables.push(
+			vscode.window.registerCustomEditorProvider(authoredDefinitionViewType, this.editorProvider, options),
+			vscode.window.registerCustomEditorProvider(sceneDefinitionViewType, this.editorProvider, options)
+		);
 	}
 
 	dispose(): void {

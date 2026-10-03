@@ -5,12 +5,15 @@
 
 import * as vscode from 'vscode';
 import { AuthoringTextDto, DefinitionContextDto, DefinitionMutationDto, InspectorMutationTargetDto } from '../protocol/authoringProtocol';
+import { sceneEditorHtml } from '../sceneView/sceneEditorPresentation';
+import { SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
 import { AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './authoredDefinitionLifecycle';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
+import { isDefinitionViewType } from './authoredDefinitionOpener';
 import { definitionResourceKey } from './definitionResource';
 
 interface DefinitionSceneViewLifecycle {
-	synchronize(definition: AuthoredDefinitionResource): Promise<void>;
+	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome>;
 	close(resource: string): Promise<void>;
 }
 
@@ -74,8 +77,32 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 			return;
 		}
 		const context = definition.snapshot.context;
-		webviewPanel.webview.html = documentHtml(context.label, context.kind, context.editable);
-		void this.sceneViews?.synchronize(definition);
+		if (context.kind !== 'scene-definition' || this.sceneViews === undefined) {
+			webviewPanel.webview.html = documentHtml(context.label, context.kind, context.editable);
+			return;
+		}
+		const presentationText = {
+			scene: vscode.l10n.t('Scene'),
+			loading: vscode.l10n.t('Loading Scene…')
+		};
+		webviewPanel.webview.html = sceneEditorHtml(context.label, { kind: 'projection-pending' }, presentationText);
+		let disposed = false;
+		webviewPanel.onDidDispose(() => { disposed = true; });
+		void this.sceneViews.synchronize(definition).then(outcome => {
+			if (!disposed && outcome.status === 'failed') {
+				webviewPanel.webview.html = sceneEditorHtml(context.label, {
+					kind: 'failed',
+					reason: outcome.reason
+				}, presentationText);
+			}
+		}, error => {
+			if (!disposed) {
+				webviewPanel.webview.html = sceneEditorHtml(context.label, {
+					kind: 'failed',
+					reason: error instanceof Error ? error.message : String(error)
+				}, presentationText);
+			}
+		});
 	}
 
 	acceptInspectorMutation(
@@ -165,7 +192,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 		return vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => {
 			const input = tab.input;
 			return input instanceof vscode.TabInputCustom
-				&& input.viewType === 'jscene3d.authoredDefinition'
+				&& isDefinitionViewType(input.viewType)
 				&& (resource === undefined || definitionResourceKey(input.uri) === resource);
 		});
 	}

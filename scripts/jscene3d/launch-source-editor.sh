@@ -20,6 +20,7 @@ readonly renderer_runtime_artifact
 fresh_profile=false
 created_fresh_profile=false
 check_only=false
+use_authoring_environment=false
 profile=""
 launch_arguments=()
 
@@ -35,12 +36,14 @@ Options:
   --fresh-profile       Create a new isolated profile under the system temporary directory.
   --profile <directory> Create or reuse a specific isolated profile, including for hot-exit tests.
   --check               Validate and print the launch configuration without opening the editor.
+  --use-authoring-environment
+                        Use the authoring module-path and metadata environment overrides.
   -h, --help            Show this help.
 
 Environment overrides:
   JSCENE3D_MAVEN_LOCAL_REPOSITORY
-  JSCENE3D_AUTHORING_SERVICE_MODULE_PATH
-  JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH
+  JSCENE3D_AUTHORING_SERVICE_MODULE_PATH (with --use-authoring-environment)
+  JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH (with --use-authoring-environment)
   JSCENE3D_JAVA_EXECUTABLE
   JSCENE3D_ELECTRON_EXECUTABLE
   JSCENE3D_RENDERER_RUNTIME_ARCHIVE
@@ -50,10 +53,10 @@ Environment overrides:
 
 By default, the launcher resolves the versioned JScene3D authoring runtime from
 the default local repository at $HOME/.m2/repository. It resolves the renderer
-runtime independently from its installed runtime ZIP. Native Electron
-maintainers may select a local downstream binary with
-JSCENE3D_ELECTRON_EXECUTABLE. This script does not compile sources, invoke
-Maven, or run tests.
+runtime independently from its installed runtime ZIP. Native viewport
+development requires a local downstream binary selected with
+JSCENE3D_ELECTRON_EXECUTABLE. This script does not compile sources, invoke Maven,
+or run tests.
 EOF
 }
 
@@ -75,6 +78,10 @@ while (($# > 0)); do
 			;;
 		--check)
 			check_only=true
+			shift
+			;;
+		--use-authoring-environment)
+			use_authoring_environment=true
 			shift
 			;;
 		-h | --help)
@@ -133,11 +140,22 @@ fi
 [[ -d "$maven_repository" ]] || fail "Maven local repository does not exist: $maven_repository"
 maven_repository="$(cd "$maven_repository" && pwd -P)"
 
-module_path_source="JSCENE3D_AUTHORING_SERVICE_MODULE_PATH"
-module_path="${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}"
-metadata_path_source="JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH"
-extension_metadata_path="${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}"
+module_path_source=""
+module_path=""
+metadata_path_source=""
+extension_metadata_path=""
 runtime_archive=""
+
+if [[ "$use_authoring_environment" == true ]]; then
+	module_path="${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}"
+	extension_metadata_path="${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}"
+	[[ -n "$module_path" && -n "$extension_metadata_path" ]] \
+		|| fail "--use-authoring-environment requires both JSCENE3D_AUTHORING_SERVICE_MODULE_PATH and JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH."
+	module_path_source="JSCENE3D_AUTHORING_SERVICE_MODULE_PATH"
+	metadata_path_source="JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH"
+elif [[ -n "${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}" || -n "${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}" ]]; then
+	echo "Ignoring inherited authoring runtime overrides; pass --use-authoring-environment to use them explicitly." >&2
+fi
 
 if [[ -z "$module_path" || -z "$extension_metadata_path" ]]; then
 	runtime_archive="$maven_repository/$runtime_group_path/$runtime_artifact/$authoring_runtime_version/$runtime_artifact-$authoring_runtime_version-runtime.zip"
@@ -237,11 +255,15 @@ shopt -u nullglob
 ((${#renderer_runtime_jars[@]} > 0)) || fail "renderer runtime contains no library JARs: $renderer_runtime_directory"
 ((${#renderer_runtime_natives[@]} > 0)) || fail "renderer runtime contains no native libraries: $renderer_runtime_directory"
 
-renderer_java_executable="${JSCENE3D_RENDERER_JAVA_EXECUTABLE:-${JSCENE3D_JAVA_EXECUTABLE:-}}"
-if [[ -z "$renderer_java_executable" ]]; then
-	renderer_java_executable="$(command -v java || true)"
+java_executable="${JSCENE3D_JAVA_EXECUTABLE:-}"
+if [[ -z "$java_executable" ]]; then
+	java_executable="$(command -v java || true)"
 fi
-[[ -n "$renderer_java_executable" && "$renderer_java_executable" = /* && -x "$renderer_java_executable" ]] \
+[[ -n "$java_executable" && "$java_executable" = /* && -x "$java_executable" ]] \
+	|| fail "set JSCENE3D_JAVA_EXECUTABLE to an absolute Java executable."
+
+renderer_java_executable="${JSCENE3D_RENDERER_JAVA_EXECUTABLE:-$java_executable}"
+[[ "$renderer_java_executable" = /* && -x "$renderer_java_executable" ]] \
 	|| fail "set JSCENE3D_RENDERER_JAVA_EXECUTABLE to an absolute Java executable."
 
 project_runtime_artifact_path="${JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH:-}"
@@ -271,22 +293,12 @@ readonly extension_entrypoint="$repository_root/extensions/jscene3d/out/extensio
 [[ -f "$extension_entrypoint" ]] || fail "compiled JScene3D extension not found: $extension_entrypoint"
 
 if [[ "$OSTYPE" == darwin* ]]; then
-	source_application="$repository_root/.build/electron/JScene3D Editor.app"
-	source_binary="$source_application/Contents/MacOS/JScene3D Editor"
-	if [[ -n "${JSCENE3D_ELECTRON_EXECUTABLE:-}" ]]; then
-		[[ "$JSCENE3D_ELECTRON_EXECUTABLE" = /* ]] || fail "JSCENE3D_ELECTRON_EXECUTABLE must be an absolute path."
-		source_binary="$JSCENE3D_ELECTRON_EXECUTABLE"
-		source_application="$(cd "$(dirname "$source_binary")/../.." && pwd -P)"
-	fi
-	readonly source_application
+	[[ -n "${JSCENE3D_ELECTRON_EXECUTABLE:-}" ]] \
+		|| fail "JSCENE3D_ELECTRON_EXECUTABLE must select the JScene3D Electron downstream; the standard source Electron does not provide native viewport support."
+	[[ "$JSCENE3D_ELECTRON_EXECUTABLE" = /* ]] || fail "JSCENE3D_ELECTRON_EXECUTABLE must be an absolute path."
+	source_binary="$JSCENE3D_ELECTRON_EXECUTABLE"
 	readonly source_binary
 	[[ -x "$source_binary" ]] || fail "source-built JScene3D Editor not found: $source_binary"
-
-	bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$source_application/Contents/Info.plist")"
-	readonly bundle_identifier
-	if [[ -z "${JSCENE3D_ELECTRON_EXECUTABLE:-}" ]]; then
-		[[ "$bundle_identifier" == "com.jscene3d.editor" ]] || fail "unexpected built application bundle identifier: $bundle_identifier"
-	fi
 fi
 
 echo "JScene3D source launch configuration"
@@ -300,6 +312,7 @@ echo "  Metadata source:    $metadata_path_source"
 echo "  Renderer runtime version: $renderer_runtime_version"
 echo "  Renderer runtime source:  $renderer_runtime_source"
 echo "  Renderer runtime:         $renderer_runtime_directory"
+echo "  Authoring Java:           $java_executable"
 echo "  Renderer Java:            $renderer_java_executable"
 if [[ -n "$project_runtime_artifact_path" ]]; then
 	echo "  Project runtime artifacts: $project_runtime_artifact_path"
@@ -308,7 +321,11 @@ else
 fi
 echo "  Electron executable:      $source_binary"
 echo "  Isolated profile:   $profile"
-echo "  Restart command:    ./scripts/jscene3d/launch-source-editor.sh --profile '$profile'"
+if [[ "$use_authoring_environment" == true ]]; then
+	echo "  Restart command:    JSCENE3D_ELECTRON_EXECUTABLE='$source_binary' ./scripts/jscene3d/launch-source-editor.sh --use-authoring-environment --profile '$profile'"
+else
+	echo "  Restart command:    JSCENE3D_ELECTRON_EXECUTABLE='$source_binary' ./scripts/jscene3d/launch-source-editor.sh --profile '$profile'"
+fi
 
 if [[ "$check_only" == true ]]; then
 	echo "Configuration is valid; the editor was not launched."
@@ -321,6 +338,7 @@ fi
 exec env -u ELECTRON_RUN_AS_NODE \
 	JSCENE3D_AUTHORING_SERVICE_MODULE_PATH="$module_path" \
 	JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH="$extension_metadata_path" \
+	JSCENE3D_JAVA_EXECUTABLE="$java_executable" \
 	JSCENE3D_RENDERER_RUNTIME_DIRECTORY="$renderer_runtime_directory" \
 	JSCENE3D_RENDERER_JAVA_EXECUTABLE="$renderer_java_executable" \
 	JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH="$project_runtime_artifact_path" \

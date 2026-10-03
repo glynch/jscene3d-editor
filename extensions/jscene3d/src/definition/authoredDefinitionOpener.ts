@@ -8,7 +8,13 @@ import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredD
 import { definitionResourceUri } from './definitionResource';
 
 export const authoredDefinitionViewType = 'jscene3d.authoredDefinition';
+export const sceneDefinitionViewType = 'jscene3d.sceneDefinition';
 export const openDefinitionCommandId = 'jscene3d.openDefinition';
+
+/** Returns whether a native tab belongs to either JScene3D definition editor. */
+export function isDefinitionViewType(viewType: string): boolean {
+	return viewType === authoredDefinitionViewType || viewType === sceneDefinitionViewType;
+}
 
 /** Expected outcome of requesting and opening one authored definition. */
 export type AuthoredDefinitionOpenOutcome =
@@ -36,7 +42,8 @@ export class AuthoredDefinitionOpener {
 	constructor(
 		private readonly client: DefinitionOpenClient,
 		private readonly state: AuthoredDefinitionState,
-		private readonly openWith: (resource: string, viewType: string) => Promise<unknown>
+		private readonly openWith: (resource: string, viewType: string) => Promise<unknown>,
+		private readonly logger?: { appendLine(message: string): void }
 	) { }
 
 	async open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
@@ -61,7 +68,17 @@ export class AuthoredDefinitionOpener {
 			)
 			: this.state.update(recovered.resource, result.definition);
 		const resource = mapping.resource;
-		await this.openWith(resource, authoredDefinitionViewType);
+		if (result.definition.context.kind === 'scene-definition') {
+			this.logger?.appendLine(
+				`[${new Date().toISOString()}] [Scene View] editor requested for ${assetId} revision ${result.definition.revision}`
+			);
+		}
+		await this.openWith(
+			resource,
+			result.definition.context.kind === 'scene-definition'
+				? sceneDefinitionViewType
+				: authoredDefinitionViewType
+		);
 		return { status: 'opened', resource: mapping, diagnostics: result.diagnostics };
 	}
 }

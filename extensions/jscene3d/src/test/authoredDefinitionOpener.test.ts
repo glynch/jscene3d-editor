@@ -10,23 +10,41 @@ import { definitionResourceUri } from '../definition/definitionResource';
 import { ConnectionScopedResult, DefinitionOpenResultDto, DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authored definition opener', () => {
-	test('opens the generation-scoped resource through the JScene3D custom view type', async () => {
+	test('opens a Scene through its semantic Scene editor identity', async () => {
 		const state = new AuthoredDefinitionState();
 		state.setProjectGeneration(4);
 		const opened: Array<{ resource: string; viewType: string }> = [];
 		const opener = new AuthoredDefinitionOpener(
 			{ openDefinition: async () => connected(success(4, definition('definition-a'))) },
 			state,
-			async (resource, viewType) => { opened.push({ resource, viewType }); }
+			async (resource, viewType) => {
+				assert.strictEqual(state.resolveAsset(4, 'definition-a')?.resource, resource);
+				opened.push({ resource, viewType });
+			}
 		);
 
 		const outcome = await opener.open(4, 'definition-a');
 
 		assert.strictEqual(outcome.status, 'opened');
 		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.assetId : undefined, 'definition-a');
-		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
+		assert.strictEqual(opened[0].viewType, 'jscene3d.sceneDefinition');
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dGeneration'), '4');
+	});
+
+	test('keeps an EntityDefinition in the generic authored-definition editor', async () => {
+		const state = new AuthoredDefinitionState();
+		state.setProjectGeneration(4);
+		const opened: Array<{ resource: string; viewType: string }> = [];
+		const opener = new AuthoredDefinitionOpener(
+			{ openDefinition: async () => connected(success(4, definition('definition-a', 'entity-definition'))) },
+			state,
+			async (resource, viewType) => { opened.push({ resource, viewType }); }
+		);
+
+		await opener.open(4, 'definition-a');
+
+		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
 	});
 
 	test('preserves an expected rejection and its diagnostics without opening an editor', async () => {
@@ -107,12 +125,15 @@ function connected(
 	return { connectionGeneration, result };
 }
 
-function definition(assetId: string): DefinitionSnapshotDto {
+function definition(
+	assetId: string,
+	kind: 'scene-definition' | 'entity-definition' = 'scene-definition'
+): DefinitionSnapshotDto {
 	return {
 		revision: 0,
 		context: {
 			assetId,
-			kind: 'scene-definition',
+			kind,
 			origin: 'authored',
 			editable: true,
 			source: 'file:///projects/game/worlds/main.scene.json',

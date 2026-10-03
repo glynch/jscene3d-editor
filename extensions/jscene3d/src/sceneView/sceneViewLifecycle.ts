@@ -34,11 +34,16 @@ export interface SceneViewportLaunch {
 
 /** Workbench boundary for opening, updating, and closing one native Scene View. */
 export interface SceneViewHost {
-	open(launch: SceneViewportLaunch): Promise<void>;
+	open(ownerResource: string, launch: SceneViewportLaunch): Promise<void>;
 	update(viewportId: string, snapshot: SceneViewSnapshotDto): Promise<boolean | undefined>;
 	close(viewportId: string): Promise<void>;
 	publishDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
 }
+
+/** Result used by the initial Scene editor to retain or replace its projection presentation. */
+export type SceneViewSynchronizationOutcome =
+	| { readonly status: 'not-applicable' | 'unchanged' | 'obsolete' | 'opened' | 'updated' }
+	| { readonly status: 'failed'; readonly reason: string };
 
 interface SceneViewSession {
 	readonly viewportId: string;
@@ -60,12 +65,20 @@ export class SceneViewLifecycle {
 		private readonly createViewportId: () => string = randomUUID
 	) { }
 
-	async synchronize(definition: AuthoredDefinitionResource): Promise<void> {
+	async synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome> {
 		if (definition.snapshot.context.kind !== 'scene-definition') {
-			return;
+			return { status: 'not-applicable' };
+		}
+		const retained = this.sessions.get(definition.resource);
+		if (retained !== undefined
+			&& retained.projectGeneration === definition.projectGeneration
+			&& retained.sceneAssetId === definition.assetId
+			&& retained.revision >= definition.snapshot.revision) {
+			return { status: 'unchanged' };
 		}
 		const token = (this.requestTokens.get(definition.resource) ?? 0) + 1;
 		this.requestTokens.set(definition.resource, token);
+		this.log(`projection requested for ${definition.assetId} revision ${definition.snapshot.revision}`);
 		let scoped: ConnectionScopedResult<SceneViewReadResultDto>;
 		try {
 			scoped = await this.client.readSceneView(
@@ -74,13 +87,15 @@ export class SceneViewLifecycle {
 				definition.snapshot.revision
 			);
 		} catch (error) {
-			this.logger.appendLine(`Safe Scene View projection failed: ${errorMessage(error)}`);
-			return;
+			const reason = errorMessage(error);
+			this.log(`projection failed for ${definition.assetId}: ${reason}`);
+			return { status: 'failed', reason };
 		}
 		if (this.requestTokens.get(definition.resource) !== token) {
-			return;
+			return { status: 'obsolete' };
 		}
 		const result = scoped.result;
+		this.log(`projection completed for ${definition.assetId} revision ${definition.snapshot.revision}: ${result.outcome ?? result.failureCode ?? 'rejected'}`);
 		this.host.publishDiagnostics(result.diagnostics);
 		if (!result.accepted
 			|| result.projectGeneration !== definition.projectGeneration
@@ -89,14 +104,15 @@ export class SceneViewLifecycle {
 			|| result.outcome !== 'projected'
 			|| result.snapshot === null
 			|| result.launch === null) {
-			return;
+			return { status: 'failed', reason: projectionFailureReason(result) };
 		}
 
 		const existing = this.sessions.get(definition.resource);
 		if (existing === undefined) {
 			const viewportId = this.createViewportId();
 			try {
-				await this.host.open({
+				this.log(`renderer launch requested for ${definition.assetId} revision ${result.snapshot.revision}`);
+				await this.host.open(definition.resource, {
 					kind: 'scene',
 					viewportId,
 					connectionGeneration: scoped.connectionGeneration,
@@ -106,12 +122,13 @@ export class SceneViewLifecycle {
 					...result.launch
 				});
 			} catch (error) {
-				this.logger.appendLine(`Safe Scene View failed to open: ${errorMessage(error)}`);
-				return;
+				const reason = errorMessage(error);
+				this.log(`renderer launch failed for ${definition.assetId}: ${reason}`);
+				return { status: 'failed', reason };
 			}
 			if (this.requestTokens.get(definition.resource) !== token) {
 				await this.host.close(viewportId);
-				return;
+				return { status: 'obsolete' };
 			}
 			this.sessions.set(definition.resource, {
 				viewportId,
@@ -120,21 +137,22 @@ export class SceneViewLifecycle {
 				sceneAssetId: result.sceneAssetId,
 				revision: result.snapshot.revision
 			});
-			return;
+			return { status: 'opened' };
 		}
 		if (!sameOwner(existing, scoped.connectionGeneration, result.projectGeneration, result.sceneAssetId)) {
 			await this.close(definition.resource);
 			return this.synchronize(definition);
 		}
 		if (result.snapshot.revision <= existing.revision) {
-			return;
+			return { status: 'unchanged' };
 		}
 		let updated: boolean | undefined;
 		try {
 			updated = await this.host.update(existing.viewportId, result.snapshot);
 		} catch (error) {
-			this.logger.appendLine(`Safe Scene View failed to update: ${errorMessage(error)}`);
-			return;
+			const reason = errorMessage(error);
+			this.log(`renderer update failed for ${definition.assetId}: ${reason}`);
+			return { status: 'failed', reason };
 		}
 		if (updated === undefined) {
 			this.sessions.delete(definition.resource);
@@ -142,7 +160,9 @@ export class SceneViewLifecycle {
 		}
 		if (this.requestTokens.get(definition.resource) === token) {
 			existing.revision = result.snapshot.revision;
+			return { status: 'updated' };
 		}
+		return { status: 'obsolete' };
 	}
 
 	async close(resource: string): Promise<void> {
@@ -150,6 +170,7 @@ export class SceneViewLifecycle {
 		const session = this.sessions.get(resource);
 		this.sessions.delete(resource);
 		if (session !== undefined) {
+			this.log(`viewport disposed for ${session.sceneAssetId}`);
 			await this.host.close(session.viewportId);
 		}
 	}
@@ -157,6 +178,10 @@ export class SceneViewLifecycle {
 	async closeAll(): Promise<void> {
 		const resources = Array.from(this.sessions.keys());
 		await Promise.all(resources.map(resource => this.close(resource)));
+	}
+
+	private log(message: string): void {
+		this.logger.appendLine(`[${new Date().toISOString()}] [Scene View] ${message}`);
 	}
 }
 
@@ -173,4 +198,12 @@ function sameOwner(
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function projectionFailureReason(result: SceneViewReadResultDto): string {
+	if (!result.accepted) {
+		return `Scene projection was rejected: ${result.failureCode}`;
+	}
+	const diagnostic = result.diagnostics.find(candidate => candidate.severity === 'error') ?? result.diagnostics[0];
+	return diagnostic?.message ?? `Scene projection did not complete: ${result.outcome ?? 'unknown outcome'}`;
 }

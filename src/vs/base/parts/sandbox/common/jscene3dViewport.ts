@@ -121,6 +121,7 @@ export type IJScene3DViewportLaunch = IJScene3DGameViewportLaunch | IJScene3DSce
 export interface IJScene3DViewportBridge {
 	registerPane(
 		paneId: string,
+		onReady: (session: IJScene3DViewportSessionIdentity) => void,
 		onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
 		onFailure: (failure: IJScene3DViewportFailure) => void
 	): void;

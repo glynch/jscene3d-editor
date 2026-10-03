@@ -25,7 +25,44 @@ suite('JScene3D safe Scene View lifecycle', () => {
 		assert.strictEqual(host.opened.length, 1);
 		assert.strictEqual(host.opened[0].kind, 'scene');
 		assert.strictEqual(host.opened[0].snapshot.revision, 0);
+		assert.deepStrictEqual(host.ownerResources, ['resource:scene-a']);
 		assert.deepStrictEqual(host.updated, [{ viewportId: 'viewport-1', revision: 1 }]);
+	});
+
+	test('closing and reopening a Scene creates a fresh renderer session', async () => {
+		const host = new TestHost();
+		const lifecycle = new SceneViewLifecycle(new TestClient(), host, new TestLogger(), sequenceIds());
+
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+		await lifecycle.close('resource:scene-a');
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+
+		assert.deepStrictEqual(host.opened.map(launch => launch.viewportId), ['viewport-1', 'viewport-2']);
+		assert.deepStrictEqual(host.closed, ['viewport-1']);
+	});
+
+	test('reactivating an unchanged open Scene neither reprojects nor relaunches it', async () => {
+		const client = new TestClient();
+		const host = new TestHost();
+		const lifecycle = new SceneViewLifecycle(client, host, new TestLogger(), sequenceIds());
+
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+
+		assert.strictEqual(client.requests.length, 1);
+		assert.strictEqual(host.opened.length, 1);
+		assert.deepStrictEqual(host.updated, []);
+	});
+
+	test('project invalidation closes every retained Scene session', async () => {
+		const host = new TestHost();
+		const lifecycle = new SceneViewLifecycle(new TestClient(), host, new TestLogger(), sequenceIds());
+
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+		await lifecycle.synchronize(definition('scene-b', 'scene-definition', 0));
+		await lifecycle.closeAll();
+
+		assert.deepStrictEqual(host.closed, ['viewport-1', 'viewport-2']);
 	});
 
 	test('keeps concurrent Scene documents independent and closes only their owned viewport', async () => {
@@ -51,13 +88,53 @@ suite('JScene3D safe Scene View lifecycle', () => {
 		const newRequest = lifecycle.synchronize(definition('scene-a', 'scene-definition', 1));
 
 		client.resolve(1, projected('scene-a', 1));
-		await newRequest;
+		const newOutcome = await newRequest;
 		client.resolve(0, projected('scene-a', 0));
-		await oldRequest;
+		const oldOutcome = await oldRequest;
 
-		assert.strictEqual(host.opened.length, 1);
-		assert.strictEqual(host.opened[0].snapshot.revision, 1);
-		assert.deepStrictEqual(host.updated, []);
+		assert.deepStrictEqual({
+			newOutcome,
+			oldOutcome,
+			openedRevisions: host.opened.map(launch => launch.snapshot.revision),
+			updated: host.updated
+		}, {
+			newOutcome: { status: 'opened' },
+			oldOutcome: { status: 'obsolete' },
+			openedRevisions: [1],
+			updated: []
+		});
+	});
+
+	test('returns a useful failure while retaining timestamped projection diagnostics', async () => {
+		const logger = new TestLogger();
+		const lifecycle = new SceneViewLifecycle({
+			readSceneView: async () => ({
+				connectionGeneration: 'connection-a',
+				result: {
+					accepted: false,
+					projectGeneration: null,
+					sceneAssetId: 'scene-a',
+					requestedRevision: 0,
+					outcome: null,
+					currentRevision: null,
+					snapshot: null,
+					launch: null,
+					diagnostics: [],
+					failureCode: 'scene-view.invalid'
+				}
+			})
+		}, new TestHost(), logger, sequenceIds());
+
+		const outcome = await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+
+		assert.deepStrictEqual(outcome, {
+			status: 'failed',
+			reason: 'Scene projection was rejected: scene-view.invalid'
+		});
+		assert.deepStrictEqual(logger.messages.map(message => message.replace(/^\[[^\]]+\] /, '')), [
+			'[Scene View] projection requested for scene-a revision 0',
+			'[Scene View] projection completed for scene-a revision 0: scene-view.invalid'
+		]);
 	});
 
 	test('reopens a Scene View that the user closed independently', async () => {
@@ -98,11 +175,13 @@ class DeferredClient implements SceneViewAuthoringClient {
 
 class TestHost implements SceneViewHost {
 	readonly opened: SceneViewportLaunch[] = [];
+	readonly ownerResources: string[] = [];
 	readonly updated: { viewportId: string; revision: number }[] = [];
 	readonly closed: string[] = [];
 	viewportAvailable = true;
 
-	open(launch: SceneViewportLaunch): Promise<void> {
+	open(ownerResource: string, launch: SceneViewportLaunch): Promise<void> {
+		this.ownerResources.push(ownerResource);
 		this.opened.push(launch);
 		return Promise.resolve();
 	}
@@ -125,7 +204,8 @@ class TestHost implements SceneViewHost {
 }
 
 class TestLogger {
-	appendLine(_message: string): void { }
+	readonly messages: string[] = [];
+	appendLine(message: string): void { this.messages.push(message); }
 }
 
 function definition(assetId: string, kind: 'scene-definition' | 'entity-definition', revision: number): AuthoredDefinitionResource {

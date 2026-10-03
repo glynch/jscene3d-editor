@@ -138,10 +138,17 @@
 		],
 		"customEditors": [
 			{
+				"viewType": "jscene3d.sceneDefinition",
+				"displayName": "%customEditor.sceneDefinition%",
+				"selector": [
+					{ "filenamePattern": "*.scene.json" }
+				],
+				"priority": "default"
+			},
+			{
 				"viewType": "jscene3d.authoredDefinition",
 				"displayName": "%customEditor.authoredDefinition%",
 				"selector": [
-					{ "filenamePattern": "*.scene.json" },
 					{ "filenamePattern": "*.entity.json" }
 				],
 				"priority": "option"
