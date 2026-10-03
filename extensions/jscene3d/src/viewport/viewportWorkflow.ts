@@ -33,6 +33,7 @@ export interface ViewportWorkflowHost {
 
 /** Closed launch value accepted by the trusted Code OSS native viewport bridge. */
 export interface ProjectViewportLaunch {
+	readonly kind: 'game';
 	readonly viewportId: string;
 	readonly connectionGeneration: string;
 	readonly projectGeneration: number;
@@ -94,6 +95,7 @@ export class ViewportWorkflow {
 
 		try {
 			await this.host.open({
+				kind: 'game',
 				viewportId: this.createViewportId(),
 				connectionGeneration: scoped.connectionGeneration,
 				...result.launch

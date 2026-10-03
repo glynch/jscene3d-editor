@@ -9,6 +9,11 @@ import { AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './author
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceKey } from './definitionResource';
 
+interface DefinitionSceneViewLifecycle {
+	synchronize(definition: AuthoredDefinitionResource): Promise<void>;
+	close(resource: string): Promise<void>;
+}
+
 const restrictiveContentSecurityPolicy = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\';">';
 
 /** Native editable document whose semantic state remains owned by the Java working copy. */
@@ -34,7 +39,8 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 	constructor(
 		private readonly state: AuthoredDefinitionState,
 		private readonly lifecycle: AuthoredDefinitionLifecycle,
-		private readonly currentProjectGeneration: () => number | undefined
+		private readonly currentProjectGeneration: () => number | undefined,
+		private readonly sceneViews?: DefinitionSceneViewLifecycle
 	) { }
 
 	async openCustomDocument(
@@ -53,6 +59,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 		}
 		const document = new AuthoredDefinitionDocument(uri, this.state.resolve(resource), () => {
 			this.documents.delete(resource);
+			void this.sceneViews?.close(resource);
 			this.state.unregister(resource);
 		});
 		this.documents.set(resource, document);
@@ -68,6 +75,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 		}
 		const context = definition.snapshot.context;
 		webviewPanel.webview.html = documentHtml(context.label, context.kind, context.editable);
+		void this.sceneViews?.synchronize(definition);
 	}
 
 	acceptInspectorMutation(

@@ -11,6 +11,7 @@ suite('JScene3DViewportFrameRouter', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 	test('accepts only complete Java-prepared project launches', () => {
 		const launch = {
+			kind: 'game',
 			viewportId: 'viewport-a',
 			connectionGeneration: 'connection-a',
 			projectGeneration: 7,
@@ -27,6 +28,65 @@ suite('JScene3DViewportFrameRouter', () => {
 		assert.strictEqual(isViewportLaunch(launch), true);
 		assert.strictEqual(isViewportLaunch({ ...launch, projectGeneration: 0 }), false);
 		assert.strictEqual(isViewportLaunch({ ...launch, runtimeArtifacts: ['/runtime/application.jar', ''] }), false);
+		const { runtimeArtifacts: _runtimeArtifacts, ...base } = launch;
+		const sceneLaunch = {
+			...base,
+			kind: 'scene',
+			snapshot: { sceneAssetId: launch.sceneAssetId, revision: 3, occurrences: [] }
+		};
+		assert.strictEqual(isViewportLaunch(sceneLaunch), true);
+		assert.strictEqual(isViewportLaunch({ ...sceneLaunch, runtimeArtifacts: ['/runtime/application.jar'] }), false);
+		assert.strictEqual(isViewportLaunch({ ...sceneLaunch, snapshot: { ...sceneLaunch.snapshot, sceneAssetId: 'stale' } }), false);
+
+		const occurrence = { rootDefinitionAssetId: launch.sceneAssetId, entityPath: ['entity-a'] };
+		const identity = {
+			occurrence,
+			scope: { definitionAssetId: 'definition-a', anchor: occurrence },
+			authoredEntityId: 'entity-a',
+			componentId: 'component-a'
+		};
+		const richSceneLaunch = {
+			...sceneLaunch,
+			snapshot: {
+				...sceneLaunch.snapshot,
+				occurrences: [{
+					occurrence,
+					parent: null,
+					authoredAssetId: 'definition-a',
+					authoredSource: 'file:///project/scene.json',
+					authoredEntityId: 'entity-a',
+					name: 'Entity',
+					enabled: true,
+					transform: {
+						identity,
+						position: { x: '1', y: '2.5', z: '-3' },
+						orientationDegrees: { x: '0', y: '90', z: '0' },
+						scale: { x: '1', y: '1', z: '1' }
+					},
+					meshes: [{
+						identity,
+						mesh: { kind: 'project', locator: 'mesh', projectPath: '/project/mesh.json' },
+						material: { kind: 'asset', locator: 'material', projectPath: null },
+						visible: true
+					}],
+					directionalLight: null
+				}]
+			}
+		};
+		assert.strictEqual(isViewportLaunch(richSceneLaunch), true);
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: {
+				...richSceneLaunch.snapshot,
+				occurrences: [{
+					...richSceneLaunch.snapshot.occurrences[0],
+					transform: {
+						...richSceneLaunch.snapshot.occurrences[0].transform,
+						position: { x: '0x10', y: '0', z: '0' }
+					}
+				}]
+			}
+		}), false);
 	});
 
 	test('rejects malformed identities and frames from another session', async () => {

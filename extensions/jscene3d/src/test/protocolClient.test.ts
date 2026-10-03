@@ -17,12 +17,13 @@ suite('JScene3D authoring protocol client', () => {
 		const initialization = client.initialize('fr-CA');
 		transport.respond(fixture('initialize-response.json'));
 		assert.deepStrictEqual(await initialization, {
-			protocolVersion: { major: 2, minor: 1 },
+			protocolVersion: { major: 2, minor: 2 },
 			processKind: 'authoring',
 			serviceVersion: '0.1.0-SNAPSHOT',
 			engineVersion: '0.1.0-SNAPSHOT',
 			capabilities: [
-				'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'definition/open', 'definition/mutate',
+				'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'sceneView/read',
+				'definition/open', 'definition/mutate',
 				'definition/undo', 'definition/redo', 'definition/save', 'definition/revert', 'definition/backup',
 				'definition/restoreBackup', 'inspector/read', 'service/shutdown'
 			]
@@ -31,7 +32,7 @@ suite('JScene3D authoring protocol client', () => {
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'initialize',
-			params: { protocolVersion: { major: 2, minor: 1 }, clientLanguage: 'fr-CA' }
+			params: { protocolVersion: { major: 2, minor: 2 }, clientLanguage: 'fr-CA' }
 		});
 	});
 
@@ -64,6 +65,42 @@ suite('JScene3D authoring protocol client', () => {
 				sceneAssetId: 'world:a'
 			}
 		});
+	});
+
+	test('reads a revision-scoped runtime-free Scene View snapshot', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const read = client.readSceneView(7, 'scene:a', 4);
+		const result = {
+			accepted: true,
+			projectGeneration: 7,
+			sceneAssetId: 'scene:a',
+			requestedRevision: 4,
+			outcome: 'projected',
+			currentRevision: 4,
+			snapshot: { sceneAssetId: 'scene:a', revision: 4, occurrences: [] },
+			launch: {
+				projectId: 'project-a',
+				projectName: 'Project A',
+				projectRoot: '/projects/a',
+				publishedContentRoot: '/projects/a/.jscene3d/published',
+				engineVersion: '0.1.0-SNAPSHOT',
+				sceneName: 'Scene A'
+			},
+			diagnostics: [],
+			failureCode: null
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await read, { connectionGeneration: 'connection-1', result });
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'sceneView/read', params: {
+				expectedProjectGeneration: 7,
+				sceneAssetId: 'scene:a',
+				expectedDefinitionRevision: 4
+			}
+		});
+		assert.strictEqual(Object.keys(result.launch).includes('runtimeArtifacts'), false);
 	});
 
 	test('uses one protocol-method authority for required capabilities and requests', async () => {

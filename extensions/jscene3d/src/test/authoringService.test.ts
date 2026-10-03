@@ -291,12 +291,12 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 				this.initializationLanguages.push(requiredString(jsonObject(message.params).clientLanguage));
 				if (this.respondToInitialize) {
 					this.respond(id, {
-						protocolVersion: { major: 2, minor: 1 },
+						protocolVersion: { major: 2, minor: 2 },
 						processKind: 'authoring',
 						serviceVersion: 'test',
 						engineVersion: 'test',
 						capabilities: [
-							'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'definition/open',
+							'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'sceneView/read', 'definition/open',
 							'definition/mutate', 'definition/undo', 'definition/redo',
 							'definition/save', 'definition/revert', 'definition/backup',
 							'definition/restoreBackup',

@@ -6,13 +6,12 @@
 import * as vscode from 'vscode';
 import { revealJScene3DWorkspace } from '../hierarchy/hierarchyViewModel';
 import { ProjectLocation } from '../project/projectLocation';
-import { publishProjectDiagnostics } from '../project/projectDiagnostics';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { AuthoringWorkflowHost, AuthoringWorkflowNotification } from './authoringWorkflow';
 
 /** Adapts Code OSS project selection, Problems, localization, and notifications to the workflow. */
 export class VsCodeAuthoringWorkflowHost implements AuthoringWorkflowHost {
-	constructor(private readonly definitionDiagnostics: vscode.DiagnosticCollection) { }
+	constructor(private readonly publishDiagnostics: (diagnostics: readonly ProjectDiagnosticDto[]) => void) { }
 
 	async selectProjectDescriptor(): Promise<ProjectLocation | undefined> {
 		const selections = await vscode.window.showOpenDialog({
@@ -27,7 +26,7 @@ export class VsCodeAuthoringWorkflowHost implements AuthoringWorkflowHost {
 	}
 
 	publishDefinitionDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void {
-		publishProjectDiagnostics(this.definitionDiagnostics, diagnostics);
+		this.publishDiagnostics(diagnostics);
 	}
 
 	async revealProjectWorkspace(): Promise<void> {

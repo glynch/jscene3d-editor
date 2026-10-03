@@ -983,9 +983,8 @@ The extension entry point should primarily perform composition and lifecycle wir
 Typical responsibilities include:
 
 - creating long-lived services;
-- registering commands;
-- registering views/providers;
-- registering disposables;
+- invoking feature registrations;
+- registering top-level services and feature disposables;
 - connecting high-level state changes;
 - disposing resources on extension shutdown.
 
@@ -1000,6 +999,15 @@ It should not contain substantial implementations of:
 - Inspector logic.
 
 Activation should make the component relationships visible rather than hiding the implementation inside callbacks.
+
+When adding or materially extending Project, Definitions, Hierarchy, Inspector,
+Scene View, or Game View, keep that feature's adapters, diagnostics, listeners,
+commands, and disposal in its feature or registration modules. `extension.ts`
+should invoke those registrations and coordinate only genuinely shared or
+cross-feature lifecycle boundaries.
+
+Future work must extend the relevant feature registration rather than wiring
+new feature behavior directly into `extension.ts`.
 
 ### 7.5 Keep Protocol Code Independent of VS Code Presentation
 
@@ -4278,10 +4286,9 @@ Its primary responsibilities are:
 
 - create extension-lifetime resources;
 - connect dependencies;
-- register commands;
-- register views and providers;
-- establish context keys;
-- register disposal.
+- invoke feature registrations;
+- compose genuine cross-feature lifecycle boundaries;
+- register returned services and feature disposables.
 
 Do not place feature implementations directly in `activate()`.
 

@@ -5,7 +5,7 @@
 
 import { Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
 import { IJScene3DViewportFailure, IJScene3DViewportFrameIdentity } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
@@ -37,6 +37,7 @@ export class JScene3DViewportEditorPane extends EditorPane {
 	private resizeObserver: ResizeObserver | undefined;
 	private resizeTimer: number | undefined;
 	private inputDisposeListener: IDisposable | undefined;
+	private readonly sceneViewUpdateListener = this._register(new MutableDisposable<IDisposable>());
 	private readonly stopGate = new JScene3DViewportStopGate();
 	private registered = false;
 	private startToken = 0;
@@ -113,6 +114,12 @@ export class JScene3DViewportEditorPane extends EditorPane {
 
 	override async setInput(input: JScene3DViewportEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		await super.setInput(input, options, context, token);
+		this.sceneViewUpdateListener.value = input.onDidChangeSceneViewSnapshot(snapshot => {
+			const session = this.model.sessionIdentity;
+			if (session) {
+				jscene3dViewport.updateSceneView(this.paneId, session, snapshot);
+			}
+		});
 		let tokenValue = ++this.startToken;
 		if (token.isCancellationRequested || !this.canvas) {
 			return;
@@ -164,6 +171,7 @@ export class JScene3DViewportEditorPane extends EditorPane {
 	}
 
 	override clearInput(): void {
+		this.sceneViewUpdateListener.clear();
 		void this.stop(false);
 		super.clearInput();
 	}

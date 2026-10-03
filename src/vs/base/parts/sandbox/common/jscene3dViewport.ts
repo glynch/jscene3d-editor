@@ -20,8 +20,7 @@ export interface IJScene3DViewportFailure {
 	readonly message: string;
 }
 
-/** Java-prepared semantic identity and runtime inputs for one project viewport. */
-export interface IJScene3DViewportLaunch {
+interface IJScene3DViewportLaunchBase {
 	readonly viewportId: string;
 	readonly connectionGeneration: string;
 	readonly projectGeneration: number;
@@ -32,8 +31,92 @@ export interface IJScene3DViewportLaunch {
 	readonly engineVersion: string;
 	readonly sceneAssetId: string;
 	readonly sceneName: string;
+}
+
+/** Java-prepared semantic identity and runtime inputs for one isolated Game View. */
+export interface IJScene3DGameViewportLaunch extends IJScene3DViewportLaunchBase {
+	readonly kind: 'game';
 	readonly runtimeArtifacts: readonly string[];
 }
+
+/** Stable identity of one expanded Scene composition occurrence. */
+export interface IJScene3DSceneViewOccurrence {
+	readonly rootDefinitionAssetId: string;
+	readonly entityPath: readonly string[];
+}
+
+/** Definition scope that owns a projected component occurrence. */
+export interface IJScene3DSceneViewScope {
+	readonly definitionAssetId: string;
+	readonly anchor: IJScene3DSceneViewOccurrence;
+}
+
+/** Stable reverse-lookup identity for one projected built-in component. */
+export interface IJScene3DSceneViewComponentIdentity {
+	readonly occurrence: IJScene3DSceneViewOccurrence;
+	readonly scope: IJScene3DSceneViewScope;
+	readonly authoredEntityId: string;
+	readonly componentId: string;
+}
+
+/** Exact decimal three-component vector. */
+export interface IJScene3DSceneViewVector3 {
+	readonly x: string;
+	readonly y: string;
+	readonly z: string;
+}
+
+/** Unrealized resource reference safe for transport to the editor renderer. */
+export interface IJScene3DSceneViewResourceReference {
+	readonly kind: 'project' | 'asset' | 'import';
+	readonly locator: string;
+	readonly projectPath: string | null;
+}
+
+/** Complete built-in visual state for one expanded Scene occurrence. */
+export interface IJScene3DSceneViewVisualOccurrence {
+	readonly occurrence: IJScene3DSceneViewOccurrence;
+	readonly parent: IJScene3DSceneViewOccurrence | null;
+	readonly authoredAssetId: string;
+	readonly authoredSource: string;
+	readonly authoredEntityId: string;
+	readonly name: string | null;
+	readonly enabled: boolean;
+	readonly transform: {
+		readonly identity: IJScene3DSceneViewComponentIdentity;
+		readonly position: IJScene3DSceneViewVector3;
+		readonly orientationDegrees: IJScene3DSceneViewVector3;
+		readonly scale: IJScene3DSceneViewVector3;
+	} | null;
+	readonly meshes: readonly {
+		readonly identity: IJScene3DSceneViewComponentIdentity;
+		readonly mesh: IJScene3DSceneViewResourceReference;
+		readonly material: IJScene3DSceneViewResourceReference;
+		readonly visible: boolean;
+	}[];
+	readonly directionalLight: {
+		readonly identity: IJScene3DSceneViewComponentIdentity;
+		readonly color: IJScene3DSceneViewVector3;
+		readonly intensity: string;
+		readonly target: IJScene3DSceneViewVector3;
+	} | null;
+}
+
+/** Complete Java-projected state for one exact authored Scene revision. */
+export interface IJScene3DSceneViewSnapshot {
+	readonly sceneAssetId: string;
+	readonly revision: number;
+	readonly occurrences: readonly IJScene3DSceneViewVisualOccurrence[];
+}
+
+/** Runtime-free launch for one safe authored Scene View. */
+export interface IJScene3DSceneViewportLaunch extends IJScene3DViewportLaunchBase {
+	readonly kind: 'scene';
+	readonly snapshot: IJScene3DSceneViewSnapshot;
+}
+
+/** Trusted launch contract for either an isolated Game View or runtime-free Scene View. */
+export type IJScene3DViewportLaunch = IJScene3DGameViewportLaunch | IJScene3DSceneViewportLaunch;
 
 export interface IJScene3DViewportBridge {
 	registerPane(
@@ -43,6 +126,7 @@ export interface IJScene3DViewportBridge {
 	): void;
 	unregisterPane(paneId: string): void;
 	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
+	updateSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot): void;
 	resize(paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number): void;
 	pause(paneId: string, session: IJScene3DViewportSessionIdentity): void;
 	resume(paneId: string, session: IJScene3DViewportSessionIdentity): void;
@@ -84,8 +168,117 @@ export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaun
 		&& nonEmpty(candidate.engineVersion)
 		&& nonEmpty(candidate.sceneAssetId)
 		&& nonEmpty(candidate.sceneName)
+		&& (isGameLaunch(candidate) || isSceneLaunch(candidate));
+}
+
+function isGameLaunch(candidate: Partial<IJScene3DViewportLaunch>): candidate is IJScene3DGameViewportLaunch {
+	return candidate.kind === 'game'
 		&& Array.isArray(candidate.runtimeArtifacts)
 		&& candidate.runtimeArtifacts.every(nonEmpty);
+}
+
+function isSceneLaunch(candidate: Partial<IJScene3DViewportLaunch>): candidate is IJScene3DSceneViewportLaunch {
+	return candidate.kind === 'scene'
+		&& !('runtimeArtifacts' in candidate)
+		&& isSceneViewSnapshot(candidate.snapshot)
+		&& candidate.snapshot.sceneAssetId === candidate.sceneAssetId;
+}
+
+/** Returns whether an IPC value is a complete runtime-free Scene View snapshot. */
+export function isSceneViewSnapshot(value: unknown): value is IJScene3DSceneViewSnapshot {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewSnapshot>;
+	return nonEmpty(candidate.sceneAssetId)
+		&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
+		&& Array.isArray(candidate.occurrences)
+		&& candidate.occurrences.every(isSceneViewVisualOccurrence);
+}
+
+function isSceneViewVisualOccurrence(value: unknown): value is IJScene3DSceneViewVisualOccurrence {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewVisualOccurrence>;
+	return isSceneViewOccurrence(candidate.occurrence)
+		&& (candidate.parent === null || isSceneViewOccurrence(candidate.parent))
+		&& nonEmpty(candidate.authoredAssetId)
+		&& nonEmpty(candidate.authoredSource)
+		&& nonEmpty(candidate.authoredEntityId)
+		&& (candidate.name === null || typeof candidate.name === 'string')
+		&& typeof candidate.enabled === 'boolean'
+		&& (candidate.transform === null || isSceneViewTransform(candidate.transform))
+		&& Array.isArray(candidate.meshes) && candidate.meshes.every(isSceneViewMesh)
+		&& (candidate.directionalLight === null || isSceneViewDirectionalLight(candidate.directionalLight));
+}
+
+function isSceneViewOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewOccurrence>;
+	return nonEmpty(candidate.rootDefinitionAssetId)
+		&& Array.isArray(candidate.entityPath) && candidate.entityPath.every(nonEmpty);
+}
+
+function isSceneViewComponentIdentity(value: unknown): value is IJScene3DSceneViewComponentIdentity {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewComponentIdentity>;
+	return isSceneViewOccurrence(candidate.occurrence)
+		&& !!candidate.scope && typeof candidate.scope === 'object'
+		&& nonEmpty(candidate.scope.definitionAssetId)
+		&& isSceneViewOccurrence(candidate.scope.anchor)
+		&& nonEmpty(candidate.authoredEntityId)
+		&& nonEmpty(candidate.componentId);
+}
+
+function isSceneViewVector3(value: unknown): value is IJScene3DSceneViewVector3 {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewVector3>;
+	return decimal(candidate.x) && decimal(candidate.y) && decimal(candidate.z);
+}
+
+function isSceneViewTransform(value: unknown): boolean {
+	const candidate = value as IJScene3DSceneViewVisualOccurrence['transform'];
+	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
+		&& isSceneViewVector3(candidate.position)
+		&& isSceneViewVector3(candidate.orientationDegrees)
+		&& isSceneViewVector3(candidate.scale);
+}
+
+function isSceneViewResource(value: unknown): value is IJScene3DSceneViewResourceReference {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewResourceReference>;
+	return (candidate.kind === 'project' || candidate.kind === 'asset' || candidate.kind === 'import')
+		&& nonEmpty(candidate.locator)
+		&& (candidate.kind === 'project' ? nonEmpty(candidate.projectPath) : candidate.projectPath === null);
+}
+
+function isSceneViewMesh(value: unknown): boolean {
+	const candidate = value as IJScene3DSceneViewVisualOccurrence['meshes'][number];
+	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
+		&& isSceneViewResource(candidate.mesh)
+		&& isSceneViewResource(candidate.material)
+		&& typeof candidate.visible === 'boolean';
+}
+
+function isSceneViewDirectionalLight(value: unknown): boolean {
+	const candidate = value as NonNullable<IJScene3DSceneViewVisualOccurrence['directionalLight']>;
+	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
+		&& isSceneViewVector3(candidate.color)
+		&& decimal(candidate.intensity)
+		&& isSceneViewVector3(candidate.target);
+}
+
+function decimal(value: unknown): value is string {
+	return typeof value === 'string' && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value);
 }
 
 function nonEmpty(value: unknown): value is string {

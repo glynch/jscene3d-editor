@@ -157,6 +157,22 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(metadata.description, '%configuration.authoring.installedExtensionMetadata%');
 		assert.match(localizedMessage(messages['configuration.authoring.installedExtensionMetadata']), /separate from the Java module path/);
 	});
+
+	test('keeps the extension entry point as a thin feature composition root', () => {
+		const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'extension.ts'), 'utf8');
+
+		for (const registration of [
+			'registerProjectFeature',
+			'registerDefinitionFeature',
+			'registerHierarchyFeature',
+			'registerInspectorFeature',
+			'registerSceneViewFeature',
+			'registerRuntimeViewportFeature'
+		]) {
+			assert.match(source, new RegExp(`${registration}\\(`));
+		}
+		assert.doesNotMatch(source, /createDiagnosticCollection|registerCommand|createTreeView|registerWebviewViewProvider/);
+	});
 });
 
 interface ExtensionManifest {

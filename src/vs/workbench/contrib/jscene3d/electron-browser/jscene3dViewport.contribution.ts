@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IJScene3DViewportLaunch, isViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot, isViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
@@ -26,6 +26,8 @@ Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane
 /** Internal bridge used by the built-in extension after Java prepares an authoritative launch. */
 export const JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.openProjectViewport';
 export const JSCENE3D_CLOSE_PROJECT_VIEWPORTS_COMMAND_ID = 'jscene3d.workbench.closeProjectViewports';
+export const JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID = 'jscene3d.workbench.updateSceneView';
+export const JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.closeViewport';
 
 CommandsRegistry.registerCommand(JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID, async (accessor, launch: unknown) => {
 	if (!isViewportLaunch(launch)) {
@@ -33,21 +35,42 @@ CommandsRegistry.registerCommand(JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID, asyn
 	}
 	await accessor.get(IEditorService).openEditor(
 		new JScene3DViewportEditorInput(launch),
-		{ pinned: true, revealIfOpened: true }
+		{ pinned: true, revealIfOpened: true, preserveFocus: launch.kind === 'scene' }
 	);
+});
+
+CommandsRegistry.registerCommand(JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID, (accessor, viewportId: unknown, snapshot: unknown) => {
+	if (typeof viewportId !== 'string' || !isSceneViewSnapshot(snapshot)) {
+		return false;
+	}
+	const match = viewportEditors(accessor.get(IEditorService))
+		.find(({ editor }) => editor.launch.viewportId === viewportId && editor.launch.kind === 'scene');
+	return match?.editor.updateSceneViewSnapshot(snapshot as IJScene3DSceneViewSnapshot);
+});
+
+CommandsRegistry.registerCommand(JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID, async (accessor, viewportId: unknown) => {
+	if (typeof viewportId !== 'string' || viewportId.length === 0) {
+		return;
+	}
+	const editorService = accessor.get(IEditorService);
+	await editorService.closeEditors(viewportEditors(editorService)
+		.filter(({ editor }) => editor.launch.viewportId === viewportId));
 });
 
 CommandsRegistry.registerCommand(JSCENE3D_CLOSE_PROJECT_VIEWPORTS_COMMAND_ID, async (accessor, identity: unknown) => {
 	const requested = viewportProjectIdentity(identity);
 	const editorService = accessor.get(IEditorService);
-	const editors = editorService.getEditors(EditorsOrder.SEQUENTIAL).filter(({ editor }) => {
-		if (!(editor instanceof JScene3DViewportEditorInput)) {
-			return false;
-		}
+	const editors = viewportEditors(editorService).filter(({ editor }) => {
 		return requested === undefined || sameProjectGeneration(editor.launch, requested);
 	});
 	await editorService.closeEditors(editors);
 });
+
+function viewportEditors(editorService: IEditorService) {
+	return editorService.getEditors(EditorsOrder.SEQUENTIAL)
+		.filter((entry): entry is typeof entry & { editor: JScene3DViewportEditorInput } =>
+			entry.editor instanceof JScene3DViewportEditorInput);
+}
 
 interface ViewportProjectIdentity {
 	readonly connectionGeneration: string;

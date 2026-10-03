@@ -9,6 +9,7 @@ import { EditorInputCapabilities } from '../../../../common/editor.js';
 import { JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
 
 const launch = {
+	kind: 'game' as const,
 	viewportId: 'viewport-a',
 	connectionGeneration: 'connection-a',
 	projectGeneration: 7,
@@ -43,6 +44,26 @@ suite('JScene3DViewportEditorInput', () => {
 			sameViewport.dispose();
 			otherViewport.dispose();
 			staleGeneration.dispose();
+		}
+	});
+
+	test('accepts only newer snapshots for the exact safe Scene View identity', () => {
+		const { runtimeArtifacts: _runtimeArtifacts, ...baseLaunch } = launch;
+		const input = new JScene3DViewportEditorInput({
+			...baseLaunch,
+			kind: 'scene',
+			snapshot: { sceneAssetId: launch.sceneAssetId, revision: 2, occurrences: [] }
+		});
+		const revisions: number[] = [];
+		const listener = input.onDidChangeSceneViewSnapshot(snapshot => revisions.push(snapshot.revision));
+		try {
+			assert.strictEqual(input.updateSceneViewSnapshot({ sceneAssetId: launch.sceneAssetId, revision: 1, occurrences: [] }), false);
+			assert.strictEqual(input.updateSceneViewSnapshot({ sceneAssetId: 'another-scene', revision: 3, occurrences: [] }), false);
+			assert.strictEqual(input.updateSceneViewSnapshot({ sceneAssetId: launch.sceneAssetId, revision: 3, occurrences: [] }), true);
+			assert.deepStrictEqual(revisions, [3]);
+		} finally {
+			listener.dispose();
+			input.dispose();
 		}
 	});
 });

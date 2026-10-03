@@ -3,10 +3,10 @@
 	"id": 1,
 	"connectionGeneration": "connection-1",
 	"result": {
-		"protocolVersion": { "major": 2, "minor": 1 },
+		"protocolVersion": { "major": 2, "minor": 2 },
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",
-		"capabilities": ["project/open", "project/replace", "project/close", "viewport/prepareLaunch", "definition/open", "definition/mutate", "definition/undo", "definition/redo", "definition/save", "definition/revert", "definition/backup", "definition/restoreBackup", "inspector/read", "service/shutdown"]
+		"capabilities": ["project/open", "project/replace", "project/close", "viewport/prepareLaunch", "sceneView/read", "definition/open", "definition/mutate", "definition/undo", "definition/redo", "definition/save", "definition/revert", "definition/backup", "definition/restoreBackup", "inspector/read", "service/shutdown"]
 	}
 }

@@ -20,6 +20,7 @@ import {
 	ProjectCloseResultDto,
 	ProjectOpenResultDto,
 	ProjectReplaceResultDto,
+	SceneViewReadResultDto,
 	ViewportLaunchResultDto
 } from '../protocol/authoringProtocol';
 import { JsonRpcClient } from '../protocol/jsonRpcClient';
@@ -160,6 +161,23 @@ export class AuthoringService implements Disposable {
 		await this.ensureReady();
 		try {
 			return await this.requireClient().prepareViewportLaunch(expectedProjectGeneration, sceneAssetId);
+		} catch (error) {
+			throw this.acceptOperationFailure(error);
+		}
+	}
+
+	async readSceneView(
+		expectedProjectGeneration: number,
+		sceneAssetId: string,
+		expectedDefinitionRevision: number
+	): Promise<ConnectionScopedResult<SceneViewReadResultDto>> {
+		await this.ensureReady();
+		try {
+			return await this.requireClient().readSceneView(
+				expectedProjectGeneration,
+				sceneAssetId,
+				expectedDefinitionRevision
+			);
 		} catch (error) {
 			throw this.acceptOperationFailure(error);
 		}

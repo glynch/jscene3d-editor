@@ -14,6 +14,7 @@
 	type IJScene3DViewportFailure = import('../common/jscene3dViewport.js').IJScene3DViewportFailure;
 	type IJScene3DViewportFrameIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportFrameIdentity;
 	type IJScene3DViewportLaunch = import('../common/jscene3dViewport.js').IJScene3DViewportLaunch;
+	type IJScene3DSceneViewSnapshot = import('../common/jscene3dViewport.js').IJScene3DSceneViewSnapshot;
 	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
 
 	//#region Utilities
@@ -128,7 +129,19 @@
 			&& nonEmpty(candidate.projectId) && nonEmpty(candidate.projectName)
 			&& nonEmpty(candidate.projectRoot) && nonEmpty(candidate.publishedContentRoot)
 			&& nonEmpty(candidate.engineVersion) && nonEmpty(candidate.sceneAssetId) && nonEmpty(candidate.sceneName)
-			&& Array.isArray(candidate.runtimeArtifacts) && candidate.runtimeArtifacts.every(nonEmpty);
+			&& (candidate.kind === 'game'
+				? Array.isArray(candidate.runtimeArtifacts) && candidate.runtimeArtifacts.every(nonEmpty)
+				: candidate.kind === 'scene' && !('runtimeArtifacts' in candidate) && validSceneViewSnapshot(candidate.snapshot)
+					&& candidate.snapshot.sceneAssetId === candidate.sceneAssetId);
+	};
+	const validSceneViewSnapshot = (value: unknown): value is IJScene3DSceneViewSnapshot => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DSceneViewSnapshot>;
+		return nonEmpty(candidate.sceneAssetId)
+			&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
+			&& Array.isArray(candidate.occurrences);
 	};
 	const validFrameIdentity = (value: unknown): value is IJScene3DViewportFrameIdentity => {
 		if (!validSession(value)) {
@@ -208,6 +221,12 @@
 			registration.surfaceGeneration = 0;
 			registration.frameNumber = 0;
 			return session;
+		},
+
+		updateSceneView(paneId, session, snapshot): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validSceneViewSnapshot(snapshot)) {
+				ipcRenderer.send('vscode:jscene3dViewport:updateSceneView', paneId, session, snapshot);
+			}
 		},
 
 		resize(paneId, session, width, height): void {

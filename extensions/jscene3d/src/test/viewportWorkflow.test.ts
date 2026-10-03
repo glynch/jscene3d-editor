@@ -24,6 +24,7 @@ suite('JScene3D native viewport workflow', () => {
 
 		assert.deepStrictEqual(client.requests, [{ generation: 7, sceneAssetId: 'world:a' }]);
 		assert.deepStrictEqual(host.opened, {
+			kind: 'game',
 			viewportId: 'viewport-a',
 			connectionGeneration: 'connection-a',
 			projectGeneration: 7,

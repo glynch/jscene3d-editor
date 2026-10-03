@@ -48,8 +48,8 @@ suite('JScene3D authored definition editor', () => {
 			'utf8'
 		);
 
-		const reopen = source.lastIndexOf('await workflow.reopenPendingProject()');
-		const registration = source.lastIndexOf('vscode.window.registerCustomEditorProvider');
+		const reopen = source.lastIndexOf('await project.reopenPendingProject()');
+		const registration = source.lastIndexOf('definitions.registerEditorProvider()');
 		assert.ok(reopen >= 0, 'project reopen must remain part of activation');
 		assert.ok(registration > reopen, 'restored custom editors must wait for the active project generation');
 	});
