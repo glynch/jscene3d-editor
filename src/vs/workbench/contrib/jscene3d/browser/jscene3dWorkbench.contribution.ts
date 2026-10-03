@@ -15,14 +15,20 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import product from '../../../../platform/product/common/product.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
+import { EditorsOrder } from '../../../common/editor.js';
 import { ViewContainerLocation } from '../../../common/views.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../services/panecomposite/browser/panecomposite.js';
+import { GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
+import { JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, JSCENE3D_SCENE_DEFINITION_VIEW_TYPE } from './jscene3dSemanticEditor.js';
 
 export const JSCENE3D_OPEN_PROJECT_WORKSPACE_COMMAND_ID = 'jscene3d.workbench.openProjectWorkspace';
 export const JSCENE3D_CLOSE_PROJECT_WORKSPACE_COMMAND_ID = 'jscene3d.workbench.closeProjectWorkspace';
+export const JSCENE3D_OPEN_DEFINITION_EDITOR_COMMAND_ID = 'jscene3d.workbench.openDefinitionEditor';
+export const JSCENE3D_CLOSE_WELCOME_COMMAND_ID = 'jscene3d.workbench.closeWelcome';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
@@ -190,7 +196,53 @@ export function registerJScene3DFileMenu(): IDisposable {
 	]);
 }
 
+/** Opens a definition with its Java-owned semantic label while preserving its source resource identity. */
+export async function openJScene3DDefinitionEditor(
+	editorService: IEditorService,
+	resource: string,
+	viewType: string,
+	label: string
+): Promise<void> {
+	if (typeof resource !== 'string' || resource.length === 0
+		|| typeof label !== 'string' || label.length === 0
+		|| typeof viewType !== 'string'
+		|| viewType !== JSCENE3D_SCENE_DEFINITION_VIEW_TYPE
+		&& viewType !== JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE) {
+		throw new Error('Invalid JScene3D definition editor presentation');
+	}
+	await editorService.openEditor({
+		resource: URI.parse(resource),
+		label,
+		options: { pinned: true, override: viewType }
+	});
+}
+
+/** Closes only the top-level JScene3D Welcome input, leaving walkthroughs and other editors untouched. */
+export async function closeJScene3DWelcomeEditors(editorService: IEditorService): Promise<void> {
+	const welcomeEditors = editorService.getEditors(EditorsOrder.SEQUENTIAL).filter(identifier => {
+		const editor = identifier.editor;
+		return editor instanceof GettingStartedInput
+			&& editor.showWelcome
+			&& editor.selectedCategory === undefined
+			&& editor.walkthroughPageTitle === undefined;
+	});
+	if (welcomeEditors.length > 0) {
+		await editorService.closeEditors(welcomeEditors);
+	}
+}
+
 if (product.applicationName === 'jscene3d-editor') {
+	CommandsRegistry.registerCommand<[string, string, string]>(
+		JSCENE3D_OPEN_DEFINITION_EDITOR_COMMAND_ID,
+		(accessor, resource, viewType, label) => openJScene3DDefinitionEditor(
+			accessor.get(IEditorService), resource, viewType, label)
+	);
+
+	CommandsRegistry.registerCommand(
+		JSCENE3D_CLOSE_WELCOME_COMMAND_ID,
+		accessor => closeJScene3DWelcomeEditors(accessor.get(IEditorService))
+	);
+
 	CommandsRegistry.registerCommand<[string]>(JSCENE3D_OPEN_PROJECT_WORKSPACE_COMMAND_ID, async (accessor, rootUri) => {
 		if (typeof rootUri !== 'string') {
 			throw new TypeError('JScene3D project workspace URI must be a string.');

@@ -4,21 +4,36 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { MenuId, MenuRegistry, isIMenuItem } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyValue, IContext } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IResourceEditorInput } from '../../../../../platform/editor/common/editor.js';
 import { StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { EditorInputCapabilities, IEditorIdentifier } from '../../../../common/editor.js';
+import { EditorInput } from '../../../../common/editor/editorInput.js';
 import { IViewsRegistry, ViewContainerLocation } from '../../../../common/views.js';
+import { breadcrumbsEnabledForEditor } from '../../../../browser/parts/editor/breadcrumbsControl.js';
 import { Parts } from '../../../../services/layout/browser/layoutService.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { emptyViewName } from '../../../files/browser/views/emptyView.js';
 import { registerEmptyExplorerWelcomeContent } from '../../../files/browser/explorerViewlet.js';
+import { GettingStartedInput } from '../../../welcomeGettingStarted/browser/gettingStartedInput.js';
 import {
+	closeJScene3DWelcomeEditors,
 	JScene3DLayoutService,
 	JScene3DLayoutStorage,
 	JScene3DProjectTransitionLayout,
 	JScene3DSidebarService,
+	openJScene3DDefinitionEditor,
 	registerJScene3DFileMenu
 } from '../../browser/jscene3dWorkbench.contribution.js';
+import {
+	JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE,
+	JSCENE3D_SCENE_DEFINITION_VIEW_TYPE,
+	jscene3dDefinitionEditorPresentation
+} from '../../browser/jscene3dSemanticEditor.js';
 
 suite('JScene3D workbench integration', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -113,6 +128,85 @@ suite('JScene3D workbench integration', () => {
 				visibleWithoutProject: false, enabledWithoutProject: false, enabledWithProject: true, enabledWhileBusy: false
 			}
 		]);
+	});
+
+	test('opens semantic definitions with Java labels and stable source resources', async () => {
+		const opened: IResourceEditorInput[] = [];
+		const editorService = {
+			openEditor: async (input: IResourceEditorInput) => {
+				opened.push(input);
+				return undefined;
+			}
+		} as unknown as IEditorService;
+
+		await openJScene3DDefinitionEditor(
+			editorService,
+			'file:///projects/sandbox/scenes/main.scene.json?jscene3dAssetId=scene-main',
+			JSCENE3D_SCENE_DEFINITION_VIEW_TYPE,
+			'Main'
+		);
+		await openJScene3DDefinitionEditor(
+			editorService,
+			'file:///projects/sandbox/entities/crate.entity.json?jscene3dAssetId=entity-crate',
+			JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE,
+			'Crate'
+		);
+
+		assert.deepStrictEqual(opened.map(input => ({
+			resource: input.resource.toString(true),
+			label: input.label,
+			override: input.options?.override
+		})), [
+			{
+				resource: 'file:///projects/sandbox/scenes/main.scene.json?jscene3dAssetId=scene-main',
+				label: 'Main',
+				override: JSCENE3D_SCENE_DEFINITION_VIEW_TYPE
+			},
+			{
+				resource: 'file:///projects/sandbox/entities/crate.entity.json?jscene3dAssetId=entity-crate',
+				label: 'Crate',
+				override: JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE
+			}
+		]);
+	});
+
+	test('assigns distinct semantic icons and keeps the physical source for tooltips', () => {
+		const resource = URI.parse('file:///projects/sandbox/scenes/main.scene.json?jscene3dAssetId=scene-main');
+		const scene = jscene3dDefinitionEditorPresentation(JSCENE3D_SCENE_DEFINITION_VIEW_TYPE, resource);
+		const entity = jscene3dDefinitionEditorPresentation(JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, resource);
+
+		assert.strictEqual(scene?.icon, Codicon.symbolNamespace);
+		assert.strictEqual(entity?.icon, Codicon.symbolClass);
+		assert.strictEqual(scene?.source.toString(true), 'file:///projects/sandbox/scenes/main.scene.json');
+	});
+
+	test('hides breadcrumbs only for semantic editor capabilities', () => {
+		const semantic = disposables.add(new TestEditorInput('Main', EditorInputCapabilities.HideBreadcrumbs));
+		const text = disposables.add(new TestEditorInput('main.scene.json', EditorInputCapabilities.None));
+
+		assert.strictEqual(breadcrumbsEnabledForEditor(true, true, semantic), false);
+		assert.strictEqual(breadcrumbsEnabledForEditor(true, true, text), true);
+		assert.strictEqual(breadcrumbsEnabledForEditor(false, true, text), false);
+	});
+
+	test('closes only JScene3D Welcome and leaves walkthroughs and ordinary editors open', async () => {
+		const welcome = disposables.add(new GettingStartedInput({ showWelcome: true }));
+		const walkthrough = disposables.add(new GettingStartedInput({ showWelcome: true, selectedCategory: 'walkthrough' }));
+		const ordinary = disposables.add(new TestEditorInput('notes.txt', EditorInputCapabilities.None));
+		const editors: IEditorIdentifier[] = [
+			{ groupId: 1, editor: welcome },
+			{ groupId: 1, editor: walkthrough },
+			{ groupId: 1, editor: ordinary }
+		];
+		let closed: readonly IEditorIdentifier[] = [];
+		const editorService = {
+			getEditors: () => editors,
+			closeEditors: async (requested: readonly IEditorIdentifier[]) => { closed = requested; }
+		} as unknown as IEditorService;
+
+		await closeJScene3DWelcomeEditors(editorService);
+
+		assert.deepStrictEqual(closed, [{ groupId: 1, editor: welcome }]);
 	});
 
 	test('registers the JScene3D no-project Explorer presentation', () => {
@@ -219,4 +313,16 @@ class TestSidebarService implements JScene3DSidebarService {
 		}
 		return undefined;
 	}
+}
+
+class TestEditorInput extends EditorInput {
+	override readonly resource = URI.from({ scheme: 'test', path: '/editor' });
+
+	constructor(private readonly name: string, private readonly inputCapabilities: EditorInputCapabilities) {
+		super();
+	}
+
+	override get typeId(): string { return 'test.editor'; }
+	override getName(): string { return this.name; }
+	override get capabilities(): EditorInputCapabilities { return this.inputCapabilities; }
 }

@@ -40,7 +40,8 @@ import { IListService, WorkbenchAsyncDataTree, WorkbenchDataTree, WorkbenchListF
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { defaultBreadcrumbsWidgetStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
-import { EditorResourceAccessor, IEditorPartOptions, SideBySideEditor } from '../../../common/editor.js';
+import { EditorInputCapabilities, EditorResourceAccessor, IEditorPartOptions, SideBySideEditor } from '../../../common/editor.js';
+import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { hiddenEditorTypesSettingId, IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
 import { ACTIVE_GROUP, ACTIVE_GROUP_TYPE, IEditorService, SIDE_GROUP, SIDE_GROUP_TYPE } from '../../../services/editor/common/editorService.js';
@@ -777,7 +778,11 @@ export class BreadcrumbsControlFactory {
 		@IFileService fileService: IFileService,
 	) {
 		const config = this._disposables.add(BreadcrumbsConfig.IsEnabled.bindTo(configurationService));
-		const isEnabled = () => config.getValue() && this._editorGroup.groupsView.partOptions.showBreadcrumbs !== false;
+		const isEnabled = () => breadcrumbsEnabledForEditor(
+			config.getValue(),
+			this._editorGroup.groupsView.partOptions.showBreadcrumbs !== false,
+			this._editorGroup.activeEditor
+		);
 		const updateControl = () => {
 			const enabled = isEnabled();
 			if (!enabled && this._control) {
@@ -797,6 +802,7 @@ export class BreadcrumbsControlFactory {
 				updateControl();
 			}
 		}));
+		this._disposables.add(this._editorGroup.onDidActiveEditorChange(updateControl));
 
 		if (isEnabled()) {
 			this._control = this.createControl();
@@ -824,6 +830,17 @@ export class BreadcrumbsControlFactory {
 		this._disposables.dispose();
 		this._controlDisposables.dispose();
 	}
+}
+
+/** Determines per-editor breadcrumb visibility without changing the global setting. */
+export function breadcrumbsEnabledForEditor(
+	configurationEnabled: boolean,
+	partEnabled: boolean,
+	editor: EditorInput | null | undefined
+): boolean {
+	return configurationEnabled
+		&& partEnabled
+		&& editor?.hasCapability(EditorInputCapabilities.HideBreadcrumbs) !== true;
 }
 
 //#region commands

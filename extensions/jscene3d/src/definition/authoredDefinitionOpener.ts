@@ -42,7 +42,7 @@ export class AuthoredDefinitionOpener {
 	constructor(
 		private readonly client: DefinitionOpenClient,
 		private readonly state: AuthoredDefinitionState,
-		private readonly openWith: (resource: string, viewType: string) => Promise<unknown>,
+		private readonly openWith: (resource: string, viewType: string, label: string) => Promise<unknown>,
 		private readonly logger?: { appendLine(message: string): void }
 	) { }
 
@@ -77,7 +77,8 @@ export class AuthoredDefinitionOpener {
 			resource,
 			result.definition.context.kind === 'scene-definition'
 				? sceneDefinitionViewType
-				: authoredDefinitionViewType
+				: authoredDefinitionViewType,
+			result.definition.context.label.text
 		);
 		return { status: 'opened', resource: mapping, diagnostics: result.diagnostics };
 	}

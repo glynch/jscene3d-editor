@@ -25,6 +25,8 @@ import {
 import { AuthoredDefinitionState } from './authoredDefinitionState';
 import { definitionResourceKey } from './definitionResource';
 
+const openDefinitionEditorWorkbenchCommandId = 'jscene3d.workbench.openDefinitionEditor';
+
 /** Definition operations exposed narrowly to Project and Inspector feature registrations. */
 export interface RegisteredDefinitionFeature extends vscode.Disposable {
 	readonly ready: Promise<void>;
@@ -82,8 +84,8 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 		this.opener = new AuthoredDefinitionOpener(
 			service,
 			state,
-			(resource, viewType) => Promise.resolve(vscode.commands.executeCommand(
-				'vscode.openWith', vscode.Uri.parse(resource), viewType)),
+			(resource, viewType, label) => Promise.resolve(vscode.commands.executeCommand(
+				openDefinitionEditorWorkbenchCommandId, resource, viewType, label)),
 			logger
 		);
 		const updateActiveDefinition = () => {

@@ -34,6 +34,7 @@ import { IWorkbenchLayoutService } from '../../../services/layout/browser/layout
 import { IUntitledTextEditorService } from '../../../services/untitled/common/untitledTextEditorService.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { WebviewIconPath } from '../../webviewPanel/browser/webviewEditorInput.js';
+import { jscene3dDefinitionEditorPresentation } from '../../jscene3d/browser/jscene3dSemanticEditor.js';
 
 interface CustomEditorInputInitInfo {
 	readonly resource: URI;
@@ -171,6 +172,10 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 			capabilities |= EditorInputCapabilities.Untitled;
 		}
 
+		if (jscene3dDefinitionEditorPresentation(this.viewType, this.resource) !== undefined) {
+			capabilities |= EditorInputCapabilities.HideBreadcrumbs;
+		}
+
 		return capabilities;
 	}
 
@@ -233,6 +238,10 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 	}
 
 	override getTitle(verbosity?: Verbosity): string {
+		const semanticPresentation = jscene3dDefinitionEditorPresentation(this.viewType, this.resource);
+		if (semanticPresentation !== undefined && verbosity === Verbosity.LONG) {
+			return this.labelService.getUriLabel(semanticPresentation.source, { noPrefix: true });
+		}
 		const customTitle = this.getWebviewTitle();
 		if (customTitle) {
 			return customTitle;
@@ -247,6 +256,10 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 			case Verbosity.MEDIUM:
 				return this.mediumTitle;
 		}
+	}
+
+	override getIcon() {
+		return jscene3dDefinitionEditorPresentation(this.viewType, this.resource)?.icon ?? super.getIcon();
 	}
 
 	public override matches(other: EditorInput | IUntypedEditorInput): boolean {

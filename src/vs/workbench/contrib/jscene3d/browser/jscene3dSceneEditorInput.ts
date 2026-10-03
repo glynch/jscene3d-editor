@@ -7,7 +7,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { IJScene3DViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { EditorExtensions, EditorInputCapabilities, IEditorFactoryRegistry, IEditorSerializer, IUntypedEditorInput } from '../../../common/editor.js';
+import { EditorExtensions, EditorInputCapabilities, IEditorFactoryRegistry, IEditorSerializer, IUntypedEditorInput, Verbosity } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { SideBySideEditorInput } from '../../../common/editor/sideBySideEditorInput.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
@@ -23,14 +23,17 @@ export class JScene3DSceneEditorInput extends SideBySideEditorInput {
 		readonly viewport: JScene3DViewportEditorInput,
 		@IEditorService editorService: IEditorService
 	) {
-		super(viewport.getName(), undefined, viewport, authored, editorService);
+		super(authored.getName(), undefined, viewport, authored, editorService);
 	}
 
 	override get typeId(): string { return JScene3DSceneEditorInput.ID; }
 	override get editorId(): string { return this.authored.editorId; }
 	override get resource(): URI { return this.authored.resource; }
 	override get capabilities(): EditorInputCapabilities { return this.authored.capabilities; }
-	override getName(): string { return this.viewport.getName(); }
+	override getName(): string { return this.authored.getName(); }
+	override getDescription(verbosity?: Verbosity): string | undefined { return this.authored.getDescription(verbosity); }
+	override getTitle(verbosity?: Verbosity): string { return this.authored.getTitle(verbosity); }
+	override getIcon() { return this.authored.getIcon(); }
 
 	prepareLaunch(launch: IJScene3DViewportLaunch): boolean {
 		return this.viewport.prepareLaunch(launch);

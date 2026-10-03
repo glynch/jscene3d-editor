@@ -27,9 +27,11 @@ import {
 	ProjectWorkspaceLifecycle
 } from './projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './vsCodeProjectWorkspace';
+import { ProjectWelcomeHost, ProjectWelcomeLifecycle } from './projectWelcomeLifecycle';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
+const closeWelcomeWorkbenchCommandId = 'jscene3d.workbench.closeWelcome';
 
 /** Definition operations coordinated by the Project feature. */
 export interface ProjectDefinitionFeature extends ProjectDocumentLifecycle {
@@ -71,6 +73,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	private readonly attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
 	private readonly workspaceLifecycle: ProjectWorkspaceLifecycle;
 	private readonly workflow: AuthoringWorkflow;
+	private readonly welcomeLifecycle: ProjectWelcomeLifecycle;
 	private readonly disposables: vscode.Disposable[] = [];
 	private disposed = false;
 
@@ -100,6 +103,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
 		);
+		this.welcomeLifecycle = new ProjectWelcomeLifecycle(new VsCodeProjectWelcomeHost(), logger);
 		definitions.registerOpenCommand((assetId, projectGeneration) =>
 			this.workflow.openDefinition(assetId, projectGeneration));
 		this.disposables.push(
@@ -141,6 +145,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		viewports: ProjectViewportLifecycle
 	): void {
 		const snapshot = projectState.snapshot;
+		void this.welcomeLifecycle.synchronize(snapshot);
 		publishProjectDiagnostics(this.activeDiagnostics, snapshot.activeDiagnostics);
 		publishProjectDiagnostics(this.attemptDiagnostics, snapshot.attemptDiagnostics);
 		const projectOpen = snapshot.status === 'open'
@@ -163,6 +168,12 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			)
 		]).catch(error => this.logger.appendLine(
 			`Failed to update JScene3D context keys: ${errorMessage(error)}`));
+	}
+}
+
+class VsCodeProjectWelcomeHost implements ProjectWelcomeHost {
+	async closeWelcome(): Promise<void> {
+		await vscode.commands.executeCommand(closeWelcomeWorkbenchCommandId);
 	}
 }
 

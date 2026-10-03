@@ -4,14 +4,16 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { EditorInputCapabilities } from '../../../../common/editor.js';
+import { EditorInputCapabilities, Verbosity } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { CustomEditorInput } from '../../../customEditor/browser/customEditorInput.js';
 import { JScene3DSceneEditorInput } from '../../browser/jscene3dSceneEditorInput.js';
+import { JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, JSCENE3D_SCENE_DEFINITION_VIEW_TYPE } from '../../browser/jscene3dSemanticEditor.js';
 import { beginJScene3DViewportInput, IJScene3DViewportPresentation, JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
 import { JScene3DViewportFrameGate, jscene3dViewportTextureCoordinates } from '../../browser/jscene3dViewportModel.js';
 
@@ -74,6 +76,36 @@ suite('JScene3DViewportEditorInput', () => {
 			Object.setPrototypeOf(equivalent, TestEditorInput.prototype);
 			scene.dispose();
 			equivalent.dispose();
+		}
+	});
+
+	test('presents semantic definition names, icons, source tooltips, and breadcrumb policy', () => {
+		const authored = fakeCustomEditorInput(
+			'/projects/example/main.scene.json',
+			'Main',
+			JSCENE3D_SCENE_DEFINITION_VIEW_TYPE
+		);
+		const entity = fakeCustomEditorInput(
+			'/projects/example/crate.entity.json',
+			'Crate',
+			JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE
+		);
+		const viewport = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const scene = new JScene3DSceneEditorInput(authored, viewport, {} as IEditorService);
+		try {
+			assert.strictEqual(scene.getName(), 'Main');
+			assert.strictEqual(scene.getTitle(Verbosity.LONG), '/projects/example/main.scene.json');
+			assert.strictEqual(scene.getIcon(), Codicon.symbolNamespace);
+			assert.strictEqual(scene.hasCapability(EditorInputCapabilities.HideBreadcrumbs), true);
+			assert.strictEqual(entity.getName(), 'Crate');
+			assert.strictEqual(entity.getTitle(Verbosity.LONG), '/projects/example/crate.entity.json');
+			assert.strictEqual(entity.getIcon(), Codicon.symbolClass);
+			assert.strictEqual(entity.hasCapability(EditorInputCapabilities.HideBreadcrumbs), true);
+		} finally {
+			Object.setPrototypeOf(authored, TestEditorInput.prototype);
+			Object.setPrototypeOf(entity, TestEditorInput.prototype);
+			scene.dispose();
+			entity.dispose();
 		}
 	});
 
@@ -481,11 +513,24 @@ class TestEditorInput extends EditorInput {
 	override getName(): string { return 'Authored Scene'; }
 }
 
-function fakeCustomEditorInput(path: string): CustomEditorInput {
+function fakeCustomEditorInput(
+	path: string,
+	label = 'Main',
+	viewType = JSCENE3D_SCENE_DEFINITION_VIEW_TYPE
+): CustomEditorInput {
 	const input = new TestEditorInput(URI.file(path));
 	Object.assign(input, {
 		_editorResource: URI.file(path),
-		viewType: 'jscene3d.sceneDefinition'
+		_webviewTitle: label,
+		viewType,
+		labelService: {
+			getUriLabel: (resource: URI, options?: { noPrefix?: boolean }) => {
+				assert.strictEqual(options?.noPrefix, true);
+				return resource.fsPath;
+			}
+		},
+		customEditorService: { getCustomEditorCapabilities: () => ({ supportsMultipleEditorsPerDocument: true }) },
+		filesConfigurationService: { isReadonly: () => false }
 	});
 	Object.setPrototypeOf(input, CustomEditorInput.prototype);
 	return input as unknown as CustomEditorInput;

@@ -13,13 +13,13 @@ suite('JScene3D authored definition opener', () => {
 	test('opens a Scene through its semantic Scene editor identity', async () => {
 		const state = new AuthoredDefinitionState();
 		state.setProjectGeneration(4);
-		const opened: Array<{ resource: string; viewType: string }> = [];
+		const opened: Array<{ resource: string; viewType: string; label: string }> = [];
 		const opener = new AuthoredDefinitionOpener(
-			{ openDefinition: async () => connected(success(4, definition('definition-a'))) },
+			{ openDefinition: async () => connected(success(4, definition('definition-a', 'scene-definition', 'Main'))) },
 			state,
-			async (resource, viewType) => {
+			async (resource, viewType, label) => {
 				assert.strictEqual(state.resolveAsset(4, 'definition-a')?.resource, resource);
-				opened.push({ resource, viewType });
+				opened.push({ resource, viewType, label });
 			}
 		);
 
@@ -28,6 +28,7 @@ suite('JScene3D authored definition opener', () => {
 		assert.strictEqual(outcome.status, 'opened');
 		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.assetId : undefined, 'definition-a');
 		assert.strictEqual(opened[0].viewType, 'jscene3d.sceneDefinition');
+		assert.strictEqual(opened[0].label, 'Main');
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
 		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dGeneration'), '4');
 	});
@@ -35,16 +36,17 @@ suite('JScene3D authored definition opener', () => {
 	test('keeps an EntityDefinition in the generic authored-definition editor', async () => {
 		const state = new AuthoredDefinitionState();
 		state.setProjectGeneration(4);
-		const opened: Array<{ resource: string; viewType: string }> = [];
+		const opened: Array<{ resource: string; viewType: string; label: string }> = [];
 		const opener = new AuthoredDefinitionOpener(
-			{ openDefinition: async () => connected(success(4, definition('definition-a', 'entity-definition'))) },
+			{ openDefinition: async () => connected(success(4, definition('definition-a', 'entity-definition', 'Crate'))) },
 			state,
-			async (resource, viewType) => { opened.push({ resource, viewType }); }
+			async (resource, viewType, label) => { opened.push({ resource, viewType, label }); }
 		);
 
 		await opener.open(4, 'definition-a');
 
 		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
+		assert.strictEqual(opened[0].label, 'Crate');
 	});
 
 	test('preserves an expected rejection and its diagnostics without opening an editor', async () => {
@@ -127,7 +129,8 @@ function connected(
 
 function definition(
 	assetId: string,
-	kind: 'scene-definition' | 'entity-definition' = 'scene-definition'
+	kind: 'scene-definition' | 'entity-definition' = 'scene-definition',
+	label = 'World'
 ): DefinitionSnapshotDto {
 	return {
 		revision: 0,
@@ -137,7 +140,7 @@ function definition(
 			origin: 'authored',
 			editable: true,
 			source: 'file:///projects/game/worlds/main.scene.json',
-			label: { kind: 'literal', text: 'World', messageCode: null, arguments: [] }
+			label: { kind: 'literal', text: label, messageCode: null, arguments: [] }
 		},
 		roots: []
 	};
