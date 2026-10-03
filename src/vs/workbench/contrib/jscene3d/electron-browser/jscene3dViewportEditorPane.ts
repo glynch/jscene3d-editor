@@ -16,9 +16,9 @@ import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
-import { IJScene3DViewportPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
+import { beginJScene3DViewportInput, IJScene3DViewportPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
 import { JScene3DSceneEditorInput } from '../browser/jscene3dSceneEditorInput.js';
-import { physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
+import { JScene3DViewportFrameGate, jscene3dViewportVertexShader, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
 
 /** Presents one project world from the native JScene3D renderer without browser-side scene rendering. */
 export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DViewportPresentation {
@@ -33,6 +33,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	private sampler: GPUSampler | undefined;
 	private resizeObserver: ResizeObserver | undefined;
 	private resizeTimer: number | undefined;
+	private readonly frameGate = new JScene3DViewportFrameGate();
 
 	constructor(
 		group: IEditorGroup,
@@ -67,6 +68,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		canvas.style.width = '100%';
 		canvas.style.height = '100%';
 		canvas.style.display = 'block';
+		canvas.style.visibility = 'hidden';
 		canvas.setAttribute('aria-label', localize('jscene3dNativeViewportCanvas', "JScene3D native project viewport"));
 		parent.appendChild(canvas);
 		this.canvas = canvas;
@@ -106,6 +108,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		const viewport = this.viewportInput(input);
+		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting');
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.canvas) {
 			return;
@@ -182,23 +185,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		const pipeline = device.createRenderPipeline({
 			layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
 			vertex: {
-				module: device.createShaderModule({ code: `
-					struct VertexOutput {
-						@builtin(position) position: vec4<f32>,
-						@location(0) texCoord: vec2<f32>
-					};
-					@vertex fn main(@builtin(vertex_index) index: u32) -> VertexOutput {
-						var positions = array<vec2<f32>, 6>(
-							vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
-							vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
-						var coordinates = array<vec2<f32>, 6>(
-							vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 1.0), vec2<f32>(0.0, 0.0),
-							vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 0.0));
-						var output: VertexOutput;
-						output.position = vec4<f32>(positions[index], 0.0, 1.0);
-						output.texCoord = coordinates[index];
-						return output;
-					}` }),
+				module: device.createShaderModule({ code: jscene3dViewportVertexShader() }),
 				entryPoint: 'main'
 			},
 			fragment: {
@@ -226,12 +213,14 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	}
 
 	async presentFrame(frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<void> {
+		const framePresentationGeneration = this.frameGate.capture();
+		const canvas = this.canvas;
 		const device = this.device;
 		const context = this.context;
 		const pipeline = this.pipeline;
 		const bindGroupLayout = this.bindGroupLayout;
 		const sampler = this.sampler;
-		if (!device || !context || !pipeline || !bindGroupLayout || !sampler || !this.isVisible()) {
+		if (!canvas || !device || !context || !pipeline || !bindGroupLayout || !sampler || !this.isVisible()) {
 			return;
 		}
 		const bindGroup = device.createBindGroup({
@@ -255,6 +244,18 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		pass.draw(6);
 		pass.end();
 		device.queue.submit([encoder.finish()]);
+		if (canvas.style.visibility !== 'visible') {
+			await device.queue.onSubmittedWorkDone();
+			if (this.canvas === canvas && this.isVisible()) {
+				this.frameGate.reveal(canvas, framePresentationGeneration);
+			}
+		}
+	}
+
+	resetFrame(): void {
+		if (this.canvas) {
+			this.frameGate.hide(this.canvas);
+		}
 	}
 
 	showStartupState(state: JScene3DViewportStartupState): void {

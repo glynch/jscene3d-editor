@@ -14,6 +14,7 @@ import { IJScene3DViewportSize, JScene3DViewportLifecycleAction, JScene3DViewpor
 
 /** Visible renderer target attached to a retained viewport session. */
 export interface IJScene3DViewportPresentation {
+	resetFrame(): void;
 	showStartupState(state: JScene3DViewportStartupState): void;
 	presentFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
 	showFailure(message: string): void;
@@ -22,6 +23,13 @@ export interface IJScene3DViewportPresentation {
 
 /** User-visible startup state for one native viewport. */
 export type JScene3DViewportStartupState = 'renderer-starting' | 'waiting-for-first-frame' | 'rendered' | 'failed' | 'disposed';
+
+/** Clears presentation state before a different viewport input becomes active. */
+export function beginJScene3DViewportInput(presentation: IJScene3DViewportPresentation, state: JScene3DViewportStartupState): void {
+	presentation.resetFrame();
+	presentation.hideFailure();
+	presentation.showStartupState(state);
+}
 
 /** One generation-scoped native viewport for a Java-prepared project Scene. */
 export class JScene3DViewportEditorInput extends EditorInput {
@@ -97,6 +105,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		bridge: IJScene3DViewportBridge
 	): Promise<void> {
 		this.presentation = presentation;
+		presentation.hideFailure();
 		presentation.showStartupState(this.startupState);
 		this.bridge ??= bridge;
 		if (this.bridge !== bridge) {
@@ -106,7 +115,6 @@ export class JScene3DViewportEditorInput extends EditorInput {
 			presentation.showFailure(this.failure);
 			return;
 		}
-		presentation.hideFailure();
 		if (this.stopGate.current) {
 			await this.stopGate.current;
 		}

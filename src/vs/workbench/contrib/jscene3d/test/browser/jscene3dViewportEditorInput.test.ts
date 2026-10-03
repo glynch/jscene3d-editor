@@ -12,7 +12,8 @@ import { EditorInput } from '../../../../common/editor/editorInput.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { CustomEditorInput } from '../../../customEditor/browser/customEditorInput.js';
 import { JScene3DSceneEditorInput } from '../../browser/jscene3dSceneEditorInput.js';
-import { IJScene3DViewportPresentation, JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
+import { beginJScene3DViewportInput, IJScene3DViewportPresentation, JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
+import { JScene3DViewportFrameGate, jscene3dViewportTextureCoordinates } from '../../browser/jscene3dViewportModel.js';
 
 const launch = {
 	kind: 'game' as const,
@@ -31,6 +32,13 @@ const launch = {
 
 suite('JScene3DViewportEditorInput', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('presents top-left-origin external textures without vertical inversion', () => {
+		assert.deepStrictEqual(jscene3dViewportTextureCoordinates, [
+			[0, 0], [1, 0], [0, 1],
+			[0, 1], [1, 0], [1, 1]
+		]);
+	});
 
 	test('includes service, project, Scene, and viewport identity without becoming a singleton', () => {
 		const first = new JScene3DViewportEditorInput(launch);
@@ -96,21 +104,92 @@ suite('JScene3DViewportEditorInput', () => {
 		const second = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
 		try {
 			await main.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.rendererReady('viewport-main');
+			await bridge.presentFrame('viewport-main');
 			main.detach(presentation);
 			await second.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.rendererReady('viewport-second', { sessionId: 2, rendererGeneration: 1 });
+			await bridge.presentFrame('viewport-second', { sessionId: 2, rendererGeneration: 1 });
 			second.detach(presentation);
+			beginJScene3DViewportInput(presentation, main.startupState);
 			await main.attach(presentation, { width: 800, height: 600 }, bridge);
 
 			assert.deepStrictEqual({
 				started: bridge.started.map(entry => entry.launch.viewportId),
 				stopped: bridge.stopped,
 				paused: bridge.paused.length,
-				resumed: bridge.resumed.length
+				resumed: bridge.resumed.length,
+				activeState: presentation.states.at(-1)
 			}, {
 				started: ['viewport-main', 'viewport-second'],
 				stopped: [],
 				paused: 2,
-				resumed: 3
+				resumed: 3,
+				activeState: 'rendered'
+			});
+		} finally {
+			await main.stop();
+			await second.stop();
+			main.dispose();
+			second.dispose();
+		}
+	});
+
+	test('replaces the previous Scene frame with the newly active Scene loading state', () => {
+		const presentation = new TestPresentation();
+		presentation.hasVisibleFrame = true;
+
+		beginJScene3DViewportInput(presentation, 'renderer-starting');
+
+		assert.deepStrictEqual({ hasVisibleFrame: presentation.hasVisibleFrame, state: presentation.states.at(-1) }, {
+			hasVisibleFrame: false,
+			state: 'renderer-starting'
+		});
+	});
+
+	test('keeps an earlier submitted Scene frame hidden after a newer input becomes active', () => {
+		const frameGate = new JScene3DViewportFrameGate();
+		const canvas = { style: { visibility: 'visible' } };
+		const mainFrameGeneration = frameGate.capture();
+
+		frameGate.hide(canvas);
+		assert.strictEqual(frameGate.reveal(canvas, mainFrameGeneration), false);
+		assert.strictEqual(canvas.style.visibility, 'hidden');
+
+		const secondFrameGeneration = frameGate.capture();
+		assert.strictEqual(frameGate.reveal(canvas, secondFrameGeneration), true);
+		assert.strictEqual(canvas.style.visibility, 'visible');
+	});
+
+	test('starts and resizes independent Scene sessions with their current physical dimensions', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const main = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const second = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
+		try {
+			await main.attach(presentation, { width: 1280, height: 720 }, bridge);
+			main.resize(presentation, { width: 1600, height: 900 });
+			main.detach(presentation);
+			await second.attach(presentation, { width: 1500, height: 1000 }, bridge);
+			second.resize(presentation, { width: 1200, height: 800 });
+			second.detach(presentation);
+			await main.attach(presentation, { width: 1920, height: 1080 }, bridge);
+
+			assert.deepStrictEqual({
+				started: bridge.started.map(({ launch, width, height }) => ({ viewportId: launch.viewportId, width, height })),
+				resized: bridge.resized.map(({ viewportId, width, height }) => ({ viewportId, width, height }))
+			}, {
+				started: [
+					{ viewportId: 'viewport-main', width: 1280, height: 720 },
+					{ viewportId: 'viewport-second', width: 1500, height: 1000 }
+				],
+				resized: [
+					{ viewportId: 'viewport-main', width: 1280, height: 720 },
+					{ viewportId: 'viewport-main', width: 1600, height: 900 },
+					{ viewportId: 'viewport-second', width: 1500, height: 1000 },
+					{ viewportId: 'viewport-second', width: 1200, height: 800 },
+					{ viewportId: 'viewport-main', width: 1920, height: 1080 }
+				]
 			});
 		} finally {
 			await main.stop();
@@ -145,7 +224,10 @@ suite('JScene3DViewportEditorInput', () => {
 		try {
 			await input.attach(presentation, { width: 800, height: 600 }, bridge);
 
-			assert.deepStrictEqual(presentation.states, ['renderer-starting']);
+			assert.deepStrictEqual({ states: presentation.states, loadingStateVisible: presentation.loadingStateVisible }, {
+				states: ['renderer-starting'],
+				loadingStateVisible: true
+			});
 			bridge.rendererReady();
 			assert.deepStrictEqual(presentation.states, ['renderer-starting', 'waiting-for-first-frame']);
 
@@ -170,8 +252,8 @@ suite('JScene3DViewportEditorInput', () => {
 		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
 		try {
 			await input.attach(presentation, { width: 800, height: 600 }, bridge);
-			bridge.rendererReady({ sessionId: 1, rendererGeneration: 2 });
-			await bridge.presentFrame({ sessionId: 1, rendererGeneration: 2 });
+			bridge.rendererReady(undefined, { sessionId: 1, rendererGeneration: 2 });
+			await bridge.presentFrame(undefined, { sessionId: 1, rendererGeneration: 2 });
 			assert.deepStrictEqual(presentation.states, ['renderer-starting']);
 
 			bridge.rendererReady();
@@ -266,10 +348,11 @@ suite('JScene3DViewportEditorInput', () => {
 });
 
 class TestViewportBridge implements IJScene3DViewportBridge {
-	readonly started: Array<{ paneId: string; launch: IJScene3DViewportLaunch }> = [];
+	readonly started: Array<{ paneId: string; launch: IJScene3DViewportLaunch; width: number; height: number }> = [];
 	readonly stopped: string[] = [];
 	readonly paused: string[] = [];
 	readonly resumed: string[] = [];
+	readonly resized: Array<{ viewportId: string; width: number; height: number }> = [];
 	readonly updated: Array<{ viewportId: string; revision: number }> = [];
 	private readonly consumers = new Map<string, {
 		onReady(session: IJScene3DViewportSessionIdentity): void;
@@ -295,8 +378,8 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		this.consumers.delete(paneId);
 	}
 
-	start(paneId: string, launch: IJScene3DViewportLaunch): Promise<IJScene3DViewportSessionIdentity> {
-		this.started.push({ paneId, launch });
+	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity> {
+		this.started.push({ paneId, launch, width, height });
 		const session = { sessionId: this.started.length, rendererGeneration: 1 };
 		return this.deferredStart
 			? new Promise(resolve => { this.startResolver = resolve; })
@@ -310,7 +393,12 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		}
 	}
 
-	resize(): void { }
+	resize(paneId: string, _session: IJScene3DViewportSessionIdentity, width: number, height: number): void {
+		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
+		if (viewportId) {
+			this.resized.push({ viewportId, width, height });
+		}
+	}
 	pause(paneId: string): void { this.paused.push(paneId); }
 	resume(paneId: string): void { this.resumed.push(paneId); }
 	stop(paneId: string): Promise<void> {
@@ -323,13 +411,13 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		this.startResolver = undefined;
 	}
 
-	rendererReady(identity: IJScene3DViewportSessionIdentity = { sessionId: 1, rendererGeneration: 1 }): void {
-		const started = this.started[0];
+	rendererReady(viewportId?: string, identity: IJScene3DViewportSessionIdentity = { sessionId: 1, rendererGeneration: 1 }): void {
+		const started = viewportId ? this.started.find(entry => entry.launch.viewportId === viewportId)! : this.started[0];
 		this.consumers.get(started.paneId)?.onReady(identity);
 	}
 
-	presentFrame(identity: IJScene3DViewportSessionIdentity = { sessionId: 1, rendererGeneration: 1 }): Promise<void> {
-		const started = this.started[0];
+	presentFrame(viewportId?: string, identity: IJScene3DViewportSessionIdentity = { sessionId: 1, rendererGeneration: 1 }): Promise<void> {
+		const started = viewportId ? this.started.find(entry => entry.launch.viewportId === viewportId)! : this.started[0];
 		return this.consumers.get(started.paneId)?.onFrame({} as VideoFrame, {
 			paneId: started.paneId,
 			...identity,
@@ -352,13 +440,27 @@ class TestPresentation implements IJScene3DViewportPresentation {
 	readonly states: string[] = [];
 	readonly failures: string[] = [];
 	framesPresented = 0;
-	showStartupState(state: string): void { this.states.push(state); }
+	resetFrames = 0;
+	hasVisibleFrame = false;
+	loadingStateVisible = false;
+	resetFrame(): void {
+		this.resetFrames++;
+		this.hasVisibleFrame = false;
+	}
+	showStartupState(state: string): void {
+		this.states.push(state);
+		this.loadingStateVisible = state !== 'rendered' && state !== 'disposed' && state !== 'failed';
+	}
 	presentFrame(_frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<void> {
 		this.framesPresented++;
+		this.hasVisibleFrame = true;
 		return Promise.resolve();
 	}
-	showFailure(message: string): void { this.failures.push(message); }
-	hideFailure(): void { }
+	showFailure(message: string): void {
+		this.failures.push(message);
+		this.loadingStateVisible = false;
+	}
+	hideFailure(): void { this.loadingStateVisible = false; }
 }
 
 function sceneLaunch(sceneAssetId: string, viewportId: string): IJScene3DViewportLaunch {

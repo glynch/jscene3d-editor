@@ -10,6 +10,34 @@ export interface IJScene3DViewportSize {
 	readonly height: number;
 }
 
+/** Fullscreen-quad coordinates for presenting a top-left-origin external texture. */
+export const jscene3dViewportTextureCoordinates = [
+	[0, 0], [1, 0], [0, 1],
+	[0, 1], [1, 0], [1, 1]
+] as const;
+
+/** Produces the WebGPU vertex shader used by the native viewport presentation pass. */
+export function jscene3dViewportVertexShader(): string {
+	const coordinates = jscene3dViewportTextureCoordinates
+		.map(([x, y]) => `vec2<f32>(${x.toFixed(1)}, ${y.toFixed(1)})`)
+		.join(', ');
+	return `
+		struct VertexOutput {
+			@builtin(position) position: vec4<f32>,
+			@location(0) texCoord: vec2<f32>
+		};
+		@vertex fn main(@builtin(vertex_index) index: u32) -> VertexOutput {
+			var positions = array<vec2<f32>, 6>(
+				vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
+				vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
+			var coordinates = array<vec2<f32>, 6>(${coordinates});
+			var output: VertexOutput;
+			output.position = vec4<f32>(positions[index], 0.0, 1.0);
+			output.texCoord = coordinates[index];
+			return output;
+		}`;
+}
+
 export type JScene3DViewportLifecycleAction = 'pause' | 'resume' | 'stop';
 
 /** Coalesces concurrent stops without retaining a completed operation. */
@@ -54,6 +82,35 @@ export function synchronizeCanvasBackingStore(canvas: Pick<HTMLCanvasElement, 'w
 	canvas.width = size.width;
 	canvas.height = size.height;
 	return true;
+}
+
+interface IJScene3DViewportFrameElement {
+	readonly style: Pick<CSSStyleDeclaration, 'visibility'>;
+}
+
+/** Prevents an earlier Scene's submitted canvas texture from becoming visible after an input switch. */
+export class JScene3DViewportFrameGate {
+	private generation = 0;
+
+	/** Hides the currently presented texture and invalidates pending reveals. */
+	hide(frameElement: IJScene3DViewportFrameElement): void {
+		this.generation++;
+		frameElement.style.visibility = 'hidden';
+	}
+
+	/** Captures the active presentation generation before submitting a frame. */
+	capture(): number {
+		return this.generation;
+	}
+
+	/** Reveals a submitted frame only if no newer Scene input has hidden the canvas. */
+	reveal(frameElement: IJScene3DViewportFrameElement, generation: number): boolean {
+		if (generation !== this.generation) {
+			return false;
+		}
+		frameElement.style.visibility = 'visible';
+		return true;
+	}
 }
 
 /** Tracks the renderer-independent lifecycle state of one concrete viewport pane. */
