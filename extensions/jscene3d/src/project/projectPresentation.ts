@@ -9,12 +9,7 @@ import { ProjectSnapshot } from './projectState';
 export type ProjectPresentation =
 	| { readonly status: 'welcome' }
 	| { readonly status: 'loading'; readonly projectName: string; readonly phase: 'opening' | 'closing' }
-	| {
-		readonly status: 'ready';
-		readonly projectName: string;
-		readonly sceneCount: number;
-		readonly entityDefinitionCount: number;
-	}
+	| { readonly status: 'ready' }
 	| { readonly status: 'failed'; readonly failure: string };
 
 /** Project presentation operation implemented by the VS Code adapter. */
@@ -66,12 +61,7 @@ export function projectPresentation(snapshot: ProjectSnapshot): ProjectPresentat
 		case 'closing':
 			return { status: 'loading', projectName: snapshot.project.name, phase: 'closing' };
 		case 'open':
-			return {
-				status: 'ready',
-				projectName: snapshot.project.name,
-				sceneCount: snapshot.project.catalog.scenes.length,
-				entityDefinitionCount: snapshot.project.catalog.entityDefinitions.length
-			};
+			return { status: 'ready' };
 		case 'openFailed':
 		case 'serviceUnavailable':
 			return { status: 'failed', failure: snapshot.failure };
@@ -104,7 +94,7 @@ export function projectPresentationHtml(
 	const content = presentation.status === 'loading'
 		? loadingContent(presentation, translate)
 		: presentation.status === 'ready'
-			? readyContent(presentation, translate)
+			? readyContent(translate)
 			: failureContent(presentation.failure, translate);
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -133,19 +123,9 @@ function loadingContent(
 </section>`;
 }
 
-function readyContent(
-	presentation: Extract<ProjectPresentation, { readonly status: 'ready' }>,
-	translate: (message: string, ...args: string[]) => string
-): string {
-	return `<section class="card ready" role="status">
-	<div class="mark" aria-hidden="true"></div>
-	<h1>${escapeHtml(translate('{0} is open', presentation.projectName))}</h1>
-	<p>${escapeHtml(translate('No Scene is currently open.'))}</p>
-	<p class="detail">${escapeHtml(translate('Open a Scene from the Project view to start editing.'))}</p>
-	<div class="counts">
-		<span>${escapeHtml(translate('{0} Scenes', String(presentation.sceneCount)))}</span>
-		<span>${escapeHtml(translate('{0} Entity Definitions', String(presentation.entityDefinitionCount)))}</span>
-	</div>
+function readyContent(translate: (message: string, ...args: string[]) => string): string {
+	return `<section class="ready" role="status">
+	<p class="empty-scene">${escapeHtml(translate('Open a Scene to start editing'))}</p>
 </section>`;
 }
 
@@ -187,7 +167,8 @@ p { margin: 8px 0; color: var(--vscode-descriptionForeground); font-size: 1.05re
 .detail { margin-top: 24px; }
 .progress { height: 6px; margin: 32px auto 0; overflow: hidden; border-radius: 4px; background: var(--vscode-progressBar-background); opacity: .38; }
 .progress span { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--vscode-progressBar-background); animation: progress 1.5s ease-in-out infinite alternate; opacity: 1; }
-.counts { display: flex; justify-content: center; gap: 24px; margin-top: 28px; color: var(--vscode-descriptionForeground); }
+.ready { text-align: center; }
+.empty-scene { margin: 0; color: var(--vscode-descriptionForeground); font-size: 1rem; }
 .failure-mark { width: 56px; height: 56px; display: grid; place-items: center; margin: 0 auto 22px; border: 2px solid var(--vscode-errorForeground); border-radius: 50%; color: var(--vscode-errorForeground); font-size: 2rem; }
 @keyframes progress { from { transform: translateX(-15%); } to { transform: translateX(180%); } }
 @media (prefers-reduced-motion: reduce) { .progress span { animation: none; width: 62%; } }

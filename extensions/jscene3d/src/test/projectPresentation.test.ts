@@ -26,9 +26,7 @@ suite('JScene3D Project presentation', () => {
 		assert.deepStrictEqual(projectPresentation({
 			...openSnapshot(7), status: 'replacing', candidatePath: '/projects/next/next.j3d'
 		}), { status: 'loading', projectName: 'next', phase: 'opening' });
-		assert.deepStrictEqual(projectPresentation(openSnapshot(7)), {
-			status: 'ready', projectName: 'JScene3D Editor Sandbox', sceneCount: 2, entityDefinitionCount: 1
-		});
+		assert.deepStrictEqual(projectPresentation(openSnapshot(7)), { status: 'ready' });
 		assert.deepStrictEqual(projectPresentation({
 			status: 'openFailed', failure: 'project.invalid', activeDiagnostics: [], attemptDiagnostics: []
 		}), { status: 'failed', failure: 'project.invalid' });
@@ -48,7 +46,7 @@ suite('JScene3D Project presentation', () => {
 		assert.deepStrictEqual(host.presentations, [
 			{ status: 'welcome' },
 			{ status: 'loading', projectName: 'sandbox', phase: 'opening' },
-			{ status: 'ready', projectName: 'JScene3D Editor Sandbox', sceneCount: 2, entityDefinitionCount: 1 }
+			{ status: 'ready' }
 		]);
 	});
 
@@ -72,16 +70,15 @@ suite('JScene3D Project presentation', () => {
 			(value, argument, index) => value.replace(`{${index}}`, argument), message);
 		const loading = projectPresentationHtml(
 			{ status: 'loading', projectName: 'Sandbox', phase: 'opening' }, translate);
-		const ready = projectPresentationHtml({
-			status: 'ready', projectName: 'Sandbox', sceneCount: 2, entityDefinitionCount: 1
-		}, translate);
+		const ready = projectPresentationHtml({ status: 'ready' }, translate);
 		const failed = projectPresentationHtml({ status: 'failed', failure: '<invalid>' }, translate);
 
 		assert.match(loading, /Opening Project/);
 		assert.match(loading, />Sandbox</);
 		assert.match(loading, /role="status"/);
-		assert.match(ready, /Sandbox is open/);
-		assert.match(ready, /No Scene is currently open/);
+		assert.match(ready, /Open a Scene to start editing/);
+		assert.match(ready, /class="ready" role="status"/);
+		assert.doesNotMatch(ready, /Sandbox|is open|Scenes|Entity Definitions|class="mark"/);
 		assert.match(failed, /role="alert"/);
 		assert.match(failed, /&lt;invalid&gt;/);
 		assert.doesNotMatch(`${loading}${ready}${failed}`, /Drag a view here to display/);
@@ -92,7 +89,7 @@ suite('JScene3D Project presentation', () => {
 			status: 'loading', projectName: 'Sandbox', phase: 'opening'
 		}), false);
 		assert.strictEqual(shouldRevealStartupPresentation({
-			status: 'ready', projectName: 'Sandbox', sceneCount: 2, entityDefinitionCount: 1
+			status: 'ready'
 		}), true);
 		assert.strictEqual(shouldRevealStartupPresentation({ status: 'failed', failure: 'invalid' }), true);
 		assert.strictEqual(shouldRevealStartupPresentation({ status: 'welcome' }), true);

@@ -92,7 +92,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		panel.title = presentation.status === 'loading'
 			? vscode.l10n.t('Opening {0}', presentation.projectName)
 			: presentation.status === 'ready'
-				? presentation.projectName
+				? vscode.l10n.t('JScene3D Project')
 				: vscode.l10n.t('Project Open Failed');
 		if (presentation.status !== 'welcome') {
 			panel.webview.html = projectPresentationHtml(presentation, (message, ...args) => vscode.l10n.t(message, ...args));

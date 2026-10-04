@@ -15,6 +15,8 @@ suite('JScene3D Scene editor presentation', () => {
 
 		assert.match(html, /Loading Scene…/);
 		assert.match(html, /role="status"/);
+		assert.match(html, /class="spinner"/);
+		assert.doesNotMatch(html, />Main<|>Scene</);
 		assert.doesNotMatch(html, /<canvas/);
 	});
 

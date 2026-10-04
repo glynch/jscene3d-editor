@@ -14,7 +14,7 @@ import { IEditorService } from '../../../../services/editor/common/editorService
 import { CustomEditorInput } from '../../../customEditor/browser/customEditorInput.js';
 import { JScene3DSceneEditorInput } from '../../browser/jscene3dSceneEditorInput.js';
 import { JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, JSCENE3D_SCENE_DEFINITION_VIEW_TYPE } from '../../browser/jscene3dSemanticEditor.js';
-import { beginJScene3DViewportInput, IJScene3DViewportPresentation, JScene3DViewportEditorInput } from '../../browser/jscene3dViewportEditorInput.js';
+import { beginJScene3DViewportInput, IJScene3DViewportPresentation, jscene3dViewportStartupPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../../browser/jscene3dViewportEditorInput.js';
 import { JScene3DViewportFrameGate, jscene3dViewportTextureCoordinates } from '../../browser/jscene3dViewportModel.js';
 
 const launch = {
@@ -40,6 +40,14 @@ suite('JScene3DViewportEditorInput', () => {
 			[0, 0], [1, 0], [0, 1],
 			[0, 1], [1, 0], [1, 1]
 		]);
+	});
+
+	test('maps every normal Scene startup stage to one stable loading presentation', () => {
+		assert.strictEqual(jscene3dViewportStartupPresentation('scene', 'renderer-starting'), 'scene-loading');
+		assert.strictEqual(jscene3dViewportStartupPresentation('scene', 'waiting-for-first-frame'), 'scene-loading');
+		assert.strictEqual(jscene3dViewportStartupPresentation('scene', 'rendered'), 'hidden');
+		assert.strictEqual(jscene3dViewportStartupPresentation('scene', 'failed'), 'failed');
+		assert.strictEqual(jscene3dViewportStartupPresentation('scene', 'disposed'), 'hidden');
 	});
 
 	test('includes service, project, Scene, and viewport identity without becoming a singleton', () => {
@@ -143,7 +151,7 @@ suite('JScene3DViewportEditorInput', () => {
 			bridge.rendererReady('viewport-second', { sessionId: 2, rendererGeneration: 1 });
 			await bridge.presentFrame('viewport-second', { sessionId: 2, rendererGeneration: 1 });
 			second.detach(presentation);
-			beginJScene3DViewportInput(presentation, main.startupState);
+			beginJScene3DViewportInput(presentation, main.startupState, main.launch.kind);
 			await main.attach(presentation, { width: 800, height: 600 }, bridge);
 
 			assert.deepStrictEqual({
@@ -151,13 +159,15 @@ suite('JScene3DViewportEditorInput', () => {
 				stopped: bridge.stopped,
 				paused: bridge.paused.length,
 				resumed: bridge.resumed.length,
-				activeState: presentation.states.at(-1)
+				activeState: presentation.states.at(-1),
+				loadingVisible: presentation.loadingStateVisible
 			}, {
 				started: ['viewport-main', 'viewport-second'],
 				stopped: [],
 				paused: 2,
 				resumed: 3,
-				activeState: 'rendered'
+				activeState: 'rendered',
+				loadingVisible: false
 			});
 		} finally {
 			await main.stop();
@@ -171,12 +181,13 @@ suite('JScene3DViewportEditorInput', () => {
 		const presentation = new TestPresentation();
 		presentation.hasVisibleFrame = true;
 
-		beginJScene3DViewportInput(presentation, 'renderer-starting');
+		beginJScene3DViewportInput(presentation, 'renderer-starting', 'scene');
 
 		assert.deepStrictEqual({ hasVisibleFrame: presentation.hasVisibleFrame, state: presentation.states.at(-1) }, {
 			hasVisibleFrame: false,
 			state: 'renderer-starting'
 		});
+		assert.strictEqual(presentation.visiblePresentation, 'Loading Scene…');
 	});
 
 	test('keeps an earlier submitted Scene frame hidden after a newer input becomes active', () => {
@@ -262,19 +273,56 @@ suite('JScene3DViewportEditorInput', () => {
 			});
 			bridge.rendererReady();
 			assert.deepStrictEqual(presentation.states, ['renderer-starting', 'waiting-for-first-frame']);
+			assert.deepStrictEqual(presentation.visiblePresentations, ['Loading Scene…', 'Loading Scene…']);
 
 			await bridge.presentFrame();
-			assert.deepStrictEqual({ states: presentation.states, framesPresented: presentation.framesPresented }, {
+			assert.deepStrictEqual({
+				states: presentation.states,
+				framesPresented: presentation.framesPresented,
+				visiblePresentation: presentation.visiblePresentation,
+				loadingStateVisible: presentation.loadingStateVisible
+			}, {
 				states: [
 					'renderer-starting',
 					'waiting-for-first-frame',
 					'rendered'
 				],
-				framesPresented: 1
+				framesPresented: 1,
+				visiblePresentation: 'hidden',
+				loadingStateVisible: false
 			});
 		} finally {
 			await input.stop();
 			input.dispose();
+		}
+	});
+
+	test('does not let an obsolete first frame dismiss the newly active Scene loader', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new DeferredFramePresentation();
+		const main = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const second = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
+		try {
+			await main.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.rendererReady('viewport-main');
+			const staleFrame = bridge.presentFrame('viewport-main');
+
+			main.detach(presentation);
+			beginJScene3DViewportInput(presentation, second.startupState, second.launch.kind);
+			await second.attach(presentation, { width: 800, height: 600 }, bridge);
+			presentation.resolveFrame(false);
+			await staleFrame;
+
+			assert.strictEqual(main.startupState, 'waiting-for-first-frame');
+			assert.strictEqual(second.startupState, 'renderer-starting');
+			assert.strictEqual(presentation.visiblePresentation, 'Loading Scene…');
+			assert.strictEqual(presentation.loadingStateVisible, true);
+		} finally {
+			presentation.resolveFrame(false);
+			await main.stop();
+			await second.stop();
+			main.dispose();
+			second.dispose();
 		}
 	});
 
@@ -470,29 +518,54 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 
 class TestPresentation implements IJScene3DViewportPresentation {
 	readonly states: string[] = [];
+	readonly visiblePresentations: string[] = [];
 	readonly failures: string[] = [];
 	framesPresented = 0;
 	resetFrames = 0;
 	hasVisibleFrame = false;
 	loadingStateVisible = false;
+	visiblePresentation = 'hidden';
 	resetFrame(): void {
 		this.resetFrames++;
 		this.hasVisibleFrame = false;
 	}
-	showStartupState(state: string): void {
+	showStartupState(state: JScene3DViewportStartupState, viewportKind: 'scene' | 'game'): void {
 		this.states.push(state);
-		this.loadingStateVisible = state !== 'rendered' && state !== 'disposed' && state !== 'failed';
+		const presentation = jscene3dViewportStartupPresentation(viewportKind, state);
+		this.visiblePresentation = presentation === 'scene-loading' ? 'Loading Scene…' : presentation;
+		this.visiblePresentations.push(this.visiblePresentation);
+		this.loadingStateVisible = presentation === 'scene-loading'
+			|| presentation === 'renderer-starting'
+			|| presentation === 'waiting-for-first-frame';
 	}
-	presentFrame(_frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<void> {
+	presentFrame(_frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<boolean> {
 		this.framesPresented++;
 		this.hasVisibleFrame = true;
-		return Promise.resolve();
+		return Promise.resolve(true);
 	}
 	showFailure(message: string): void {
 		this.failures.push(message);
 		this.loadingStateVisible = false;
+		this.visiblePresentation = 'failed';
 	}
-	hideFailure(): void { this.loadingStateVisible = false; }
+	hideFailure(): void {
+		this.loadingStateVisible = false;
+		this.visiblePresentation = 'hidden';
+	}
+}
+
+class DeferredFramePresentation extends TestPresentation {
+	private frameResolver: ((presented: boolean) => void) | undefined;
+
+	override presentFrame(_frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<boolean> {
+		this.framesPresented++;
+		return new Promise(resolve => { this.frameResolver = resolve; });
+	}
+
+	resolveFrame(presented: boolean): void {
+		this.frameResolver?.(presented);
+		this.frameResolver = undefined;
+	}
 }
 
 function sceneLaunch(sceneAssetId: string, viewportId: string): IJScene3DViewportLaunch {

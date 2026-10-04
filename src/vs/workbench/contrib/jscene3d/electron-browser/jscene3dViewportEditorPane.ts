@@ -5,6 +5,8 @@
 
 import { Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
 import { IJScene3DViewportFrameIdentity } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
@@ -16,7 +18,7 @@ import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
-import { beginJScene3DViewportInput, IJScene3DViewportPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
+import { beginJScene3DViewportInput, IJScene3DViewportPresentation, jscene3dViewportStartupPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
 import { JScene3DSceneEditorInput } from '../browser/jscene3dSceneEditorInput.js';
 import { JScene3DViewportFrameGate, jscene3dViewportVertexShader, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
 
@@ -26,6 +28,8 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	private canvas: HTMLCanvasElement | undefined;
 	private errorElement: HTMLElement | undefined;
+	private spinnerElement: HTMLElement | undefined;
+	private messageElement: HTMLElement | undefined;
 	private context: GPUCanvasContext | undefined;
 	private device: GPUDevice | undefined;
 	private pipeline: GPURenderPipeline | undefined;
@@ -77,13 +81,25 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		errorElement.style.position = 'absolute';
 		errorElement.style.inset = '0';
 		errorElement.style.display = 'none';
+		errorElement.style.flexDirection = 'column';
 		errorElement.style.alignItems = 'center';
 		errorElement.style.justifyContent = 'center';
+		errorElement.style.gap = '10px';
 		errorElement.style.padding = '24px';
 		errorElement.style.textAlign = 'center';
 		errorElement.style.color = 'var(--vscode-errorForeground)';
 		errorElement.style.background = 'var(--vscode-editor-background)';
-		errorElement.setAttribute('role', 'alert');
+		const spinnerElement = parent.ownerDocument.createElement('span');
+		spinnerElement.classList.add(...ThemeIcon.asClassNameArray(ThemeIcon.modify(Codicon.loading, 'spin')));
+		spinnerElement.style.fontSize = '16px';
+		spinnerElement.style.color = 'var(--vscode-descriptionForeground)';
+		spinnerElement.setAttribute('aria-hidden', 'true');
+		errorElement.appendChild(spinnerElement);
+		this.spinnerElement = spinnerElement;
+
+		const messageElement = parent.ownerDocument.createElement('span');
+		errorElement.appendChild(messageElement);
+		this.messageElement = messageElement;
 		parent.appendChild(errorElement);
 		this.errorElement = errorElement;
 
@@ -108,7 +124,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		const viewport = this.viewportInput(input);
-		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting');
+		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting', viewport?.launch.kind ?? 'game');
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.canvas) {
 			return;
@@ -116,7 +132,10 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 		try {
 			this.hideFailure();
-			this.showStartupState(this.viewportInput(input)?.startupState ?? 'renderer-starting');
+			this.showStartupState(
+				this.viewportInput(input)?.startupState ?? 'renderer-starting',
+				this.viewportInput(input)?.launch.kind ?? 'game'
+			);
 			await this.initializeWebGPU();
 			if (token.isCancellationRequested) {
 				return;
@@ -212,7 +231,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		});
 	}
 
-	async presentFrame(frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<void> {
+	async presentFrame(frame: VideoFrame, _identity: IJScene3DViewportFrameIdentity): Promise<boolean> {
 		const framePresentationGeneration = this.frameGate.capture();
 		const canvas = this.canvas;
 		const device = this.device;
@@ -221,7 +240,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		const bindGroupLayout = this.bindGroupLayout;
 		const sampler = this.sampler;
 		if (!canvas || !device || !context || !pipeline || !bindGroupLayout || !sampler || !this.isVisible()) {
-			return;
+			return false;
 		}
 		const bindGroup = device.createBindGroup({
 			layout: bindGroupLayout,
@@ -247,9 +266,11 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		if (canvas.style.visibility !== 'visible') {
 			await device.queue.onSubmittedWorkDone();
 			if (this.canvas === canvas && this.isVisible()) {
-				this.frameGate.reveal(canvas, framePresentationGeneration);
+				return this.frameGate.reveal(canvas, framePresentationGeneration);
 			}
+			return false;
 		}
+		return true;
 	}
 
 	resetFrame(): void {
@@ -258,25 +279,33 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		}
 	}
 
-	showStartupState(state: JScene3DViewportStartupState): void {
-		if (!this.errorElement || state === 'failed') {
+	showStartupState(state: JScene3DViewportStartupState, viewportKind: 'scene' | 'game'): void {
+		if (!this.errorElement || !this.messageElement || !this.spinnerElement) {
 			return;
 		}
-		if (state === 'rendered' || state === 'disposed') {
+		const presentation = jscene3dViewportStartupPresentation(viewportKind, state);
+		if (presentation === 'failed') {
+			return;
+		}
+		if (presentation === 'hidden') {
 			this.hideFailure();
 			return;
 		}
-		this.errorElement.textContent = state === 'renderer-starting'
-			? localize('jscene3dNativeViewportStarting', "Starting renderer…")
-			: localize('jscene3dNativeViewportWaitingForFrame', "Waiting for first frame…");
-		this.errorElement.style.color = 'var(--vscode-foreground)';
+		this.messageElement.textContent = presentation === 'scene-loading'
+			? localize('jscene3dNativeViewportLoadingScene', "Loading Scene…")
+			: presentation === 'renderer-starting'
+				? localize('jscene3dNativeViewportStarting', "Starting renderer…")
+				: localize('jscene3dNativeViewportWaitingForFrame', "Waiting for first frame…");
+		this.spinnerElement.style.display = '';
+		this.errorElement.style.color = 'var(--vscode-descriptionForeground)';
 		this.errorElement.style.display = 'flex';
 		this.errorElement.setAttribute('role', 'status');
 	}
 
 	showFailure(detail: string): void {
-		if (this.errorElement) {
-			this.errorElement.textContent = localize('jscene3dNativeViewportFailure', "The native viewport stopped: {0}", detail);
+		if (this.errorElement && this.messageElement && this.spinnerElement) {
+			this.spinnerElement.style.display = 'none';
+			this.messageElement.textContent = localize('jscene3dNativeViewportFailure', "The native viewport stopped: {0}", detail);
 			this.errorElement.style.color = 'var(--vscode-errorForeground)';
 			this.errorElement.style.display = 'flex';
 			this.errorElement.setAttribute('role', 'alert');
@@ -284,9 +313,10 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	}
 
 	hideFailure(): void {
-		if (this.errorElement) {
+		if (this.errorElement && this.messageElement && this.spinnerElement) {
 			this.errorElement.style.display = 'none';
-			this.errorElement.textContent = '';
+			this.messageElement.textContent = '';
+			this.spinnerElement.style.display = 'none';
 		}
 	}
 

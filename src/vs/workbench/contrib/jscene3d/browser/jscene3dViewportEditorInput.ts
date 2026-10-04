@@ -15,8 +15,8 @@ import { IJScene3DViewportSize, JScene3DViewportLifecycleAction, JScene3DViewpor
 /** Visible renderer target attached to a retained viewport session. */
 export interface IJScene3DViewportPresentation {
 	resetFrame(): void;
-	showStartupState(state: JScene3DViewportStartupState): void;
-	presentFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
+	showStartupState(state: JScene3DViewportStartupState, viewportKind: IJScene3DViewportLaunch['kind']): void;
+	presentFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<boolean>;
 	showFailure(message: string): void;
 	hideFailure(): void;
 }
@@ -24,11 +24,40 @@ export interface IJScene3DViewportPresentation {
 /** User-visible startup state for one native viewport. */
 export type JScene3DViewportStartupState = 'renderer-starting' | 'waiting-for-first-frame' | 'rendered' | 'failed' | 'disposed';
 
+/** User-facing overlay derived from the detailed native viewport lifecycle. */
+export type JScene3DViewportStartupPresentation =
+	| 'scene-loading'
+	| 'renderer-starting'
+	| 'waiting-for-first-frame'
+	| 'hidden'
+	| 'failed';
+
+/** Consolidates normal Scene startup stages without weakening their internal lifecycle states. */
+export function jscene3dViewportStartupPresentation(
+	viewportKind: IJScene3DViewportLaunch['kind'],
+	state: JScene3DViewportStartupState
+): JScene3DViewportStartupPresentation {
+	if (state === 'failed') {
+		return 'failed';
+	}
+	if (state === 'rendered' || state === 'disposed') {
+		return 'hidden';
+	}
+	if (viewportKind === 'scene') {
+		return 'scene-loading';
+	}
+	return state;
+}
+
 /** Clears presentation state before a different viewport input becomes active. */
-export function beginJScene3DViewportInput(presentation: IJScene3DViewportPresentation, state: JScene3DViewportStartupState): void {
+export function beginJScene3DViewportInput(
+	presentation: IJScene3DViewportPresentation,
+	state: JScene3DViewportStartupState,
+	viewportKind: IJScene3DViewportLaunch['kind']
+): void {
 	presentation.resetFrame();
 	presentation.hideFailure();
-	presentation.showStartupState(state);
+	presentation.showStartupState(state, viewportKind);
 }
 
 /** One generation-scoped native viewport for a Java-prepared project Scene. */
@@ -106,7 +135,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	): Promise<void> {
 		this.presentation = presentation;
 		presentation.hideFailure();
-		presentation.showStartupState(this.startupState);
+		presentation.showStartupState(this.startupState, this.launch.kind);
 		this.bridge ??= bridge;
 		if (this.bridge !== bridge) {
 			throw new Error('A viewport session cannot move between renderer bridges');
@@ -263,8 +292,9 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		if (!session || !presentation || !sameSession(session, identity) || this.model.isTerminal) {
 			return;
 		}
-		await presentation.presentFrame(frame, identity);
-		if (this.presentation === presentation && sameSession(this.model.sessionIdentity, identity) && !this.model.isTerminal) {
+		const presented = await presentation.presentFrame(frame, identity);
+		if (presented && this.presentation === presentation
+			&& sameSession(this.model.sessionIdentity, identity) && !this.model.isTerminal) {
 			this.transitionTo('rendered');
 		}
 	}
@@ -275,7 +305,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		}
 		this._startupState = state;
 		this.startupStateEmitter.fire(state);
-		this.presentation?.showStartupState(state);
+		this.presentation?.showStartupState(state, this.launch.kind);
 	}
 
 	override matches(other: EditorInput | unknown): boolean {
