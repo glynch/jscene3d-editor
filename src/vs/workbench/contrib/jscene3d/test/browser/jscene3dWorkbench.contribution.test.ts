@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
+import { mainWindow } from '../../../../../base/browser/window.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { MenuId, MenuRegistry, isIMenuItem } from '../../../../../platform/actions/common/actions.js';
@@ -17,11 +18,14 @@ import { IViewsRegistry, ViewContainerLocation } from '../../../../common/views.
 import { breadcrumbsEnabledForEditor } from '../../../../browser/parts/editor/breadcrumbsControl.js';
 import { Parts } from '../../../../services/layout/browser/layoutService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IEditorGroup, IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { emptyViewName } from '../../../files/browser/views/emptyView.js';
 import { registerEmptyExplorerWelcomeContent } from '../../../files/browser/explorerViewlet.js';
 import { GettingStartedInput } from '../../../welcomeGettingStarted/browser/gettingStartedInput.js';
+import { shouldRemovePartsSplashOnInitialLayout } from '../../../splash/browser/partsSplash.js';
 import {
 	closeJScene3DWelcomeEditors,
+	completeJScene3DStartupPresentation,
 	JScene3DLayoutService,
 	JScene3DLayoutStorage,
 	JScene3DProjectTransitionLayout,
@@ -224,6 +228,81 @@ suite('JScene3D workbench integration', () => {
 			welcomeContent: ['Open a JScene3D project to get started.\n[Open Project...](command:jscene3d.openProject)']
 		});
 		assert.strictEqual(welcomeContent.some(content => content.includes('No Folder Opened')), false);
+	});
+
+	test('removes only empty inactive restored groups before revealing startup presentation', () => {
+		const active = { isEmpty: false } as IEditorGroup;
+		const empty = { isEmpty: true } as IEditorGroup;
+		const occupied = { isEmpty: false } as IEditorGroup;
+		const removed: IEditorGroup[] = [];
+		const splash = mainWindow.document.createElement('div');
+		splash.id = 'monaco-parts-splash';
+		splash.className = 'jscene3d-startup-splash';
+		mainWindow.document.body.appendChild(splash);
+		const style = mainWindow.document.createElement('style');
+		style.className = 'initialShellColors';
+		mainWindow.document.head.appendChild(style);
+		const groups = {
+			activeGroup: active,
+			groups: [active, empty, occupied],
+			removeGroup: (group: IEditorGroup) => removed.push(group)
+		} as unknown as IEditorGroupsService;
+
+		const completed = completeJScene3DStartupPresentation(groups, mainWindow, true);
+
+		assert.strictEqual(completed, true);
+		assert.deepStrictEqual(removed, [empty]);
+		assert.strictEqual(mainWindow.document.getElementById('monaco-parts-splash'), null);
+		assert.strictEqual(mainWindow.document.head.querySelector('.initialShellColors'), null);
+	});
+
+	test('keeps automatic Project restoration covered by the application startup splash', () => {
+		const active = { isEmpty: false } as IEditorGroup;
+		const empty = { isEmpty: true } as IEditorGroup;
+		const removed: IEditorGroup[] = [];
+		const splash = mainWindow.document.createElement('div');
+		splash.id = 'monaco-parts-splash';
+		splash.className = 'jscene3d-startup-splash';
+		mainWindow.document.body.appendChild(splash);
+		const groups = {
+			activeGroup: active,
+			groups: [active, empty],
+			removeGroup: (group: IEditorGroup) => removed.push(group)
+		} as unknown as IEditorGroupsService;
+
+		const completed = completeJScene3DStartupPresentation(groups, mainWindow, false);
+
+		assert.strictEqual(completed, false);
+		assert.deepStrictEqual(removed, []);
+		assert.strictEqual(mainWindow.document.getElementById('monaco-parts-splash'), splash);
+		splash.remove();
+	});
+
+	test('allows an ordinary Project transition to reveal its restored in-workbench presentation', () => {
+		const active = { isEmpty: false } as IEditorGroup;
+		const empty = { isEmpty: true } as IEditorGroup;
+		const removed: IEditorGroup[] = [];
+		const groups = {
+			activeGroup: active,
+			groups: [active, empty],
+			removeGroup: (group: IEditorGroup) => removed.push(group)
+		} as unknown as IEditorGroupsService;
+
+		const completed = completeJScene3DStartupPresentation(groups, mainWindow, false);
+
+		assert.strictEqual(completed, true);
+		assert.deepStrictEqual(removed, [empty]);
+	});
+
+	test('retains the branded splash through initial workbench layout', () => {
+		const splash = mainWindow.document.createElement('div');
+		splash.id = 'monaco-parts-splash';
+		splash.className = 'jscene3d-startup-splash';
+		mainWindow.document.body.appendChild(splash);
+
+		assert.strictEqual(shouldRemovePartsSplashOnInitialLayout(mainWindow), false);
+
+		splash.remove();
 	});
 });
 

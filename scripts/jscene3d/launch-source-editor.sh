@@ -6,6 +6,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly script_dir
 repository_root="$(cd "$script_dir/../.." && pwd)"
 readonly repository_root
+development_projects_root="$(cd "$repository_root/../.." && pwd -P)"
+readonly development_projects_root
+canonical_electron_executable="$development_projects_root/jscene3d-electron/src/out/JScene3D-Electron42/Electron.app/Contents/MacOS/Electron"
+readonly canonical_electron_executable
+# shellcheck source=scripts/jscene3d/development-editor-identity.sh
+source "$script_dir/development-editor-identity.sh"
 authoring_runtime_version_file="$script_dir/authoring-runtime.version"
 readonly authoring_runtime_version_file
 renderer_runtime_version_file="$script_dir/renderer-runtime.version"
@@ -298,7 +304,11 @@ if [[ "$OSTYPE" == darwin* ]]; then
 	[[ "$JSCENE3D_ELECTRON_EXECUTABLE" = /* ]] || fail "JSCENE3D_ELECTRON_EXECUTABLE must be an absolute path."
 	source_binary="$JSCENE3D_ELECTRON_EXECUTABLE"
 	readonly source_binary
-	[[ -x "$source_binary" ]] || fail "source-built JScene3D Editor not found: $source_binary"
+	identity_diagnostic="$(jscene3d_validate_canonical_development_editor_executable \
+		"$canonical_electron_executable" "$source_binary" 2>&1)" \
+		|| fail "$identity_diagnostic"
+	application_bundle="$(jscene3d_macos_app_bundle_for_executable "$source_binary")"
+	readonly application_bundle
 fi
 
 echo "JScene3D source launch configuration"
@@ -320,12 +330,19 @@ else
 	echo "  Project runtime artifacts: none"
 fi
 echo "  Electron executable:      $source_binary"
+echo "  Application bundle:       $application_bundle"
+echo "  Application identity:     $JSCENE3D_DEVELOPMENT_APPLICATION_NAME"
+echo "  Bundle identifier:        $JSCENE3D_DEVELOPMENT_BUNDLE_IDENTIFIER"
+echo "  Automation target:        $JSCENE3D_DEVELOPMENT_BUNDLE_IDENTIFIER"
 echo "  Isolated profile:   $profile"
-if [[ "$use_authoring_environment" == true ]]; then
-	echo "  Restart command:    JSCENE3D_ELECTRON_EXECUTABLE='$source_binary' ./scripts/jscene3d/launch-source-editor.sh --use-authoring-environment --profile '$profile'"
-else
-	echo "  Restart command:    JSCENE3D_ELECTRON_EXECUTABLE='$source_binary' ./scripts/jscene3d/launch-source-editor.sh --profile '$profile'"
-fi
+restart_command="$(jscene3d_development_editor_restart_command \
+	"$source_binary" \
+	"$repository_root/scripts/jscene3d/launch-source-editor.sh" \
+	"$profile" \
+	"$use_authoring_environment" \
+	"${launch_arguments[@]}")"
+readonly restart_command
+echo "  Restart command:    $restart_command"
 
 if [[ "$check_only" == true ]]; then
 	echo "Configuration is valid; the editor was not launched."
@@ -336,6 +353,7 @@ if [[ "$check_only" == true ]]; then
 fi
 
 exec env -u ELECTRON_RUN_AS_NODE \
+	JSCENE3D_ELECTRON_EXECUTABLE="$source_binary" \
 	JSCENE3D_AUTHORING_SERVICE_MODULE_PATH="$module_path" \
 	JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH="$extension_metadata_path" \
 	JSCENE3D_JAVA_EXECUTABLE="$java_executable" \

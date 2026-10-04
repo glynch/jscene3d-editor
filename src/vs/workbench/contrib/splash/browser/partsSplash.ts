@@ -23,11 +23,11 @@ import { mainWindow } from '../../../../base/browser/window.js';
 import { ILifecycleService, LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { TitleBarSetting } from '../../../../platform/window/common/window.js';
 
+const partsSplashElementId = 'monaco-parts-splash';
+
 export class PartsSplash {
 
 	static readonly ID = 'workbench.contrib.partsSplash';
-
-	private static readonly _splashElementId = 'monaco-parts-splash';
 
 	private readonly _disposables = new DisposableStore();
 
@@ -43,8 +43,10 @@ export class PartsSplash {
 		@ILifecycleService lifecycleService: ILifecycleService,
 	) {
 		Event.once(_layoutService.onDidLayoutMainContainer)(() => {
-			this._removePartsSplash();
-			perf.mark('code/didRemovePartsSplash');
+			if (shouldRemovePartsSplashOnInitialLayout(mainWindow)) {
+				removePartsSplash(mainWindow);
+				perf.mark('code/didRemovePartsSplash');
+			}
 		}, undefined, this._disposables);
 
 		const lastIdleSchedule = this._disposables.add(new MutableDisposable());
@@ -165,16 +167,20 @@ export class PartsSplash {
 		return !isFullscreen(mainWindow) && !this._environmentService.isExtensionDevelopment && !this._didChangeTitleBarStyle;
 	}
 
-	private _removePartsSplash(): void {
-		// eslint-disable-next-line no-restricted-syntax
-		const element = mainWindow.document.getElementById(PartsSplash._splashElementId);
-		if (element) {
-			element.style.display = 'none';
-		}
+}
 
-		// remove initial colors
-		// eslint-disable-next-line no-restricted-syntax
-		const defaultStyles = mainWindow.document.head.getElementsByClassName('initialShellColors');
-		defaultStyles[0]?.remove();
+/** Returns false only while the product-owned JScene3D startup presentation is active. */
+export function shouldRemovePartsSplashOnInitialLayout(targetWindow: Window): boolean {
+	// eslint-disable-next-line no-restricted-syntax
+	return !targetWindow.document.getElementById(partsSplashElementId)?.classList.contains('jscene3d-startup-splash');
+}
+
+/** Removes the initial splash and shell-color styles once the owning presentation is ready. */
+export function removePartsSplash(targetWindow: Window): void {
+	// eslint-disable-next-line no-restricted-syntax
+	targetWindow.document.getElementById(partsSplashElementId)?.remove();
+	// eslint-disable-next-line no-restricted-syntax
+	for (const style of Array.from(targetWindow.document.head.getElementsByClassName('initialShellColors'))) {
+		style.remove();
 	}
 }

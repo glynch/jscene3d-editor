@@ -106,7 +106,9 @@ export class AuthoringWorkflow {
 		switch (result.status) {
 			case 'opened':
 			case 'replaced':
-				await this.revealProjectWorkspace();
+				if (result.workspace === 'unchanged') {
+					await this.revealProjectWorkspace();
+				}
 				return;
 			case 'openRejected':
 				await this.host.notify('projectOpenRejected');
@@ -176,6 +178,8 @@ export class AuthoringWorkflow {
 		const outcome = await this.projectLifecycle.reopenPendingProject();
 		if (outcome.status === 'failed') {
 			await this.host.notify('projectReopenFailed');
+		} else if (outcome.status === 'reopened') {
+			await this.revealProjectWorkspace();
 		}
 	}
 
@@ -202,7 +206,7 @@ export class AuthoringWorkflow {
 }
 
 function activeProjectGeneration(snapshot: ProjectSnapshot): number | undefined {
-	return snapshot.status === 'open' || snapshot.status === 'replacing' || snapshot.status === 'closing'
+	return snapshot.status === 'open'
 		? snapshot.generation
 		: undefined;
 }

@@ -47,6 +47,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.strictEqual(result.workspace, 'transitionRequested');
 		assert.deepStrictEqual(store.value, intent('/projects/a/a.j3d', '/projects/a'));
 		assert.deepStrictEqual(workspace.openedResource, resource('/projects/a'));
+		assert.deepStrictEqual(state.readyCalls, []);
 	});
 
 	test('failed initial open leaves workspace unchanged and clears stale intent', async () => {
@@ -122,6 +123,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.strictEqual(result.workspace, 'transitionRequested');
 		assert.deepStrictEqual(store.value, intent('/projects/b/b.j3d', '/projects/b'));
 		assert.deepStrictEqual(workspace.openedResource, resource('/projects/b'));
+		assert.deepStrictEqual(state.readyCalls, []);
 		assert.ok(logger.lines.includes('Opening replacement workspace: /projects/b'));
 	});
 
@@ -142,6 +144,7 @@ suite('JScene3D project workspace lifecycle', () => {
 		assert.strictEqual(result.workspace, 'unchanged');
 		assert.deepStrictEqual(store.value, intent('/projects/a/b.j3d', '/projects/a'));
 		assert.strictEqual(workspace.openedResource, undefined);
+		assert.deepStrictEqual(state.readyCalls, [8]);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(sameRootB, 8));
 	});
 
@@ -321,6 +324,7 @@ suite('JScene3D project workspace lifecycle', () => {
 
 		assert.deepStrictEqual(result, { status: 'reopened' });
 		assert.deepStrictEqual(state.openCalls, ['/projects/b/b.j3d']);
+		assert.deepStrictEqual(state.readyCalls, [12]);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 12));
 		assert.deepStrictEqual(store.value, intent('/projects/b/b.j3d', '/projects/b'));
 	});
@@ -381,6 +385,7 @@ class TestProjectState implements WorkspaceProjectState {
 	snapshot: ProjectSnapshot = closedSnapshot();
 	nextSelection: ProjectSelectionResult = openSelection(openResult(summaryA, 7));
 	readonly openCalls: string[] = [];
+	readonly readyCalls: number[] = [];
 	closeCalls = 0;
 	closeError: Error | undefined;
 	private closeStartedResolve: (() => void) | undefined;
@@ -394,9 +399,17 @@ class TestProjectState implements WorkspaceProjectState {
 		const selection = this.nextSelection;
 		const project = acceptedProject(selection);
 		if (project !== undefined) {
-			this.snapshot = openSnapshot(project.summary, project.generation);
+			this.snapshot = preparingWorkspaceSnapshot(project.summary, project.generation);
 		}
 		return Promise.resolve(selection);
+	}
+
+	ready(expectedGeneration: number): void {
+		this.readyCalls.push(expectedGeneration);
+		if (this.snapshot.status !== 'preparingWorkspace' || this.snapshot.generation !== expectedGeneration) {
+			throw new Error('Unexpected Project ready transition');
+		}
+		this.snapshot = { ...this.snapshot, status: 'open' };
 	}
 
 	close(): Promise<void> {
@@ -548,6 +561,10 @@ function candidateRejectedResult(): ProjectReplaceResultDto {
 
 function openSnapshot(project: ProjectSummaryDto, generation: number): ProjectSnapshot {
 	return { status: 'open', generation, project, activeDiagnostics: [], attemptDiagnostics: [] };
+}
+
+function preparingWorkspaceSnapshot(project: ProjectSummaryDto, generation: number): ProjectSnapshot {
+	return { status: 'preparingWorkspace', generation, project, activeDiagnostics: [], attemptDiagnostics: [] };
 }
 
 function closedSnapshot(): ProjectSnapshot {

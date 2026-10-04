@@ -38,6 +38,7 @@ export interface ProjectWorkspaceHost {
 export interface WorkspaceProjectState {
 	readonly snapshot: ProjectSnapshot;
 	open(path: string): Promise<ProjectSelectionResult>;
+	ready(expectedGeneration: number): void;
 	close(): Promise<void>;
 }
 
@@ -156,6 +157,7 @@ export class ProjectWorkspaceLifecycle {
 			};
 			if (this.workspace.matchesProjectRoot(projectRoot)) {
 				await this.intentStore.write(intent);
+				this.projectState.ready(outcome.projectGeneration);
 				this.logger.appendLine(`Workspace already matches project root: ${project.root}`);
 				return { status: outcome.status, workspace: 'unchanged' };
 			}
@@ -228,6 +230,7 @@ export class ProjectWorkspaceLifecycle {
 					this.logger.appendLine('Project reopen failed: Java project root does not match the current workspace');
 					return { status: 'failed', reason: 'Java project root does not match the current workspace' };
 				}
+				this.projectState.ready(result.projectGeneration);
 				this.logger.appendLine(`Project reopened: ${result.project.name}`);
 				return { status: 'reopened' };
 			} catch (error) {
@@ -320,18 +323,30 @@ function projectReopenIntent(value: unknown): ProjectReopenIntent | undefined {
 }
 
 type ProjectSelectionOutcome =
-	| { readonly status: 'opened' | 'replaced'; readonly project: ProjectSummaryDto }
+	| {
+		readonly status: 'opened' | 'replaced';
+		readonly projectGeneration: number;
+		readonly project: ProjectSummaryDto;
+	}
 	| { readonly status: 'openRejected' | 'candidateRejected' | 'conflict' };
 
 function projectSelectionOutcome(selection: ProjectSelectionResult): ProjectSelectionOutcome {
 	if (selection.operation === 'open') {
 		return selection.result.opened
-			? { status: 'opened', project: selection.result.project }
+			? {
+				status: 'opened',
+				projectGeneration: selection.result.projectGeneration,
+				project: selection.result.project
+			}
 			: { status: 'openRejected' };
 	}
 	switch (selection.result.outcome) {
 		case 'replaced':
-			return { status: 'replaced', project: selection.result.project };
+			return {
+				status: 'replaced',
+				projectGeneration: selection.result.projectGeneration,
+				project: selection.result.project
+			};
 		case 'candidateRejected':
 			return { status: 'candidateRejected' };
 		case 'conflict':

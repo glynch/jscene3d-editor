@@ -11,6 +11,7 @@ import { IPartsSplash } from '../../../platform/theme/common/themeService.js';
 import { ThemeTypeSelector } from '../../../platform/theme/common/theme.js';
 import { getPartsSplashColors } from '../../electron-browser/workbench/partsSplash.js';
 import { hideJScene3DSplash, showJScene3DSplash } from '../../electron-browser/workbench/jscene3dSplash.js';
+import { shouldShowJScene3DSplash } from '../../../platform/window/common/window.js';
 
 suite('Parts splash colors', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -136,4 +137,31 @@ suite('JScene3D startup splash', () => {
 			styles: null,
 		});
 	});
+
+	test('uses the branded splash only for the first editor window during application startup', () => {
+		assert.deepStrictEqual({
+			initialEditor: shouldShowJScene3DSplash('jscene3d-editor', {
+				initialStartup: true, newWindow: true, hasOpenWindows: false, sessionsWindow: false
+			}),
+			reloadedEditor: shouldShowJScene3DSplash('jscene3d-editor', {
+				initialStartup: false, newWindow: false, hasOpenWindows: true, sessionsWindow: false
+			}),
+			laterEditorWindow: shouldShowJScene3DSplash('jscene3d-editor', {
+				initialStartup: true, newWindow: true, hasOpenWindows: true, sessionsWindow: false
+			}),
+			sessions: shouldShowJScene3DSplash('jscene3d-editor', {
+				initialStartup: true, newWindow: true, hasOpenWindows: false, sessionsWindow: true
+			}),
+			codeOss: shouldShowJScene3DSplash('code-oss', {
+				initialStartup: true, newWindow: true, hasOpenWindows: false, sessionsWindow: false
+			})
+		}, {
+			initialEditor: true,
+			reloadedEditor: false,
+			laterEditorWindow: false,
+			sessions: false,
+			codeOss: false
+		});
+	});
+
 });

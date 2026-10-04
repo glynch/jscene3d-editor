@@ -164,16 +164,34 @@ authoring runtime are available, verify the complete launch configuration
 without opening the GUI:
 
 ```bash
-JSCENE3D_ELECTRON_EXECUTABLE=/absolute/path/to/Electron.app/Contents/MacOS/Electron \
+JSCENE3D_ELECTRON_EXECUTABLE=/Users/glynch/development/projects/jscene3d-electron/src/out/JScene3D-Electron42/Electron.app/Contents/MacOS/Electron \
   ./scripts/jscene3d/launch-source-editor.sh --check --fresh-profile
 ```
 
 Then launch the editor with an isolated development profile:
 
 ```bash
-JSCENE3D_ELECTRON_EXECUTABLE=/absolute/path/to/Electron.app/Contents/MacOS/Electron \
-  ./scripts/jscene3d/launch-source-editor.sh --fresh-profile
+JSCENE3D_ELECTRON_EXECUTABLE=/Users/glynch/development/projects/jscene3d-electron/src/out/JScene3D-Electron42/Electron.app/Contents/MacOS/Electron \
+  ./scripts/jscene3d/launch-source-editor.sh --fresh-profile -- --use-mock-keychain
 ```
+
+This is the only supported current editor-development launch path. Its macOS
+development application identity is `JScene3D Editor Dev`, with bundle
+identifier `com.jscene3d.editor.dev`. Launch, attach, activation, inspection,
+computer control, and shutdown automation must target that exact bundle
+identifier or the exact executable and profile printed by the launcher. Never
+select an application by the generic names `JScene3D`, `JScene3D Editor`, or
+`Electron`. If the exact `com.jscene3d.editor.dev` application cannot be
+controlled, visual automation must stop. It must never fall back to the stock
+`.build/electron` application (`com.jscene3d.editor`), the retired standalone
+Java editor (`io.github.glynch.jscene3d.editor`), or another similarly named
+application.
+
+The standalone Java JScene3D Editor is retired and must not be used for current
+development or acceptance. The current Code OSS editor opens `*.j3d` Project
+descriptors. A process or application looking for the legacy `jscene3d.json`
+workflow is the wrong product: stop that acceptance run and diagnose product
+identity rather than rebuilding the current Java authoring runtime.
 
 The [source launcher](scripts/jscene3d/launch-source-editor.sh) resolves the
 explicit runtime version in `scripts/jscene3d/authoring-runtime.version` from
@@ -204,7 +222,11 @@ The launcher resolves their installed defaults independently, or accepts
 `JSCENE3D_RENDERER_RUNTIME_ARCHIVE`, `JSCENE3D_RENDERER_RUNTIME_DIRECTORY`,
 and `JSCENE3D_RENDERER_JAVA_EXECUTABLE` overrides. Select the downstream
 executable explicitly with `JSCENE3D_ELECTRON_EXECUTABLE`; the standard source
-Electron under `.build/electron` does not contain the native renderer API.
+Electron under `.build/electron` does not contain the native renderer API. The
+launcher requires the exact sibling-workspace executable shown above and
+validates its development bundle identifier, application identity, and native
+renderer capability before it will open the editor; it does not fall back to
+stock Electron or another installed application.
 Current authoring and native viewport development target macOS; no
 shipping-platform support claim is made yet.
 

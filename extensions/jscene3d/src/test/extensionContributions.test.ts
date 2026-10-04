@@ -53,7 +53,7 @@ suite('JScene3D extension contributions', () => {
 		assert.deepStrictEqual(entityEditor?.selector.map(entry => entry.filenamePattern), ['*.entity.json']);
 	});
 
-	test('keeps Project available and makes Hierarchy conditional on an open project', () => {
+	test('keeps provider-backed views hidden until extension registration is complete', () => {
 		const contributions = extensionManifest().contributes;
 		const container = contributions.viewsContainers.activitybar.find(candidate => candidate.id === 'jscene3d');
 		const hierarchy = contributions.views.jscene3d.find(view => view.id === hierarchyViewId);
@@ -71,9 +71,9 @@ suite('JScene3D extension contributions', () => {
 			hierarchyViewId,
 			projectViewId
 		]);
-		assert.strictEqual(hierarchy?.when, 'jscene3d.projectOpen');
+		assert.strictEqual(hierarchy?.when, 'jscene3d.extensionReady && jscene3d.projectOpen');
 		assert.strictEqual(hierarchy?.visibility, 'visible');
-		assert.strictEqual(project?.when, undefined);
+		assert.strictEqual(project?.when, 'jscene3d.extensionReady');
 		assert.strictEqual(project?.visibility, 'collapsed');
 		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
 		assert.strictEqual(path.extname(icon), '.svg');
@@ -99,6 +99,7 @@ suite('JScene3D extension contributions', () => {
 			id: inspectorViewId,
 			name: '%view.inspector%',
 			type: 'webview',
+			when: 'jscene3d.extensionReady',
 			visibility: 'visible'
 		});
 		assert.strictEqual(localizedMessage(messages['viewsContainer.inspector']), 'JScene3D Inspector');
@@ -119,7 +120,7 @@ suite('JScene3D extension contributions', () => {
 			[
 				{
 					contents: '%view.hierarchy.noActiveDefinition%',
-					when: 'jscene3d.projectOpen && !jscene3d.definitionActive',
+					when: 'jscene3d.extensionReady && jscene3d.projectOpen && !jscene3d.definitionActive',
 					localized: 'Open a JScene3D authored definition to show its hierarchy.'
 				}
 			]

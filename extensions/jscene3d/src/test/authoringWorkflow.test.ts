@@ -19,7 +19,7 @@ import { ProjectReopenOutcome, ProjectWorkspaceOpenResult } from '../project/pro
 import { DefinitionSnapshotDto, ProjectDiagnosticDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authoring workflow', () => {
-	test('opens an initial project and reveals the JScene3D workspace exactly once', async () => {
+	test('defers workspace reveal when opening requires a window transition', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextOpen = { status: 'opened', workspace: 'transitionRequested' };
 
@@ -28,7 +28,7 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.lifecycle.opened, [{ scheme: 'file', fsPath: '/projects/a/a.j3d' }]);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[]]);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 		assert.deepStrictEqual(fixture.opener.calls, []);
 	});
 
@@ -198,14 +198,14 @@ suite('JScene3D authoring workflow', () => {
 		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
 	});
 
-	test('preserves the restored view container after a successful persisted project reopen', async () => {
+	test('reveals the Project workspace after a successful persisted project reopen', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextReopen = { status: 'reopened' };
 
 		await fixture.workflow.reopenPendingProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, []);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
 	});
 });
 

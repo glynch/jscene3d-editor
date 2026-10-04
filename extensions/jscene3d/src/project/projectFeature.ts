@@ -16,6 +16,7 @@ import { VsCodeAuthoringWorkflowHost } from '../authoring/vsCodeAuthoringWorkflo
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { publishProjectDiagnostics } from './projectDiagnostics';
+import { ProjectPresentationLifecycle, projectVisibility } from './projectPresentation';
 import { ProjectState } from './projectState';
 import { ProjectTreeDataProvider } from './projectView';
 import { projectViewId } from './projectViewModel';
@@ -27,11 +28,11 @@ import {
 	ProjectWorkspaceLifecycle
 } from './projectWorkspaceLifecycle';
 import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './vsCodeProjectWorkspace';
-import { ProjectWelcomeHost, ProjectWelcomeLifecycle } from './projectWelcomeLifecycle';
+import { VsCodeProjectPresentation } from './vsCodeProjectPresentation';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
-const closeWelcomeWorkbenchCommandId = 'jscene3d.workbench.closeWelcome';
+const extensionReadyContext = 'jscene3d.extensionReady';
 
 /** Definition operations coordinated by the Project feature. */
 export interface ProjectDefinitionFeature extends ProjectDocumentLifecycle {
@@ -73,13 +74,13 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	private readonly attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
 	private readonly workspaceLifecycle: ProjectWorkspaceLifecycle;
 	private readonly workflow: AuthoringWorkflow;
-	private readonly welcomeLifecycle: ProjectWelcomeLifecycle;
+	private readonly presentationLifecycle: ProjectPresentationLifecycle;
 	private readonly disposables: vscode.Disposable[] = [];
 	private disposed = false;
 
 	constructor(
 		globalState: vscode.Memento,
-		projectState: ProjectState,
+		private readonly projectState: ProjectState,
 		definitionState: AuthoredDefinitionState,
 		definitions: ProjectDefinitionFeature,
 		inspector: ProjectDocumentPreparation,
@@ -88,10 +89,12 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	) {
 		const provider = new ProjectTreeDataProvider(projectState);
 		const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: provider });
+		const intentStore = new ExtensionProjectReopenIntentStore(globalState);
+		const pendingReopen = intentStore.read() !== undefined;
 		this.workspaceLifecycle = new ProjectWorkspaceLifecycle(
 			projectState,
 			new VsCodeProjectWorkspace(),
-			new ExtensionProjectReopenIntentStore(globalState),
+			intentStore,
 			logger,
 			new CoordinatedProjectDocumentLifecycle(inspector, definitions),
 			viewports
@@ -103,12 +106,14 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
 		);
-		this.welcomeLifecycle = new ProjectWelcomeLifecycle(new VsCodeProjectWelcomeHost(), logger);
+		const presentation = new VsCodeProjectPresentation();
+		this.presentationLifecycle = new ProjectPresentationLifecycle(presentation, logger);
 		definitions.registerOpenCommand((assetId, projectGeneration) =>
 			this.workflow.openDefinition(assetId, projectGeneration));
 		this.disposables.push(
 			this.activeDiagnostics,
 			this.attemptDiagnostics,
+			presentation,
 			provider,
 			tree,
 			projectState.onDidChange(() => this.projectStateChanged(projectState, definitionState, viewports)),
@@ -119,12 +124,14 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		);
 		this.ready = Promise.all([
 			vscode.commands.executeCommand('setContext', projectOpenContext, false),
-			vscode.commands.executeCommand('setContext', projectBusyContext, false)
-		]).then(() => undefined);
+			vscode.commands.executeCommand('setContext', projectBusyContext, false),
+			vscode.commands.executeCommand('setContext', extensionReadyContext, true)
+		]).then(() => pendingReopen ? undefined : this.presentationLifecycle.synchronize(projectState.snapshot));
 	}
 
-	reopenPendingProject(): Promise<void> {
-		return this.workflow.reopenPendingProject();
+	async reopenPendingProject(): Promise<void> {
+		await this.workflow.reopenPendingProject();
+		await this.presentationLifecycle.synchronize(this.projectState.snapshot);
 	}
 
 	dispose(): void {
@@ -145,35 +152,24 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		viewports: ProjectViewportLifecycle
 	): void {
 		const snapshot = projectState.snapshot;
-		void this.welcomeLifecycle.synchronize(snapshot);
+		void this.presentationLifecycle.synchronize(snapshot);
 		publishProjectDiagnostics(this.activeDiagnostics, snapshot.activeDiagnostics);
 		publishProjectDiagnostics(this.attemptDiagnostics, snapshot.attemptDiagnostics);
-		const projectOpen = snapshot.status === 'open'
-			|| snapshot.status === 'replacing'
-			|| snapshot.status === 'closing';
-		definitionState.setProjectGeneration(projectOpen ? snapshot.generation : undefined);
+		const visibility = projectVisibility(snapshot);
+		definitionState.setProjectGeneration(visibility.definitionGeneration);
 		if (snapshot.status === 'serviceUnavailable') {
 			void viewports.closeProjectViewports().catch(error => this.logger.appendLine(
 				`Failed to close JScene3D project viewports: ${errorMessage(error)}`));
 		}
 		void Promise.all([
-			vscode.commands.executeCommand('setContext', projectOpenContext, projectOpen),
+			vscode.commands.executeCommand('setContext', projectOpenContext, visibility.open),
 			vscode.commands.executeCommand(
 				'setContext',
 				projectBusyContext,
-				snapshot.status === 'opening'
-					|| snapshot.status === 'cancellingOpen'
-					|| snapshot.status === 'replacing'
-					|| snapshot.status === 'closing'
+				visibility.busy
 			)
 		]).catch(error => this.logger.appendLine(
 			`Failed to update JScene3D context keys: ${errorMessage(error)}`));
-	}
-}
-
-class VsCodeProjectWelcomeHost implements ProjectWelcomeHost {
-	async closeWelcome(): Promise<void> {
-		await vscode.commands.executeCommand(closeWelcomeWorkbenchCommandId);
 	}
 }
 

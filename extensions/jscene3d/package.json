@@ -110,13 +110,14 @@
 					"id": "jscene3d.hierarchy",
 					"name": "%view.hierarchy%",
 					"icon": "$(list-tree)",
-					"when": "jscene3d.projectOpen",
+					"when": "jscene3d.extensionReady && jscene3d.projectOpen",
 					"visibility": "visible"
 				},
 				{
 					"id": "jscene3d.project",
 					"name": "%view.project%",
 					"icon": "$(folder)",
+					"when": "jscene3d.extensionReady",
 					"visibility": "collapsed"
 				}
 			],
@@ -125,6 +126,7 @@
 					"id": "jscene3d.inspector",
 					"name": "%view.inspector%",
 					"type": "webview",
+					"when": "jscene3d.extensionReady",
 					"visibility": "visible"
 				}
 			]
@@ -133,7 +135,7 @@
 			{
 				"view": "jscene3d.hierarchy",
 				"contents": "%view.hierarchy.noActiveDefinition%",
-				"when": "jscene3d.projectOpen && !jscene3d.definitionActive"
+				"when": "jscene3d.extensionReady && jscene3d.projectOpen && !jscene3d.definitionActive"
 			}
 		],
 		"customEditors": [

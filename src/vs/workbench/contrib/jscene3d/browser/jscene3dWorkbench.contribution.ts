@@ -6,6 +6,7 @@
 import { mainWindow } from '../../../../base/browser/window.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import * as perf from '../../../../base/common/performance.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
@@ -18,17 +19,20 @@ import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase 
 import { EditorsOrder } from '../../../common/editor.js';
 import { ViewContainerLocation } from '../../../common/views.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IPaneCompositePartService } from '../../../services/panecomposite/browser/panecomposite.js';
 import { GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
+import { removePartsSplash } from '../../splash/browser/partsSplash.js';
 import { JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, JSCENE3D_SCENE_DEFINITION_VIEW_TYPE } from './jscene3dSemanticEditor.js';
 
 export const JSCENE3D_OPEN_PROJECT_WORKSPACE_COMMAND_ID = 'jscene3d.workbench.openProjectWorkspace';
 export const JSCENE3D_CLOSE_PROJECT_WORKSPACE_COMMAND_ID = 'jscene3d.workbench.closeProjectWorkspace';
 export const JSCENE3D_OPEN_DEFINITION_EDITOR_COMMAND_ID = 'jscene3d.workbench.openDefinitionEditor';
 export const JSCENE3D_CLOSE_WELCOME_COMMAND_ID = 'jscene3d.workbench.closeWelcome';
+export const JSCENE3D_COMPLETE_STARTUP_PRESENTATION_COMMAND_ID = 'jscene3d.workbench.completeStartupPresentation';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
@@ -231,6 +235,29 @@ export async function closeJScene3DWelcomeEditors(editorService: IEditorService)
 	}
 }
 
+/** Removes transient restored groups once application-startup coverage can yield to a coherent presentation. */
+export function completeJScene3DStartupPresentation(
+	editorGroupsService: IEditorGroupsService,
+	targetWindow: Window,
+	revealApplicationSplash: boolean
+): boolean {
+	// eslint-disable-next-line no-restricted-syntax
+	const startupSplash = targetWindow.document.getElementById('monaco-parts-splash')?.classList.contains('jscene3d-startup-splash') === true;
+	if (startupSplash && !revealApplicationSplash) {
+		return false;
+	}
+	for (const group of [...editorGroupsService.groups]) {
+		if (group !== editorGroupsService.activeGroup && group.isEmpty) {
+			editorGroupsService.removeGroup(group);
+		}
+	}
+	if (startupSplash) {
+		removePartsSplash(targetWindow);
+		perf.mark('code/didRemovePartsSplash');
+	}
+	return true;
+}
+
 if (product.applicationName === 'jscene3d-editor') {
 	CommandsRegistry.registerCommand<[string, string, string]>(
 		JSCENE3D_OPEN_DEFINITION_EDITOR_COMMAND_ID,
@@ -241,6 +268,12 @@ if (product.applicationName === 'jscene3d-editor') {
 	CommandsRegistry.registerCommand(
 		JSCENE3D_CLOSE_WELCOME_COMMAND_ID,
 		accessor => closeJScene3DWelcomeEditors(accessor.get(IEditorService))
+	);
+
+	CommandsRegistry.registerCommand<[boolean]>(
+		JSCENE3D_COMPLETE_STARTUP_PRESENTATION_COMMAND_ID,
+		(accessor, revealApplicationSplash) => completeJScene3DStartupPresentation(
+			accessor.get(IEditorGroupsService), mainWindow, revealApplicationSplash)
 	);
 
 	CommandsRegistry.registerCommand<[string]>(JSCENE3D_OPEN_PROJECT_WORKSPACE_COMMAND_ID, async (accessor, rootUri) => {

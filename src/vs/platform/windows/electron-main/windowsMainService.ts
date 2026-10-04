@@ -37,7 +37,7 @@ import product from '../../product/common/product.js';
 import { IProtocolMainService } from '../../protocol/electron-main/protocol.js';
 import { getRemoteAuthority } from '../../remote/common/remoteHosts.js';
 import { IStateService } from '../../state/node/state.js';
-import { AgentsWindowOpenSource, IAddRemoveFoldersRequest, INativeOpenFileRequest, INativeWindowConfiguration, IOpenEmptyWindowOptions, IPath, IPathsToWaitFor, isFileToOpen, isFolderToOpen, isWorkspaceToOpen, IWindowOpenable, IWindowSettings } from '../../window/common/window.js';
+import { AgentsWindowOpenSource, IAddRemoveFoldersRequest, INativeOpenFileRequest, INativeWindowConfiguration, IOpenEmptyWindowOptions, IPath, IPathsToWaitFor, isFileToOpen, isFolderToOpen, isWorkspaceToOpen, IWindowOpenable, IWindowSettings, shouldShowJScene3DSplash } from '../../window/common/window.js';
 import { CodeWindow } from './windowImpl.js';
 import { IOpenConfiguration, IOpenEmptyConfiguration, IWindowsCountChangedEvent, IWindowsMainService, OpenContext, getLastFocused } from './windows.js';
 import { findWindowOnExtensionDevelopmentPath, findWindowOnFile, findWindowOnWorkspaceOrFolder } from './windowsFinder.js';
@@ -1583,7 +1583,12 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 
 			product,
 			isInitialStartup: options.initialStartup,
-			showJScene3DSplash: product.applicationName === 'jscene3d-editor' && options.initialStartup === true && !window && this.windows.size === 0 && !isSessionsWindow,
+			showJScene3DSplash: shouldShowJScene3DSplash(product.applicationName, {
+				initialStartup: options.initialStartup === true,
+				newWindow: !window,
+				hasOpenWindows: this.windows.size > 0,
+				sessionsWindow: !!isSessionsWindow
+			}),
 			perfMarks: getMarks(),
 			os: { release: release(), hostname: hostname(), arch: arch() },
 

@@ -10132,6 +10132,19 @@ Development Java executable and module-path configuration must come from the def
 
 Do not allow project files to specify the Java executable used to launch the authoring service.
 
+The only current editor-development launch path is the Code OSS
+`scripts/jscene3d/launch-source-editor.sh` launcher with the downstream
+JScene3D Electron development executable. On macOS, the authoritative
+development application identity is `JScene3D Editor Dev` with bundle
+identifier `com.jscene3d.editor.dev`. Launch and automation code must use that
+exact executable or bundle identifier, never a generic or display-name lookup
+for `JScene3D`, `JScene3D Editor`, or `Electron`. Visual/editor acceptance must
+attach only to `com.jscene3d.editor.dev`. If that exact application cannot be
+controlled, visual automation must stop; it must never fall back to the stock
+Code OSS source bundle `com.jscene3d.editor`, the retired standalone Java
+editor `io.github.glynch.jscene3d.editor`, or another similarly named
+application.
+
 Production packaging must eventually provide a controlled JScene3D runtime/service distribution.
 
 ### 30.16 Do Not Trust Environment Variables Without Validation
@@ -10373,6 +10386,14 @@ Version control preserves history.
 ### 31.2 The JavaFX Editor Is Not a Compatibility Target
 
 The legacy JavaFX JScene3D editor does not define the architecture of the Code OSS editor.
+
+The standalone Java editor is retired. Editor development, automated testing,
+screenshots, and manual acceptance must use the Code OSS JScene3D Editor through
+`scripts/jscene3d/launch-source-editor.sh` and the downstream JScene3D Electron
+development executable. The current editor Project format is `*.j3d`; a process
+looking for the legacy `jscene3d.json` workflow indicates that the wrong product
+was selected and must not be treated as a request to rebuild the current Java
+runtime.
 
 Do not reproduce its:
 
@@ -11013,7 +11034,11 @@ State the expected behavior for each.
 
 Manual testing must use the intended Code OSS JScene3D POC environment.
 
-Do not accidentally test against an installed production application.
+Do not test against an installed application or the retired standalone Java
+editor. Before interacting with a macOS editor window, verify the exact
+`com.jscene3d.editor.dev` bundle identifier and retain the launcher's executable
+and isolated-profile paths for process inspection and shutdown. Display names
+are not sufficient identity evidence.
 
 Where isolated user-data or extension directories are part of the established workflow, include them in the instructions.
 

@@ -31,12 +31,25 @@ interface ProjectDiagnosticScopes {
 
 type EmptyProjectSnapshot = ProjectDiagnosticScopes & (
 	| { readonly status: 'closed' }
-	| { readonly status: 'opening' }
-	| { readonly status: 'cancellingOpen' }
+	| { readonly status: 'opening'; readonly candidatePath: string }
+	| { readonly status: 'cancellingOpen'; readonly candidatePath: string }
 );
 
 interface OpenProjectSnapshot extends ProjectDiagnosticScopes {
-	readonly status: 'open' | 'replacing' | 'closing';
+	readonly status: 'open' | 'closing';
+	readonly generation: number;
+	readonly project: ProjectSummaryDto;
+}
+
+interface ReplacingProjectSnapshot extends ProjectDiagnosticScopes {
+	readonly status: 'replacing';
+	readonly generation: number;
+	readonly project: ProjectSummaryDto;
+	readonly candidatePath: string;
+}
+
+interface PreparingWorkspaceProjectSnapshot extends ProjectDiagnosticScopes {
+	readonly status: 'preparingWorkspace';
 	readonly generation: number;
 	readonly project: ProjectSummaryDto;
 }
@@ -52,7 +65,8 @@ interface ServiceUnavailableProjectSnapshot extends ProjectDiagnosticScopes {
 }
 
 /** Immutable editor-side projection of the current Java project-session lifecycle. */
-export type ProjectSnapshot = EmptyProjectSnapshot | OpenProjectSnapshot | OpenFailedProjectSnapshot | ServiceUnavailableProjectSnapshot;
+export type ProjectSnapshot = EmptyProjectSnapshot | OpenProjectSnapshot | ReplacingProjectSnapshot
+	| PreparingWorkspaceProjectSnapshot | OpenFailedProjectSnapshot | ServiceUnavailableProjectSnapshot;
 
 /** Identifies which Java operation handled an explicit project selection. */
 export type ProjectSelectionResult =
@@ -98,9 +112,24 @@ export class ProjectState implements Disposable {
 			throw new Error('A JScene3D project is already changing state');
 		}
 
-		this.snapshotValue = emptySnapshot('opening');
+		this.snapshotValue = openingSnapshot(path);
 		this.logger.appendLine(`Opening project: ${path}`);
 		return this.trackSelection(this.performOpen(path));
+	}
+
+	/** Marks an accepted Java project ready only after its Code OSS workspace has been reconciled. */
+	ready(expectedGeneration: number): void {
+		if (this.snapshotValue.status !== 'preparingWorkspace') {
+			throw new Error('A JScene3D project is not preparing its workspace');
+		}
+		if (this.snapshotValue.generation !== expectedGeneration) {
+			throw new Error(
+				`Project workspace generation ${expectedGeneration} does not match accepted generation ${this.snapshotValue.generation}`
+			);
+		}
+		this.snapshotValue = { ...this.snapshotValue, status: 'open' };
+		this.logger.appendLine(`Project ready: ${this.snapshotValue.project.name}`);
+		this.emit();
 	}
 
 	async close(): Promise<void> {
@@ -110,7 +139,7 @@ export class ProjectState implements Disposable {
 
 		switch (this.snapshotValue.status) {
 			case 'opening': {
-				this.snapshotValue = emptySnapshot('cancellingOpen');
+				this.snapshotValue = cancellingOpenSnapshot(this.snapshotValue.candidatePath);
 				const pending = this.pendingSelection;
 				if (pending === undefined) {
 					throw new Error('Project open reconciliation is unavailable');
@@ -128,7 +157,8 @@ export class ProjectState implements Disposable {
 				}
 				return pending;
 			}
-			case 'open': {
+			case 'open':
+			case 'preparingWorkspace': {
 				const project = this.snapshotValue;
 				this.logger.appendLine(`Closing project: ${project.project.name}`);
 				this.snapshotValue = { ...project, status: 'closing' };
@@ -153,7 +183,7 @@ export class ProjectState implements Disposable {
 	}
 
 	private startReplacement(current: OpenProjectSnapshot, path: string): Promise<ProjectSelectionResult> {
-		this.snapshotValue = { ...current, status: 'replacing', attemptDiagnostics: [] };
+		this.snapshotValue = { ...current, status: 'replacing', candidatePath: path, attemptDiagnostics: [] };
 		this.logger.appendLine(`Replacing project: ${current.project.name} → ${path}`);
 		const pending = this.performReplacement(current, path);
 		this.emit();
@@ -216,8 +246,8 @@ export class ProjectState implements Disposable {
 		}
 
 		if (result.opened) {
-			this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
-			this.logger.appendLine(`Project opened: ${result.project.name}`);
+			this.snapshotValue = preparingWorkspaceSnapshot(result.projectGeneration, result.project, result.diagnostics);
+			this.logger.appendLine(`Project accepted: ${result.project.name}`);
 		} else {
 			this.snapshotValue = {
 				status: 'openFailed',
@@ -245,8 +275,8 @@ export class ProjectState implements Disposable {
 		}
 		switch (result.outcome) {
 			case 'replaced':
-				this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
-				this.logger.appendLine(`Project replaced: ${result.project.name}`);
+				this.snapshotValue = preparingWorkspaceSnapshot(result.projectGeneration, result.project, result.diagnostics);
+				this.logger.appendLine(`Replacement project accepted: ${result.project.name}`);
 				break;
 			case 'candidateRejected':
 				this.snapshotValue = { ...current, status: 'open', attemptDiagnostics: result.diagnostics };
@@ -261,14 +291,14 @@ export class ProjectState implements Disposable {
 		return { operation: 'replace', result };
 	}
 
-	private async performClose(project: OpenProjectSnapshot): Promise<void> {
+	private async performClose(project: OpenProjectSnapshot | PreparingWorkspaceProjectSnapshot): Promise<void> {
 		try {
 			await this.closeJavaSession(project.generation);
 		} catch (error) {
 			if (error instanceof ProjectAuthorityError) {
 				this.acceptAuthorityFailure(error);
 			} else if (!this.disposed && this.snapshotValue.status === 'closing') {
-				this.snapshotValue = { ...project, status: 'open' };
+				this.snapshotValue = project;
 				this.logger.appendLine(`Project close failed: ${errorMessage(error)}`);
 				this.emit();
 			}
@@ -329,21 +359,29 @@ function canOpen(snapshot: ProjectSnapshot): boolean {
 	return snapshot.status === 'closed' || snapshot.status === 'openFailed' || snapshot.status === 'serviceUnavailable';
 }
 
-function emptySnapshot(status: EmptyProjectSnapshot['status']): EmptyProjectSnapshot {
+function emptySnapshot(status: 'closed'): EmptyProjectSnapshot {
 	return { status, activeDiagnostics: [], attemptDiagnostics: [] };
+}
+
+function openingSnapshot(candidatePath: string): EmptyProjectSnapshot {
+	return { status: 'opening', candidatePath, activeDiagnostics: [], attemptDiagnostics: [] };
+}
+
+function cancellingOpenSnapshot(candidatePath: string): EmptyProjectSnapshot {
+	return { status: 'cancellingOpen', candidatePath, activeDiagnostics: [], attemptDiagnostics: [] };
 }
 
 function closedSnapshot(): EmptyProjectSnapshot {
 	return emptySnapshot('closed');
 }
 
-function openSnapshot(
+function preparingWorkspaceSnapshot(
 	generation: number,
 	project: ProjectSummaryDto,
 	diagnostics: readonly ProjectDiagnosticDto[]
-): OpenProjectSnapshot {
+): PreparingWorkspaceProjectSnapshot {
 	return {
-		status: 'open',
+		status: 'preparingWorkspace',
 		generation,
 		project,
 		activeDiagnostics: diagnostics,

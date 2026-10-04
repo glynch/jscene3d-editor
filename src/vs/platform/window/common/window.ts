@@ -25,6 +25,23 @@ export const WindowMinimumSize = {
 	HEIGHT: 270
 };
 
+/** Whether a newly created window belongs to the first JScene3D application-startup presentation. */
+export function shouldShowJScene3DSplash(
+	applicationName: string,
+	context: {
+		readonly initialStartup: boolean;
+		readonly newWindow: boolean;
+		readonly hasOpenWindows: boolean;
+		readonly sessionsWindow: boolean;
+	}
+): boolean {
+	return applicationName === 'jscene3d-editor'
+		&& context.initialStartup
+		&& context.newWindow
+		&& !context.hasOpenWindows
+		&& !context.sessionsWindow;
+}
+
 export interface IPoint {
 	readonly x: number;
 	readonly y: number;

@@ -32,7 +32,7 @@ import { IApplicationStorageMainService, IStorageMainService } from '../../stora
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
-import { getMenuBarVisibility, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, MenuSettings } from '../../window/common/window.js';
+import { getMenuBarVisibility, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, MenuSettings, shouldShowJScene3DSplash } from '../../window/common/window.js';
 import { defaultBrowserWindowOptions, getAllWindowsExcludingOffscreen, IWindowsMainService, OpenContext, WindowStateValidator } from './windows.js';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IWorkspacesManagementMainService } from '../../workspaces/electron-main/workspacesManagementMainService.js';
@@ -1385,7 +1385,12 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
 
 		configuration.accessibilitySupport = electron.app.isAccessibilitySupportEnabled();
 		configuration.isInitialStartup = false; // since this is a reload
-		configuration.showJScene3DSplash = false;
+		configuration.showJScene3DSplash = shouldShowJScene3DSplash(this.productService.applicationName, {
+			initialStartup: false,
+			newWindow: false,
+			hasOpenWindows: true,
+			sessionsWindow: !!configuration.isSessionsWindow
+		});
 		configuration.policiesData = this.policyService.serialize(); // set policies data again
 		configuration.continueOn = this.environmentMainService.continueOn;
 		configuration.profiles = {
