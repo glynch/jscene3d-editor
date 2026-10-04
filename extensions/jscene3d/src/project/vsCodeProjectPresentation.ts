@@ -55,7 +55,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		}
 		this.disposed = true;
 		this.serializer.dispose();
-		// Leave the panel to the workbench so it can be serialized across a reused-window workspace transition.
+		this.panel?.dispose();
 		this.panel = undefined;
 	}
 
@@ -71,6 +71,10 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 	}
 
 	private attach(panel: vscode.WebviewPanel): void {
+		if (this.presentation.status === 'welcome') {
+			panel.dispose();
+			return;
+		}
 		if (this.panel !== panel) {
 			this.panel?.dispose();
 		}

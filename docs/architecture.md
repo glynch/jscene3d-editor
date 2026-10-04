@@ -56,9 +56,9 @@ The built-in `extensions/jscene3d` extension owns:
 - editor-side project, definition, selection, and Inspector state.
 
 Workbench contributions provide integration that extension contribution points
-cannot express cleanly, including first-level File-menu placement, project
-workspace transitions, no-project Explorer presentation, source-control empty
-state, startup layout, and the JScene3D welcome experience.
+cannot express cleanly, including first-level File-menu placement, no-project
+Explorer presentation, source-control empty state, startup layout, and the
+JScene3D welcome experience.
 
 The Project view summarizes Java-owned project identity and asset counts; it is
 not a project parser. The Hierarchy is the primary authoring tree, while the
@@ -140,16 +140,15 @@ that Java invalidated.
 definition also has a source URI. A generated definition receives a JScene3D
 virtual resource URI because it has no editable source file.
 
-The custom-editor resource URI includes:
+The custom-editor resource URI includes the stable Project identity, definition
+`AssetId`, and authored source URI or generated virtual URI. Transient service
+connection and Project generations are deliberately excluded from durable
+editor identity.
 
-- the service connection generation;
-- the project generation;
-- the definition `AssetId`;
-- the authored source URI or generated virtual URI.
-
-That composite resource prevents a restored or stale tab from silently binding
-to a similarly named definition in a different Java connection or project
-session.
+After application restart, the persisted Project descriptor is reopened first.
+Restored definition tabs are then re-resolved by Project identity and `AssetId`
+through the new Java generation. A stale tab cannot silently bind to a similarly
+named definition in another Project.
 
 ### Hierarchy and Inspector identity
 
@@ -170,23 +169,26 @@ These checks prevent stale tabs, selections, reads, and edits from being
 reinterpreted against a coincidentally similar project after replacement or
 service restart.
 
-## Project and workspace lifecycle
+## Project and workbench lifecycle
 
-The editor permits one active JScene3D project session. A project is selected by
-its local `.j3d` descriptor, while Java resolves and validates the actual project
-root and project model.
+The editor permits one active JScene3D Project session. A Project is selected by
+its local `.j3d` descriptor, while Java resolves and validates the actual Project
+root and model. This semantic lifecycle is independent of the current Code OSS
+workspace: the workbench may have no folder, an unrelated folder, or an
+independently selected workspace.
 
 ### Opening a project
 
-Code OSS obtains a local descriptor URI and sends its path to Java. Java returns
-either an accepted project generation and summary or a rejected result with
-diagnostics. Only an accepted result can initiate a transition to a
-single-folder workspace rooted at the Java-resolved project root. A versioned
-reopen intent carries the accepted project across the resulting extension-host
-restart.
+Code OSS obtains a local descriptor URI and sends its path to Java once. Java
+returns either an accepted Project generation and summary or a rejected result
+with diagnostics. An accepted result becomes `ProjectState`, is persisted as a
+stable Project record, and updates the JScene3D presentation without changing
+workspace folders, reloading the workbench, or restarting the extension host.
 
-The intended descriptor and Java-resolved project root must agree with the
-activated workspace before the persisted reopen request is honored.
+The stable record contains the descriptor URI, Java-returned root URI, and
+Project identity. On application restart, Java reopens the descriptor and
+establishes fresh generations before definition editors are restored. No old
+generation or connection value is treated as authority.
 
 ### Atomic replacement
 
@@ -195,29 +197,33 @@ operation rather than independently closing and opening from TypeScript. The
 request includes the expected current project generation.
 
 Java can accept the replacement, reject the candidate while retaining the
-current project, or report a generation conflict. The editor changes workspaces
-only after Java accepts the candidate. In the current editable-document work,
-open authored documents are coordinated with the native dirty-document
-lifecycle before replacement proceeds.
+current Project, or report a generation conflict. Open authored documents and
+Project viewports are coordinated with their native lifecycle before replacement
+proceeds. The workbench and Java process remain stable throughout the operation.
 
 ### Closing a project
 
-Project close coordinates document closure before invalidating Java state. When
-the document lifecycle allows closure, Java closes the exact active generation,
-the persisted reopen intent is removed, and Code OSS returns to an empty
-workspace.
+Project close coordinates document and viewport closure before invalidating Java
+state. When the document lifecycle allows closure, Java closes the exact active
+generation, the persisted Project record is removed, and the JScene3D Welcome
+presentation returns in the existing workbench. The Code OSS workspace is not
+changed.
 
 If the user cancels a native dirty-document prompt, project close or replacement
 is cancelled and the active Java project remains valid.
 
-An external workspace change that no longer matches the project root clears the
-reopen intent and closes the retained Java project session. Extension disposal
-also stops project callbacks before shutting down the service process.
+Changing Code OSS folders or workspaces does not open, replace, or close the
+semantic JScene3D Project. Extension disposal stops Project callbacks before
+shutting down the service process.
 
 The editor keeps a small presentation cache that updates context keys, views,
 definition mappings, and diagnostics. It is not an independent source of
-project truth. Authority failures move the project state to an unavailable
+Project truth. Authority failures move the Project state to an unavailable
 state instead of guessing how to recover.
+
+Project-root Terminal defaults, Git/SCM discovery, and Project-scoped Search are
+intentional future integrations. They must consume the Java-authoritative root
+without making workspace identity a prerequisite for Project correctness.
 
 ## Hierarchy and Inspector
 

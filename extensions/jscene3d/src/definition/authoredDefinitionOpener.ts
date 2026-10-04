@@ -46,7 +46,7 @@ export class AuthoredDefinitionOpener {
 		private readonly logger?: { appendLine(message: string): void }
 	) { }
 
-	async open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
+	async open(projectGeneration: number, projectId: string, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
 		const response = await this.client.openDefinition(projectGeneration, assetId);
 		const result = response.result;
 		if (!result.opened) {
@@ -62,7 +62,7 @@ export class AuthoredDefinitionOpener {
 		const recovered = this.state.resolveAsset(result.projectGeneration, assetId);
 		const mapping = recovered === undefined
 			? this.state.register(
-				definitionResourceUri(response.connectionGeneration, result.projectGeneration, result.definition),
+				definitionResourceUri(projectId, result.definition),
 				result.projectGeneration,
 				result.definition
 			)

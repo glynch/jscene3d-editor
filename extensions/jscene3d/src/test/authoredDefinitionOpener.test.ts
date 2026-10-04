@@ -23,14 +23,14 @@ suite('JScene3D authored definition opener', () => {
 			}
 		);
 
-		const outcome = await opener.open(4, 'definition-a');
+		const outcome = await opener.open(4, 'project-a', 'definition-a');
 
 		assert.strictEqual(outcome.status, 'opened');
 		assert.strictEqual(outcome.status === 'opened' ? outcome.resource.assetId : undefined, 'definition-a');
 		assert.strictEqual(opened[0].viewType, 'jscene3d.sceneDefinition');
 		assert.strictEqual(opened[0].label, 'Main');
-		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
-		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dGeneration'), '4');
+		assert.strictEqual(new URL(opened[0].resource).searchParams.get('jscene3dProjectId'), 'project-a');
+		assert.strictEqual(new URL(opened[0].resource).searchParams.has('jscene3dGeneration'), false);
 	});
 
 	test('keeps an EntityDefinition in the generic authored-definition editor', async () => {
@@ -43,7 +43,7 @@ suite('JScene3D authored definition opener', () => {
 			async (resource, viewType, label) => { opened.push({ resource, viewType, label }); }
 		);
 
-		await opener.open(4, 'definition-a');
+		await opener.open(4, 'project-a', 'definition-a');
 
 		assert.strictEqual(opened[0].viewType, authoredDefinitionViewType);
 		assert.strictEqual(opened[0].label, 'Crate');
@@ -75,7 +75,7 @@ suite('JScene3D authored definition opener', () => {
 			async () => { openCalls++; }
 		);
 
-		const outcome = await opener.open(4, 'definition-a');
+		const outcome = await opener.open(4, 'project-a', 'definition-a');
 
 		assert.deepStrictEqual(outcome, { status: 'rejected', diagnostics, failureCode: 'definition.invalid' });
 		assert.strictEqual(openCalls, 0);
@@ -91,14 +91,14 @@ suite('JScene3D authored definition opener', () => {
 			async () => { openCalls++; }
 		);
 
-		await assert.rejects(opener.open(4, 'definition-a'), /does not match/);
+		await assert.rejects(opener.open(4, 'project-a', 'definition-a'), /does not match/);
 		assert.strictEqual(openCalls, 0);
 	});
 
 	test('focuses the recovered hot-exit resource instead of opening a duplicate current-session URI', async () => {
 		const state = new AuthoredDefinitionState();
 		const snapshot = definition('definition-a');
-		const recoveredResource = definitionResourceUri('connection-before-restart', 4, snapshot);
+		const recoveredResource = definitionResourceUri('project-a', snapshot);
 		state.setProjectGeneration(4);
 		state.register(recoveredResource, 4, snapshot);
 		const opened: string[] = [];
@@ -108,7 +108,7 @@ suite('JScene3D authored definition opener', () => {
 			async resource => { opened.push(resource); }
 		);
 
-		const outcome = await opener.open(4, 'definition-a');
+		const outcome = await opener.open(4, 'project-a', 'definition-a');
 
 		assert.strictEqual(outcome.status, 'opened');
 		assert.deepStrictEqual(opened, [recoveredResource]);

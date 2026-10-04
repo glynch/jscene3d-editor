@@ -10,13 +10,11 @@ import { URI } from '../../../../../base/common/uri.js';
 import { MenuId, MenuRegistry, isIMenuItem } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyValue, IContext } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IResourceEditorInput } from '../../../../../platform/editor/common/editor.js';
-import { StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { EditorInputCapabilities, IEditorIdentifier } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
-import { IViewsRegistry, ViewContainerLocation } from '../../../../common/views.js';
+import { IViewsRegistry } from '../../../../common/views.js';
 import { breadcrumbsEnabledForEditor } from '../../../../browser/parts/editor/breadcrumbsControl.js';
-import { Parts } from '../../../../services/layout/browser/layoutService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroup, IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { emptyViewName } from '../../../files/browser/views/emptyView.js';
@@ -26,10 +24,6 @@ import { shouldRemovePartsSplashOnInitialLayout } from '../../../splash/browser/
 import {
 	closeJScene3DWelcomeEditors,
 	completeJScene3DStartupPresentation,
-	JScene3DLayoutService,
-	JScene3DLayoutStorage,
-	JScene3DProjectTransitionLayout,
-	JScene3DSidebarService,
 	openJScene3DDefinitionEditor,
 	registerJScene3DFileMenu
 } from '../../browser/jscene3dWorkbench.contribution.js';
@@ -41,65 +35,6 @@ import {
 
 suite('JScene3D workbench integration', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
-
-	test('restores a visible Explorer sidebar after a project workspace transition', async () => {
-		const fixture = new LayoutFixture(true, 'workbench.view.explorer');
-
-		await fixture.transitionAndRestore();
-
-		assert.deepStrictEqual(fixture.result(), {
-			openedContainers: ['workbench.view.explorer'],
-			partVisibilityChanges: [{ hidden: false, part: Parts.SIDEBAR_PART }]
-		});
-	});
-
-	test('restores a hidden sidebar and its last active container', async () => {
-		const fixture = new LayoutFixture(false, undefined, 'workbench.view.explorer');
-
-		await fixture.transitionAndRestore();
-
-		assert.deepStrictEqual(fixture.result(), {
-			openedContainers: ['workbench.view.explorer'],
-			partVisibilityChanges: [{ hidden: true, part: Parts.SIDEBAR_PART }]
-		});
-	});
-
-	test('restores another active sidebar container', async () => {
-		const fixture = new LayoutFixture(true, 'workbench.view.scm');
-
-		await fixture.transitionAndRestore();
-
-		assert.deepStrictEqual(fixture.result(), {
-			openedContainers: ['workbench.view.scm'],
-			partVisibilityChanges: [{ hidden: false, part: Parts.SIDEBAR_PART }]
-		});
-	});
-
-	test('discards an invalid one-shot snapshot without changing layout', async () => {
-		const storage = new TestLayoutStorage();
-		storage.store('jscene3d.workbench.projectTransitionLayout.7', '{"version":2}', StorageScope.APPLICATION, StorageTarget.MACHINE);
-		const layout = new TestLayoutService(true);
-		const sidebar = new TestSidebarService('workbench.view.explorer');
-
-		await new JScene3DProjectTransitionLayout(storage, layout, sidebar, 7).restore();
-
-		assert.deepStrictEqual({ stored: storage.values.size, opened: sidebar.openedContainers, changed: layout.changes }, {
-			stored: 0,
-			opened: [],
-			changed: []
-		});
-	});
-
-	test('removes the snapshot when the workspace transition fails', async () => {
-		const storage = new TestLayoutStorage();
-		const layout = new TestLayoutService(true);
-		const sidebar = new TestSidebarService('workbench.view.explorer');
-		const transition = new JScene3DProjectTransitionLayout(storage, layout, sidebar, 7);
-
-		await assert.rejects(transition.transition(async () => { throw new Error('transition failed'); }), /transition failed/);
-
-		assert.deepStrictEqual({ stored: storage.values.size, flushes: storage.flushes }, { stored: 0, flushes: 2 });
-	});
 
 	test('registers first-level File menu project commands with established contexts', () => {
 		let items = MenuRegistry.getMenuItems(MenuId.MenubarFileMenu)
@@ -308,90 +243,6 @@ suite('JScene3D workbench integration', () => {
 
 function context(values: Record<string, ContextKeyValue>): IContext {
 	return { getValue: <T extends ContextKeyValue>(key: string) => values[key] as T | undefined };
-}
-
-class LayoutFixture {
-	private readonly storage = new TestLayoutStorage();
-	private readonly layout: TestLayoutService;
-	private readonly sidebar: TestSidebarService;
-
-	constructor(visible: boolean, activeContainerId?: string, lastActiveContainerId = activeContainerId ?? '') {
-		this.layout = new TestLayoutService(visible);
-		this.sidebar = new TestSidebarService(activeContainerId, lastActiveContainerId);
-	}
-
-	async transitionAndRestore(): Promise<void> {
-		const transition = new JScene3DProjectTransitionLayout(this.storage, this.layout, this.sidebar, 7);
-		await transition.transition(async () => { });
-		this.layout.visible = !this.layout.visible;
-		this.sidebar.activeContainerId = 'workbench.view.extensions';
-		await transition.restore();
-	}
-
-	result(): { openedContainers: string[]; partVisibilityChanges: Array<{ hidden: boolean; part: Parts }> } {
-		return {
-			openedContainers: this.sidebar.openedContainers,
-			partVisibilityChanges: this.layout.changes
-		};
-	}
-}
-
-class TestLayoutStorage implements JScene3DLayoutStorage {
-	readonly values = new Map<string, string>();
-	flushes = 0;
-
-	get(key: string, _scope: StorageScope): string | undefined {
-		return this.values.get(key);
-	}
-
-	store(key: string, value: string, _scope: StorageScope, _target: StorageTarget): void {
-		this.values.set(key, value);
-	}
-
-	remove(key: string, _scope: StorageScope): void {
-		this.values.delete(key);
-	}
-
-	async flush(): Promise<void> {
-		this.flushes++;
-	}
-}
-
-class TestLayoutService implements JScene3DLayoutService {
-	readonly changes: Array<{ hidden: boolean; part: Parts }> = [];
-
-	constructor(public visible: boolean) { }
-
-	isVisible(_part: Parts): boolean {
-		return this.visible;
-	}
-
-	setPartHidden(hidden: boolean, part: Parts): void {
-		this.visible = !hidden;
-		this.changes.push({ hidden, part });
-	}
-}
-
-class TestSidebarService implements JScene3DSidebarService {
-	readonly openedContainers: string[] = [];
-
-	constructor(public activeContainerId?: string, private readonly lastActiveContainerId = activeContainerId ?? '') { }
-
-	getActivePaneComposite(_location: ViewContainerLocation): { getId(): string } | undefined {
-		return this.activeContainerId === undefined ? undefined : { getId: () => this.activeContainerId! };
-	}
-
-	getLastActivePaneCompositeId(_location: ViewContainerLocation): string {
-		return this.lastActiveContainerId;
-	}
-
-	async openPaneComposite(id: string | undefined, _location: ViewContainerLocation, _focus?: boolean): Promise<unknown> {
-		if (id !== undefined) {
-			this.openedContainers.push(id);
-			this.activeContainerId = id;
-		}
-		return undefined;
-	}
 }
 
 class TestEditorInput extends EditorInput {

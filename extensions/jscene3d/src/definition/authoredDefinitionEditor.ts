@@ -42,7 +42,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 	constructor(
 		private readonly state: AuthoredDefinitionState,
 		private readonly lifecycle: AuthoredDefinitionLifecycle,
-		private readonly currentProjectGeneration: () => number | undefined,
+		private readonly currentProject: () => { readonly generation: number; readonly id: string } | undefined,
 		private readonly sceneViews?: DefinitionSceneViewLifecycle
 	) { }
 
@@ -52,12 +52,15 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 		_token: vscode.CancellationToken
 	): Promise<AuthoredDefinitionDocument> {
 		const resource = definitionResourceKey(uri);
-		if (openContext.backupId !== undefined) {
-			const generation = this.currentProjectGeneration();
-			const assetId = definitionAssetId(uri);
-			if (generation !== undefined && assetId !== undefined) {
+		const project = this.currentProject();
+		const identity = definitionIdentity(uri);
+		if (project !== undefined && identity?.projectId === project.id) {
+			if (openContext.backupId !== undefined) {
 				const backup = await vscode.workspace.fs.readFile(vscode.Uri.parse(openContext.backupId));
-				await this.lifecycle.recover(resource, generation, assetId, Buffer.from(backup).toString('base64'));
+				await this.lifecycle.recover(
+					resource, project.generation, identity.assetId, Buffer.from(backup).toString('base64'));
+			} else if (this.state.resolve(resource) === undefined) {
+				await this.lifecycle.reopen(resource, project.generation, identity.assetId);
 			}
 		}
 		const document = new AuthoredDefinitionDocument(uri, this.state.resolve(resource), () => {
@@ -235,9 +238,13 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 	}
 }
 
-function definitionAssetId(uri: vscode.Uri): string | undefined {
-	const value = new URL(uri.toString(true)).searchParams.get('jscene3dAssetId');
-	return value === null || value.length === 0 ? undefined : value;
+function definitionIdentity(uri: vscode.Uri): { readonly projectId: string; readonly assetId: string } | undefined {
+	const parameters = new URL(uri.toString(true)).searchParams;
+	const projectId = parameters.get('jscene3dProjectId');
+	const assetId = parameters.get('jscene3dAssetId');
+	return projectId === null || projectId.length === 0 || assetId === null || assetId.length === 0
+		? undefined
+		: { projectId, assetId };
 }
 
 /** Renders a restored tab without associating it with a different project generation. */

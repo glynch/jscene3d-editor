@@ -3955,13 +3955,13 @@ jscene3d.projectBusy
 
 Do not treat context keys as authoritative project state.
 
-### 16.5 Use Native Workspace APIs
+### 16.5 Keep Project Semantics Independent of Code OSS Workspace State
 
-JScene3D project/workspace integration should use VS Code workspace APIs.
+The active JScene3D Project is a Java-owned semantic session, not a Code OSS workspace folder.
 
-Do not maintain a separate virtual filesystem/workspace concept merely because Java has a project model.
+Project open, replacement, close, and automatic reopen must use explicit descriptor and Java-authoritative root URIs. They must not change `workspaceFolders`, reload the workbench, or restart the extension host.
 
-The Java project root and the Code OSS workspace serve different responsibilities but should be deliberately coordinated.
+Use native workspace facilities only for optional integrations that actually require them. Terminal, Git/SCM, and Search integration must remain separate from Project correctness.
 
 ### 16.6 Java Determines the Project Root
 
@@ -3969,9 +3969,9 @@ When Java successfully opens a JScene3D project and returns its canonical projec
 
 Do not independently derive the project root in TypeScript from the selected descriptor path and assume both results are equivalent.
 
-The workspace layer may then use the Java-returned root to establish the corresponding Code OSS workspace.
+Pass the Java-returned root explicitly to Project-root integrations. Do not require it to equal the current Code OSS workspace root.
 
-### 16.7 Workspace Changes Require Lifecycle Design
+### 16.7 Workspace Changes Must Not Drive Project Lifecycle
 
 Changing the Code OSS workspace can affect:
 
@@ -3983,9 +3983,9 @@ Changing the Code OSS workspace can affect:
 - Java process ownership;
 - current in-memory project state.
 
-Do not call workspace-changing APIs as an incidental side effect without accounting for these consequences.
+Do not call workspace-changing APIs as an incidental side effect of Project open, replacement, close, or automatic reopen.
 
-Project-open and workspace-open behavior must be designed as one lifecycle.
+If a future optional integration changes workspace folders, design and test that integration independently of the semantic Project-session lifecycle.
 
 ### 16.8 Use Native File and Folder Pickers
 
@@ -4346,15 +4346,11 @@ stop authoring service
 
 unless the lifecycle policy is explicitly changed later.
 
-### 17.6 Workspace Lifecycle Must Be Deliberate
+### 17.6 Project Lifecycle Must Preserve the Workbench
 
-Opening a JScene3D project may require establishing its canonical Java-returned project root as the Code OSS workspace.
+Opening, replacing, or closing a JScene3D Project must not establish or remove Code OSS workspace folders.
 
-Workspace changes can cause extension-host or window lifecycle changes.
-
-Do not assume in-memory state survives a workspace transition.
-
-The project/workspace lifecycle must define how the extension restores or re-establishes the Java authoring session when necessary.
+Keep the workbench, extension host, and authoring-service process stable across ordinary Project operations. Application restart recovery is a separate lifecycle that establishes fresh Java authority from stable persisted Project identity.
 
 ### 17.7 Do Not Infer an Open JScene3D Project from Workspace Alone
 
@@ -4372,15 +4368,15 @@ Likewise, do not assume any arbitrary workspace folder is a JScene3D project.
 
 Java remains authoritative for opening and validating the JScene3D project.
 
-### 17.8 Do Not Infer Workspace from Descriptor Path Independently
+### 17.8 Do Not Infer Project Root from Descriptor Path Independently
 
-After Java successfully opens a project, use the canonical project root returned by Java when coordinating Code OSS workspace state.
+After Java successfully opens a Project, use the canonical Project root returned by Java for any Project-root integration.
 
-Do not independently calculate the workspace root from the selected `.j3d` path and treat that calculation as authoritative.
+Do not independently calculate the Project root from the selected `.j3d` path and treat that calculation as authoritative.
 
 ### 17.9 Extension Restart Must Have a Defined Recovery Path
 
-If changing the workspace or reloading the window restarts the extension host, the extension must not depend on lost in-memory state.
+When application or extension-host restart loses in-memory state, the extension must not depend on old Java authority.
 
 Before implementing automatic recovery, define what durable information is required to reconnect or reopen the project safely.
 
@@ -4388,7 +4384,7 @@ Do not persist Java process handles, protocol request IDs, or other process-loca
 
 ### 17.10 Persist Only What Is Required to Re-Establish Intent
 
-If project reopen across extension-host restart is required, persist only stable information necessary to re-establish the user's intent, such as an appropriate project descriptor or root identity.
+For Project reopen across application or extension-host restart, persist only stable information necessary to re-establish the user's intent, such as Project identity and descriptor/root URIs.
 
 After restart:
 
@@ -4542,18 +4538,11 @@ reset project-dependent views/context
 
 Do not treat closing the workspace folder, closing a text editor, or hiding a JScene3D view as automatically equivalent unless explicitly designed that way.
 
-### 17.22 Workspace Close and Project Close Must Eventually Be Coordinated
+### 17.22 Workspace and Project Close Are Independent
 
-Once the JScene3D project root is integrated with the Code OSS workspace, define what should happen when the user:
+Closing or changing the Code OSS workspace must not implicitly close the active JScene3D Project. Closing a JScene3D Project must not open an empty Code OSS window or otherwise mutate workspace state.
 
-- closes the workspace;
-- opens another folder;
-- opens another workspace;
-- closes the Code OSS window.
-
-Do not leave a Java project session associated with a workspace that is no longer active.
-
-This behavior must be tested when workspace integration is implemented.
+Window or extension shutdown remains responsible for orderly Project-session and Java-process disposal.
 
 ### 17.23 One Project Session for the Initial Architecture
 
@@ -7450,8 +7439,8 @@ For example:
 
 ```text
 1. Open the specified project.
-2. Confirm the Explorer shows the expected workspace root.
-3. Confirm the Project view shows the active project.
+2. Confirm the Code OSS workspace remains unchanged.
+3. Confirm the Project view shows the active Project and Java-authoritative root.
 4. Confirm Problems reflects the project's diagnostics.
 5. Confirm JScene3D Output records the lifecycle.
 6. Close the project.

@@ -8,64 +8,63 @@ import { definitionResourceKey, definitionResourceUri } from '../definition/defi
 import { DefinitionSnapshotDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D definition resources', () => {
-	test('distinguishes Java service lifetimes when the numeric project generation resets', () => {
-		const resourceA = resourceForConnection('connection-a');
-		const resourceB = resourceForConnection('connection-b');
+	test('distinguishes stable Project identities when source paths and AssetIds coincide', () => {
+		const resourceA = resourceForProject('project-a');
+		const resourceB = resourceForProject('project-b');
 
 		assert.notStrictEqual(resourceA, resourceB);
 	});
 
-	test('retains authored source URI while scoping the editor resource by generation and AssetId', () => {
-		const resource = new URL(definitionResourceUri('connection-a', 7, definition('authored')));
+	test('retains authored source URI while scoping the editor resource by Project and AssetId', () => {
+		const resource = new URL(definitionResourceUri('project-a', definition('authored')));
 
 		assert.strictEqual(resource.protocol, 'file:');
 		assert.strictEqual(resource.pathname, '/projects/game/worlds/main.scene.json');
-		assert.strictEqual(resource.searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
-		assert.strictEqual(resource.searchParams.get('jscene3dGeneration'), '7');
+		assert.strictEqual(resource.searchParams.get('jscene3dProjectId'), 'project-a');
 		assert.strictEqual(resource.searchParams.get('jscene3dAssetId'), 'definition-a');
+		assert.strictEqual(resource.searchParams.has('jscene3dGeneration'), false);
+		assert.strictEqual(resource.searchParams.has('jscene3dConnectionGeneration'), false);
 	});
 
 	test('uses a JScene3D-owned virtual resource for generated definitions', () => {
-		const resource = new URL(definitionResourceUri('connection-a', 8, definition('generated')));
+		const resource = new URL(definitionResourceUri('project-a', definition('generated')));
 
 		assert.strictEqual(resource.protocol, 'jscene3d-definition:');
 		assert.strictEqual(resource.hostname, 'generated');
 		assert.match(resource.pathname, /definition-a\.scene\.json$/);
-		assert.strictEqual(resource.searchParams.get('jscene3dConnectionGeneration'), 'connection-a');
-		assert.strictEqual(resource.searchParams.get('jscene3dGeneration'), '8');
+		assert.strictEqual(resource.searchParams.get('jscene3dProjectId'), 'project-a');
 	});
 
 	test('maps every current definition kind to an explicit generated suffix', () => {
-		const scene = new URL(definitionResourceUri('connection-a', 8, definition('generated', 'scene-definition')));
-		const entity = new URL(definitionResourceUri('connection-a', 8, definition('generated', 'entity-definition')));
+		const scene = new URL(definitionResourceUri('project-a', definition('generated', 'scene-definition')));
+		const entity = new URL(definitionResourceUri('project-a', definition('generated', 'entity-definition')));
 
 		assert.match(scene.pathname, /definition-a\.scene\.json$/);
 		assert.match(entity.pathname, /definition-a\.entity\.json$/);
 	});
 
 	test('keeps one complete authored-definition identity stable', () => {
-		const resourceA = definitionResourceUri('connection-a', 7, definition('authored'));
-		const resourceB = definitionResourceUri('connection-a', 7, definition('authored'));
+		const resourceA = definitionResourceUri('project-a', definition('authored'));
+		const resourceB = definitionResourceUri('project-a', definition('authored'));
 
 		assert.strictEqual(resourceA, resourceB);
 	});
 
-	test('distinguishes numeric project generations within one Java connection', () => {
-		const resourceA = definitionResourceUri('connection-a', 7, definition('authored'));
-		const resourceB = definitionResourceUri('connection-a', 8, definition('authored'));
+	test('does not encode transient Java connection or generation authority', () => {
+		const resource = definitionResourceUri('project-a', definition('authored'));
+
+		assert.doesNotMatch(resource, /ConnectionGeneration|Generation=/);
+	});
+
+	test('distinguishes AssetIds within one stable Project identity', () => {
+		const resourceA = definitionResourceUri('project-a', definition('authored', 'scene-definition', 'definition-a'));
+		const resourceB = definitionResourceUri('project-a', definition('authored', 'scene-definition', 'definition-b'));
 
 		assert.notStrictEqual(resourceA, resourceB);
 	});
 
-	test('distinguishes AssetIds within one connection and project generation', () => {
-		const resourceA = definitionResourceUri('connection-a', 7, definition('authored', 'scene-definition', 'definition-a'));
-		const resourceB = definitionResourceUri('connection-a', 7, definition('authored', 'scene-definition', 'definition-b'));
-
-		assert.notStrictEqual(resourceA, resourceB);
-	});
-
-	test('rejects an absent Java connection generation', () => {
-		assert.throws(() => definitionResourceUri('', 7, definition('authored')), /must not be empty/);
+	test('rejects an absent Project identity', () => {
+		assert.throws(() => definitionResourceUri('', definition('authored')), /must not be empty/);
 	});
 
 	test('uses the unencoded Code OSS URI form for resource-state lookup', () => {
@@ -85,8 +84,8 @@ suite('JScene3D definition resources', () => {
 	});
 });
 
-function resourceForConnection(connectionGeneration: string): string {
-	return definitionResourceUri(connectionGeneration, 1, definition('authored'));
+function resourceForProject(projectId: string): string {
+	return definitionResourceUri(projectId, definition('authored'));
 }
 
 function definition(

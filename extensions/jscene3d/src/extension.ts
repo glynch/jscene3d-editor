@@ -83,7 +83,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		runtimeViews
 	);
 	await Promise.all([project.ready, definitions.ready]);
-	await project.reopenPendingProject();
+	await project.reopenPersistedProject();
 	definitions.registerEditorProvider();
 }
 

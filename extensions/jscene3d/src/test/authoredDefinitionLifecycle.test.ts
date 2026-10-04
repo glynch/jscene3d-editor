@@ -106,6 +106,19 @@ suite('JScene3D authored definition lifecycle', () => {
 		assert.strictEqual(state.resolve(resource)?.snapshot.revision, 1);
 	});
 
+	test('rebinds a clean restored editor by current generation and stable AssetId', async () => {
+		const state = activeState();
+		state.setProjectGeneration(8);
+		const client = new TestLifecycleClient();
+		const lifecycle = new AuthoredDefinitionLifecycle(client, state, () => undefined);
+
+		await lifecycle.reopen(resource, 8, 'world-a');
+
+		assert.strictEqual(client.openCalls, 1);
+		assert.strictEqual(state.resolve(resource)?.projectGeneration, 8);
+		assert.strictEqual(state.resolve(resource)?.assetId, 'world-a');
+	});
+
 	test('never creates editable lifecycle behavior for generated definitions', async () => {
 		const state = activeState(false);
 		const client = new TestLifecycleClient();

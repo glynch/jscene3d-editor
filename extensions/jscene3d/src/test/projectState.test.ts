@@ -15,7 +15,7 @@ import { ProjectAuthoringClient, ProjectState } from '../project/projectState';
 import { projectTree, ProjectViewLabels } from '../project/projectViewModel';
 
 suite('JScene3D project state', () => {
-	test('keeps an accepted project in workspace preparation until explicitly marked ready', async () => {
+	test('opens an accepted Project directly from Java authority', async () => {
 		const client = new TestProjectClient();
 		const logger = new TestLogger();
 		const state = new ProjectState(client, logger);
@@ -25,10 +25,6 @@ suite('JScene3D project state', () => {
 		assert.strictEqual(selection.operation, 'open');
 		assert.deepStrictEqual(client.openCalls, ['/projects/a/a.j3d']);
 		assert.deepStrictEqual(client.replaceCalls, []);
-		assert.deepStrictEqual(state.snapshot, preparingWorkspaceSnapshot(summaryA, 7, [activeDiagnostic]));
-
-		state.ready(7);
-
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7, [activeDiagnostic]));
 	});
 
@@ -42,8 +38,6 @@ suite('JScene3D project state', () => {
 		assert.strictEqual(selection.operation, 'replace');
 		assert.deepStrictEqual(client.replaceCalls, [{ expectedGeneration: 7, path: '/projects/b/b.j3d' }]);
 		assert.strictEqual(client.closeCalls, 0);
-		assert.deepStrictEqual(state.snapshot, preparingWorkspaceSnapshot(summaryB, 8, [replacementDiagnostic]));
-		state.ready(8);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 8, [replacementDiagnostic]));
 	});
 
@@ -88,7 +82,7 @@ suite('JScene3D project state', () => {
 
 		await state.open('/projects/b/b.j3d');
 
-		assert.deepStrictEqual(state.snapshot, preparingWorkspaceSnapshot(summaryB, 8, [replacementDiagnostic]));
+		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 8, [replacementDiagnostic]));
 	});
 
 	test('replacement conflict invalidates untrusted active identity without blaming B', async () => {
@@ -127,8 +121,6 @@ suite('JScene3D project state', () => {
 
 		client.nextOpen = Promise.resolve(openResult());
 		await state.open('/projects/a/a.j3d');
-		assert.deepStrictEqual(state.snapshot, preparingWorkspaceSnapshot(summaryA, 7, [activeDiagnostic]));
-		state.ready(7);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7, [activeDiagnostic]));
 	});
 
@@ -137,7 +129,6 @@ suite('JScene3D project state', () => {
 		const logger = new TestLogger();
 		const state = new ProjectState(client, logger);
 		await state.open('/projects/a/a.j3d');
-		state.ready(7);
 		client.nextReplace = Promise.resolve(candidateRejectedResult([attemptDiagnostic]));
 		await state.open('/projects/bad/bad.j3d');
 
@@ -304,27 +295,12 @@ class TestLogger {
 async function openState(client: TestProjectClient): Promise<ProjectState> {
 	const state = new ProjectState(client, new TestLogger());
 	await state.open('/projects/a/a.j3d');
-	state.ready(7);
 	return state;
 }
 
 function openSnapshot(project: ProjectSummaryDto, generation: number, diagnostics: readonly ProjectDiagnosticDto[]) {
 	return {
 		status: 'open' as const,
-		generation,
-		project,
-		activeDiagnostics: diagnostics,
-		attemptDiagnostics: []
-	};
-}
-
-function preparingWorkspaceSnapshot(
-	project: ProjectSummaryDto,
-	generation: number,
-	diagnostics: readonly ProjectDiagnosticDto[]
-) {
-	return {
-		status: 'preparingWorkspace' as const,
 		generation,
 		project,
 		activeDiagnostics: diagnostics,

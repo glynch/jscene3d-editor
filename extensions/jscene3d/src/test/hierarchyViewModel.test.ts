@@ -4,14 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { hierarchyTreeItem, occurrenceKey, revealJScene3DWorkspace } from '../hierarchy/hierarchyViewModel';
+import { hierarchyTreeItem, occurrenceKey, revealJScene3DProject } from '../hierarchy/hierarchyViewModel';
 import { HierarchyNodeDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D hierarchy view model', () => {
-	test('reveals the JScene3D workspace through the generated Hierarchy focus command', async () => {
+	test('reveals the JScene3D Project through the generated Hierarchy focus command', async () => {
 		const commands: string[] = [];
 
-		await revealJScene3DWorkspace(command => {
+		await revealJScene3DProject(command => {
 			commands.push(command);
 		});
 

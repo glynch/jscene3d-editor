@@ -78,7 +78,9 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 		this.editorProvider = new AuthoredDefinitionEditorProvider(
 			state,
 			lifecycle,
-			() => projectState.snapshot.status === 'open' ? projectState.snapshot.generation : undefined,
+			() => projectState.snapshot.status === 'open'
+				? { generation: projectState.snapshot.generation, id: projectState.snapshot.project.id }
+				: undefined,
 			sceneViews
 		);
 		this.opener = new AuthoredDefinitionOpener(

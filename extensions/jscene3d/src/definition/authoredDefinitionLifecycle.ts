@@ -134,11 +134,27 @@ export class AuthoredDefinitionLifecycle {
 		});
 	}
 
+	/** Rebinds one clean restored tab through current Java Project authority. */
+	async reopen(resource: string, projectGeneration: number, assetId: string): Promise<void> {
+		await this.exclusive(async () => {
+			const response = await this.client.openDefinition(projectGeneration, assetId);
+			if (!response.result.opened
+				|| response.result.projectGeneration !== projectGeneration
+				|| response.result.definition.context.assetId !== assetId) {
+				throw new Error(`Restored definition open failed: ${response.result.failureCode ?? 'identity changed'}`);
+			}
+			this.publishDiagnostics(response.result.diagnostics);
+			this.definitions.register(resource, projectGeneration, response.result.definition);
+		});
+	}
+
 	/** Rebinds an explicitly backed-up tab to a freshly opened project/session before B3 restoration. */
 	async recover(resource: string, projectGeneration: number, assetId: string, backup: string): Promise<void> {
 		await this.exclusive(async () => {
 			const response = await this.client.openDefinition(projectGeneration, assetId);
-			if (!response.result.opened || response.result.projectGeneration !== projectGeneration) {
+			if (!response.result.opened
+				|| response.result.projectGeneration !== projectGeneration
+				|| response.result.definition.context.assetId !== assetId) {
 				throw new Error(`Recovery definition open failed: ${response.result.failureCode ?? 'identity changed'}`);
 			}
 			this.definitions.register(resource, projectGeneration, response.result.definition);

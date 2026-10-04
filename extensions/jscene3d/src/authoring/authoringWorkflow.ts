@@ -6,7 +6,7 @@
 import { AuthoredDefinitionOpenOutcome } from '../definition/authoredDefinitionOpener';
 import { ProjectLocation, localProjectPath } from '../project/projectLocation';
 import { ProjectSnapshot } from '../project/projectState';
-import { ProjectReopenOutcome, ProjectWorkspaceOpenResult } from '../project/projectWorkspaceLifecycle';
+import { ProjectReopenOutcome, ProjectSessionOpenResult } from '../project/projectSessionLifecycle';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 
 export const createProjectCommandId = 'jscene3d.createProject';
@@ -33,7 +33,7 @@ export type AuthoringWorkflowNotification =
 export interface AuthoringWorkflowHost {
 	selectProjectDescriptor(): Promise<ProjectLocation | undefined>;
 	publishDefinitionDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
-	revealProjectWorkspace(): Promise<void>;
+	revealProject(): Promise<void>;
 	notify(notification: AuthoringWorkflowNotification): Promise<void>;
 }
 
@@ -43,16 +43,16 @@ export interface AuthoringWorkflowProjectState {
 	onDidChange(listener: () => void): { dispose(): void };
 }
 
-/** Workspace lifecycle operations coordinated by the authoring workflow. */
+/** Project-session lifecycle operations coordinated by the authoring workflow. */
 export interface AuthoringWorkflowProjectLifecycle {
-	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult>;
+	openProject(location: ProjectLocation): Promise<ProjectSessionOpenResult>;
 	closeProject(): Promise<void>;
-	reopenPendingProject(): Promise<ProjectReopenOutcome>;
+	reopenPersistedProject(): Promise<ProjectReopenOutcome>;
 }
 
 /** Definition operation coordinated by the authoring workflow. */
 export interface AuthoringWorkflowDefinitionOpener {
-	open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome>;
+	open(projectGeneration: number, projectId: string, assetId: string): Promise<AuthoredDefinitionOpenOutcome>;
 }
 
 /** Receives operational workflow messages without depending on VS Code APIs. */
@@ -94,7 +94,7 @@ export class AuthoringWorkflow {
 		}
 
 		this.host.publishDefinitionDiagnostics([]);
-		let result: ProjectWorkspaceOpenResult;
+		let result: ProjectSessionOpenResult;
 		try {
 			result = await this.projectLifecycle.openProject(location);
 		} catch (error) {
@@ -106,9 +106,7 @@ export class AuthoringWorkflow {
 		switch (result.status) {
 			case 'opened':
 			case 'replaced':
-				if (result.workspace === 'unchanged') {
-					await this.revealProjectWorkspace();
-				}
+				await this.revealProject();
 				return;
 			case 'openRejected':
 				await this.host.notify('projectOpenRejected');
@@ -156,7 +154,7 @@ export class AuthoringWorkflow {
 		const assetId = requestedAssetId;
 		let outcome: AuthoredDefinitionOpenOutcome;
 		try {
-			outcome = await this.definitionOpener.open(snapshot.generation, assetId);
+			outcome = await this.definitionOpener.open(snapshot.generation, snapshot.project.id, assetId);
 		} catch (error) {
 			this.logger.appendLine(`Open Definition command failed: ${errorMessage(error)}`);
 			await this.host.notify('definitionOpenFailed');
@@ -174,12 +172,12 @@ export class AuthoringWorkflow {
 		await this.host.notify('gettingStartedDeferred');
 	}
 
-	async reopenPendingProject(): Promise<void> {
-		const outcome = await this.projectLifecycle.reopenPendingProject();
+	async reopenPersistedProject(): Promise<void> {
+		const outcome = await this.projectLifecycle.reopenPersistedProject();
 		if (outcome.status === 'failed') {
 			await this.host.notify('projectReopenFailed');
 		} else if (outcome.status === 'reopened') {
-			await this.revealProjectWorkspace();
+			await this.revealProject();
 		}
 	}
 
@@ -196,11 +194,11 @@ export class AuthoringWorkflow {
 		this.host.publishDefinitionDiagnostics([]);
 	}
 
-	private async revealProjectWorkspace(): Promise<void> {
+	private async revealProject(): Promise<void> {
 		try {
-			await this.host.revealProjectWorkspace();
+			await this.host.revealProject();
 		} catch (error) {
-			this.logger.appendLine(`Failed to reveal JScene3D workspace: ${errorMessage(error)}`);
+			this.logger.appendLine(`Failed to reveal JScene3D Project: ${errorMessage(error)}`);
 		}
 	}
 }

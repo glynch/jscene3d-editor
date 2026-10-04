@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { revealJScene3DWorkspace } from '../hierarchy/hierarchyViewModel';
+import { revealJScene3DProject } from '../hierarchy/hierarchyViewModel';
 import { ProjectLocation } from '../project/projectLocation';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { AuthoringWorkflowHost, AuthoringWorkflowNotification } from './authoringWorkflow';
@@ -29,8 +29,8 @@ export class VsCodeAuthoringWorkflowHost implements AuthoringWorkflowHost {
 		this.publishDiagnostics(diagnostics);
 	}
 
-	async revealProjectWorkspace(): Promise<void> {
-		await revealJScene3DWorkspace(command => vscode.commands.executeCommand(command));
+	async revealProject(): Promise<void> {
+		await revealJScene3DProject(command => vscode.commands.executeCommand(command));
 	}
 
 	async notify(notification: AuthoringWorkflowNotification): Promise<void> {
@@ -69,7 +69,7 @@ export class VsCodeAuthoringWorkflowHost implements AuthoringWorkflowHost {
 				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not open the definition. See JScene3D Output for details.'));
 				return;
 			case 'projectReopenFailed':
-				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not reopen the project after the workspace changed. See Problems and JScene3D Output for details.'));
+				await vscode.window.showErrorMessage(vscode.l10n.t('JScene3D could not reopen the previous project. See Problems and JScene3D Output for details.'));
 				return;
 		}
 	}

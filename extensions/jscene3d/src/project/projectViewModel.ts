@@ -36,7 +36,7 @@ export interface ProjectViewLabels {
 
 /** Projects the authoritative project snapshot into the semantic Project tree. */
 export function projectTree(snapshot: ProjectSnapshot, labels: ProjectViewLabels): readonly ProjectTreeNode[] {
-	if (snapshot.status === 'opening' || snapshot.status === 'preparingWorkspace' || snapshot.status === 'replacing') {
+	if (snapshot.status === 'opening' || snapshot.status === 'replacing') {
 		return [{ label: labels.opening }];
 	}
 	if (snapshot.status === 'closing' || snapshot.status === 'cancellingOpen') {

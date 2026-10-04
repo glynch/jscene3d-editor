@@ -35,6 +35,8 @@ suite('JScene3D authored definition editor', () => {
 		assert.match(source, /revertCustomDocument/);
 		assert.match(source, /backupCustomDocument/);
 		assert.match(source, /lifecycle\.recover/);
+		assert.match(source, /lifecycle\.reopen/);
+		assert.match(source, /identity\?\.projectId === project\.id/);
 		assert.match(source, /tabGroups\.close\(tabs\)/);
 		assert.match(source, /this\.state\.unregister\(resource\)/);
 		assert.match(source, /await this\.waitForPendingMutations\(\)/);
@@ -48,7 +50,7 @@ suite('JScene3D authored definition editor', () => {
 			'utf8'
 		);
 
-		const reopen = source.lastIndexOf('await project.reopenPendingProject()');
+		const reopen = source.lastIndexOf('await project.reopenPersistedProject()');
 		const registration = source.lastIndexOf('definitions.registerEditorProvider()');
 		assert.ok(reopen >= 0, 'project reopen must remain part of activation');
 		assert.ok(registration > reopen, 'restored custom editors must wait for the active project generation');

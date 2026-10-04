@@ -120,11 +120,11 @@ suite('JScene3D authored definition state', () => {
 		assert.strictEqual(state.selectedNode, undefined);
 	});
 
-	test('keeps a stale prior-connection context isolated after project generation resets', () => {
+	test('keeps a stale prior-Project context isolated after project generation resets', () => {
 		const state = new AuthoredDefinitionState();
 		const snapshot = definition('scene-map', 'scene-definition', ['player']);
-		const staleResource = definitionResourceUri('connection-a', 1, snapshot);
-		const currentResource = definitionResourceUri('connection-b', 1, snapshot);
+		const staleResource = definitionResourceUri('project-a', snapshot);
+		const currentResource = definitionResourceUri('project-b', snapshot);
 		state.setProjectGeneration(1);
 		state.register(staleResource, 1, snapshot);
 		state.activate(staleResource);

@@ -15,20 +15,20 @@ import {
 import { AuthoredDefinitionOpenOutcome } from '../definition/authoredDefinitionOpener';
 import { ProjectLocation } from '../project/projectLocation';
 import { ProjectSnapshot } from '../project/projectState';
-import { ProjectReopenOutcome, ProjectWorkspaceOpenResult } from '../project/projectWorkspaceLifecycle';
+import { ProjectReopenOutcome, ProjectSessionOpenResult } from '../project/projectSessionLifecycle';
 import { DefinitionSnapshotDto, ProjectDiagnosticDto, ProjectSummaryDto } from '../protocol/authoringProtocol';
 
 suite('JScene3D authoring workflow', () => {
-	test('defers workspace reveal when opening requires a window transition', async () => {
+	test('opens and reveals a Project without a window transition', async () => {
 		const fixture = workflowFixture(closedSnapshot());
-		fixture.lifecycle.nextOpen = { status: 'opened', workspace: 'transitionRequested' };
+		fixture.lifecycle.nextOpen = { status: 'opened' };
 
 		await fixture.workflow.openProject();
 
 		assert.deepStrictEqual(fixture.lifecycle.opened, [{ scheme: 'file', fsPath: '/projects/a/a.j3d' }]);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[]]);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.projectRevealCalls, 1);
 		assert.deepStrictEqual(fixture.opener.calls, []);
 	});
 
@@ -41,7 +41,7 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.lifecycle.opened, []);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, []);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.projectRevealCalls, 0);
 	});
 
 	test('rejects a non-local project selection before invoking project lifecycle', async () => {
@@ -52,36 +52,36 @@ suite('JScene3D authoring workflow', () => {
 
 		assert.deepStrictEqual(fixture.lifecycle.opened, []);
 		assert.deepStrictEqual(fixture.host.notifications, ['localProjectRequired']);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.projectRevealCalls, 0);
 		assert.ok(fixture.logger.lines.some(line => line.startsWith('Open Project command rejected')));
 	});
 
 	test('selects the rejected initial-project notification', async () => {
 		const fixture = workflowFixture(closedSnapshot());
-		fixture.lifecycle.nextOpen = { status: 'openRejected', workspace: 'unchanged' };
+		fixture.lifecycle.nextOpen = { status: 'openRejected' };
 
 		await fixture.workflow.openProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectOpenRejected']);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.projectRevealCalls, 0);
 	});
 
 	test('distinguishes replacement success, candidate rejection, and conflict', async () => {
 		for (const scenario of [
 			{
-				outcome: { status: 'replaced', workspace: 'unchanged' } as const,
+				outcome: { status: 'replaced' } as const,
 				notification: undefined,
-				workspaceRevealCalls: 1
+				projectRevealCalls: 1
 			},
 			{
-				outcome: { status: 'candidateRejected', workspace: 'unchanged' } as const,
+				outcome: { status: 'candidateRejected' } as const,
 				notification: 'projectCandidateRejected' as const,
-				workspaceRevealCalls: 0
+				projectRevealCalls: 0
 			},
 			{
-				outcome: { status: 'conflict', workspace: 'unchanged' } as const,
+				outcome: { status: 'conflict' } as const,
 				notification: 'projectReplacementConflict' as const,
-				workspaceRevealCalls: 0
+				projectRevealCalls: 0
 			}
 		]) {
 			const fixture = workflowFixture(openSnapshot());
@@ -91,19 +91,19 @@ suite('JScene3D authoring workflow', () => {
 
 			assert.deepStrictEqual(fixture.host.notifications,
 				scenario.notification === undefined ? [] : [scenario.notification]);
-			assert.strictEqual(fixture.host.workspaceRevealCalls, scenario.workspaceRevealCalls);
+			assert.strictEqual(fixture.host.projectRevealCalls, scenario.projectRevealCalls);
 		}
 	});
 
 	test('logs unexpected project-open failures and selects infrastructure notification', async () => {
 		const fixture = workflowFixture(closedSnapshot());
-		fixture.lifecycle.openError = new Error('workspace unavailable');
+		fixture.lifecycle.openError = new Error('authoring unavailable');
 
 		await fixture.workflow.openProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectOpenFailed']);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
-		assert.ok(fixture.logger.lines.includes('Open Project command failed: workspace unavailable'));
+		assert.strictEqual(fixture.host.projectRevealCalls, 0);
+		assert.ok(fixture.logger.lines.includes('Open Project command failed: authoring unavailable'));
 	});
 
 	test('closes a project and reports only unexpected close failures', async () => {
@@ -126,7 +126,7 @@ suite('JScene3D authoring workflow', () => {
 
 		await fixture.workflow.openDefinition('world:a');
 
-		assert.deepStrictEqual(fixture.opener.calls, [{ projectGeneration: 7, assetId: 'world:a' }]);
+		assert.deepStrictEqual(fixture.opener.calls, [{ projectGeneration: 7, projectId: 'project-a', assetId: 'world:a' }]);
 		assert.deepStrictEqual(fixture.host.diagnosticPublications, [[], [definitionWarning]]);
 		assert.deepStrictEqual(fixture.host.notifications, []);
 	});
@@ -192,20 +192,20 @@ suite('JScene3D authoring workflow', () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextReopen = { status: 'failed', reason: 'invalid intent' };
 
-		await fixture.workflow.reopenPendingProject();
+		await fixture.workflow.reopenPersistedProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, ['projectReopenFailed']);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 0);
+		assert.strictEqual(fixture.host.projectRevealCalls, 0);
 	});
 
-	test('reveals the Project workspace after a successful persisted project reopen', async () => {
+	test('reveals the Project after a successful persisted Project reopen', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.lifecycle.nextReopen = { status: 'reopened' };
 
-		await fixture.workflow.reopenPendingProject();
+		await fixture.workflow.reopenPersistedProject();
 
 		assert.deepStrictEqual(fixture.host.notifications, []);
-		assert.strictEqual(fixture.host.workspaceRevealCalls, 1);
+		assert.strictEqual(fixture.host.projectRevealCalls, 1);
 	});
 });
 
@@ -247,14 +247,14 @@ class TestProjectState implements AuthoringWorkflowProjectState {
 }
 
 class TestProjectLifecycle implements AuthoringWorkflowProjectLifecycle {
-	nextOpen: ProjectWorkspaceOpenResult = { status: 'opened', workspace: 'unchanged' };
+	nextOpen: ProjectSessionOpenResult = { status: 'opened' };
 	nextReopen: ProjectReopenOutcome = { status: 'none' };
 	openError: Error | undefined;
 	closeError: Error | undefined;
 	readonly opened: ProjectLocation[] = [];
 	closeCalls = 0;
 
-	openProject(location: ProjectLocation): Promise<ProjectWorkspaceOpenResult> {
+	openProject(location: ProjectLocation): Promise<ProjectSessionOpenResult> {
 		this.opened.push(location);
 		return this.openError === undefined ? Promise.resolve(this.nextOpen) : Promise.reject(this.openError);
 	}
@@ -264,7 +264,7 @@ class TestProjectLifecycle implements AuthoringWorkflowProjectLifecycle {
 		return this.closeError === undefined ? Promise.resolve() : Promise.reject(this.closeError);
 	}
 
-	reopenPendingProject(): Promise<ProjectReopenOutcome> {
+	reopenPersistedProject(): Promise<ProjectReopenOutcome> {
 		return Promise.resolve(this.nextReopen);
 	}
 }
@@ -272,10 +272,10 @@ class TestProjectLifecycle implements AuthoringWorkflowProjectLifecycle {
 class TestDefinitionOpener implements AuthoringWorkflowDefinitionOpener {
 	next: AuthoredDefinitionOpenOutcome = openedDefinitionOutcome([]);
 	error: Error | undefined;
-	readonly calls: Array<{ projectGeneration: number; assetId: string }> = [];
+	readonly calls: Array<{ projectGeneration: number; projectId: string; assetId: string }> = [];
 
-	open(projectGeneration: number, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
-		this.calls.push({ projectGeneration, assetId });
+	open(projectGeneration: number, projectId: string, assetId: string): Promise<AuthoredDefinitionOpenOutcome> {
+		this.calls.push({ projectGeneration, projectId, assetId });
 		return this.error === undefined ? Promise.resolve(this.next) : Promise.reject(this.error);
 	}
 }
@@ -284,7 +284,7 @@ class TestWorkflowHost implements AuthoringWorkflowHost {
 	selection: ProjectLocation | undefined = { scheme: 'file', fsPath: '/projects/a/a.j3d' };
 	readonly diagnosticPublications: Array<readonly ProjectDiagnosticDto[]> = [];
 	readonly notifications: AuthoringWorkflowNotification[] = [];
-	workspaceRevealCalls = 0;
+	projectRevealCalls = 0;
 
 	selectProjectDescriptor(): Promise<ProjectLocation | undefined> {
 		return Promise.resolve(this.selection);
@@ -294,8 +294,8 @@ class TestWorkflowHost implements AuthoringWorkflowHost {
 		this.diagnosticPublications.push(diagnostics);
 	}
 
-	revealProjectWorkspace(): Promise<void> {
-		this.workspaceRevealCalls++;
+	revealProject(): Promise<void> {
+		this.projectRevealCalls++;
 		return Promise.resolve();
 	}
 
@@ -317,7 +317,7 @@ function openedDefinitionOutcome(diagnostics: readonly ProjectDiagnosticDto[]): 
 	return {
 		status: 'opened',
 		resource: {
-			resource: 'file:///projects/a/worlds/main.scene.json?jscene3dConnectionGeneration=connection-a&jscene3dGeneration=7&jscene3dAssetId=world%3Aa',
+			resource: 'file:///projects/a/worlds/main.scene.json?jscene3dProjectId=project-a&jscene3dAssetId=world%3Aa',
 			projectGeneration: 7,
 			assetId: 'world:a',
 			snapshot: definitionSnapshot

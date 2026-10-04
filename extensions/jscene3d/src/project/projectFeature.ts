@@ -24,10 +24,10 @@ import {
 	CoordinatedProjectDocumentLifecycle,
 	ProjectDocumentLifecycle,
 	ProjectDocumentPreparation,
-	ProjectViewportLifecycle,
-	ProjectWorkspaceLifecycle
-} from './projectWorkspaceLifecycle';
-import { ExtensionProjectReopenIntentStore, VsCodeProjectWorkspace } from './vsCodeProjectWorkspace';
+	ProjectSessionLifecycle,
+	ProjectViewportLifecycle
+} from './projectSessionLifecycle';
+import { ExtensionProjectSessionRecordStore, VsCodeProjectSessionResources } from './vsCodeProjectSession';
 import { VsCodeProjectPresentation } from './vsCodeProjectPresentation';
 
 const projectOpenContext = 'jscene3d.projectOpen';
@@ -44,10 +44,10 @@ export interface ProjectDefinitionFeature extends ProjectDocumentLifecycle {
 /** Project feature activation owned by the extension composition root. */
 export interface RegisteredProjectFeature extends vscode.Disposable {
 	readonly ready: Promise<void>;
-	reopenPendingProject(): Promise<void>;
+	reopenPersistedProject(): Promise<void>;
 }
 
-/** Registers Project presentation, commands, diagnostics, workspace coordination, and context state. */
+/** Registers Project presentation, commands, diagnostics, session coordination, and context state. */
 export function registerProjectFeature(
 	globalState: vscode.Memento,
 	projectState: ProjectState,
@@ -72,7 +72,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	readonly ready: Promise<void>;
 	private readonly activeDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.activeProject');
 	private readonly attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
-	private readonly workspaceLifecycle: ProjectWorkspaceLifecycle;
+	private readonly sessionLifecycle: ProjectSessionLifecycle;
 	private readonly workflow: AuthoringWorkflow;
 	private readonly presentationLifecycle: ProjectPresentationLifecycle;
 	private readonly disposables: vscode.Disposable[] = [];
@@ -89,19 +89,19 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	) {
 		const provider = new ProjectTreeDataProvider(projectState);
 		const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: provider });
-		const intentStore = new ExtensionProjectReopenIntentStore(globalState);
-		const pendingReopen = intentStore.read() !== undefined;
-		this.workspaceLifecycle = new ProjectWorkspaceLifecycle(
+		const recordStore = new ExtensionProjectSessionRecordStore(globalState);
+		const pendingReopen = recordStore.read() !== undefined;
+		this.sessionLifecycle = new ProjectSessionLifecycle(
 			projectState,
-			new VsCodeProjectWorkspace(),
-			intentStore,
+			new VsCodeProjectSessionResources(),
+			recordStore,
 			logger,
 			new CoordinatedProjectDocumentLifecycle(inspector, definitions),
 			viewports
 		);
 		this.workflow = new AuthoringWorkflow(
 			projectState,
-			this.workspaceLifecycle,
+			this.sessionLifecycle,
 			definitions.opener,
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
@@ -129,8 +129,8 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		]).then(() => pendingReopen ? undefined : this.presentationLifecycle.synchronize(projectState.snapshot));
 	}
 
-	async reopenPendingProject(): Promise<void> {
-		await this.workflow.reopenPendingProject();
+	async reopenPersistedProject(): Promise<void> {
+		await this.workflow.reopenPersistedProject();
 		await this.presentationLifecycle.synchronize(this.projectState.snapshot);
 	}
 
@@ -143,7 +143,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			disposable.dispose();
 		}
 		this.workflow.dispose();
-		this.workspaceLifecycle.dispose();
+		this.sessionLifecycle.dispose();
 	}
 
 	private projectStateChanged(

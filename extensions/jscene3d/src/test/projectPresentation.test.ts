@@ -17,7 +17,7 @@ import {
 import { ProjectSnapshot } from '../project/projectState';
 
 suite('JScene3D Project presentation', () => {
-	test('maps no-Project, loading, preparation, ready, and failure into deliberate central states', () => {
+	test('maps no-Project, loading, ready, and failure into deliberate central states', () => {
 		assert.deepStrictEqual(projectPresentation(closedSnapshot()), { status: 'welcome' });
 		assert.deepStrictEqual(projectPresentation({
 			status: 'opening', candidatePath: '/projects/editor-sandbox.j3d',
@@ -26,9 +26,6 @@ suite('JScene3D Project presentation', () => {
 		assert.deepStrictEqual(projectPresentation({
 			...openSnapshot(7), status: 'replacing', candidatePath: '/projects/next/next.j3d'
 		}), { status: 'loading', projectName: 'next', phase: 'opening' });
-		assert.deepStrictEqual(projectPresentation({
-			...openSnapshot(7), status: 'preparingWorkspace'
-		}), { status: 'loading', projectName: 'JScene3D Editor Sandbox', phase: 'opening' });
 		assert.deepStrictEqual(projectPresentation(openSnapshot(7)), {
 			status: 'ready', projectName: 'JScene3D Editor Sandbox', sceneCount: 2, entityDefinitionCount: 1
 		});
@@ -46,13 +43,11 @@ suite('JScene3D Project presentation', () => {
 		await lifecycle.synchronize({
 			status: 'opening', candidatePath: '/projects/sandbox.j3d', activeDiagnostics: [], attemptDiagnostics: []
 		});
-		await lifecycle.synchronize({ ...openSnapshot(7), status: 'preparingWorkspace' });
 		await lifecycle.synchronize(openSnapshot(7));
 
 		assert.deepStrictEqual(host.presentations, [
 			{ status: 'welcome' },
 			{ status: 'loading', projectName: 'sandbox', phase: 'opening' },
-			{ status: 'loading', projectName: 'JScene3D Editor Sandbox', phase: 'opening' },
 			{ status: 'ready', projectName: 'JScene3D Editor Sandbox', sceneCount: 2, entityDefinitionCount: 1 }
 		]);
 	});
@@ -61,9 +56,6 @@ suite('JScene3D Project presentation', () => {
 		assert.deepStrictEqual(projectVisibility({
 			status: 'opening', candidatePath: '/projects/sandbox.j3d', activeDiagnostics: [], attemptDiagnostics: []
 		}), { open: false, busy: true, definitionGeneration: undefined });
-		assert.deepStrictEqual(projectVisibility({ ...openSnapshot(7), status: 'preparingWorkspace' }), {
-			open: false, busy: true, definitionGeneration: undefined
-		});
 		assert.deepStrictEqual(projectVisibility({
 			...openSnapshot(7), status: 'replacing', candidatePath: '/projects/next.j3d'
 		}), { open: false, busy: true, definitionGeneration: undefined });

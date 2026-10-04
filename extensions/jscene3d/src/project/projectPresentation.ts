@@ -61,8 +61,6 @@ export function projectPresentation(snapshot: ProjectSnapshot): ProjectPresentat
 		case 'opening':
 		case 'replacing':
 			return { status: 'loading', projectName: candidateName(snapshot.candidatePath), phase: 'opening' };
-		case 'preparingWorkspace':
-			return { status: 'loading', projectName: snapshot.project.name, phase: 'opening' };
 		case 'cancellingOpen':
 			return { status: 'loading', projectName: candidateName(snapshot.candidatePath), phase: 'closing' };
 		case 'closing':
@@ -80,13 +78,12 @@ export function projectPresentation(snapshot: ProjectSnapshot): ProjectPresentat
 	}
 }
 
-/** Exposes Project-dependent views only after workspace reconciliation has marked the Project ready. */
+/** Exposes Project-dependent views only while Java retains the authoritative Project session. */
 export function projectVisibility(snapshot: ProjectSnapshot): ProjectVisibility {
 	const open = snapshot.status === 'open';
 	return {
 		open,
 		busy: snapshot.status === 'opening'
-			|| snapshot.status === 'preparingWorkspace'
 			|| snapshot.status === 'cancellingOpen'
 			|| snapshot.status === 'replacing'
 			|| snapshot.status === 'closing',

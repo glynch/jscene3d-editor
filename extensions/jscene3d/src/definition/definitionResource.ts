@@ -15,21 +15,19 @@ export function definitionResourceKey(resource: DefinitionResourceUri): string {
 	return resource.toString(true);
 }
 
-/** Creates a connection- and generation-unique editor resource while retaining authored source identity. */
+/** Creates a stable Project- and AssetId-scoped editor resource while retaining authored source identity. */
 export function definitionResourceUri(
-	connectionGeneration: string,
-	projectGeneration: number,
+	projectId: string,
 	definition: DefinitionSnapshotDto
 ): string {
-	if (connectionGeneration.length === 0) {
-		throw new Error('Definition resource connection generation must not be empty');
+	if (projectId.length === 0) {
+		throw new Error('Definition resource Project identity must not be empty');
 	}
 	const context = definition.context;
 	const source = context.origin === 'authored'
 		? new URL(context.source)
 		: new URL(`jscene3d-definition://generated/${context.assetId}.${definitionKindFileExtension(context.kind)}`);
-	source.searchParams.set('jscene3dConnectionGeneration', connectionGeneration);
-	source.searchParams.set('jscene3dGeneration', String(projectGeneration));
+	source.searchParams.set('jscene3dProjectId', projectId);
 	source.searchParams.set('jscene3dAssetId', context.assetId);
 	return source.toString();
 }

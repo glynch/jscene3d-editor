@@ -48,12 +48,6 @@ interface ReplacingProjectSnapshot extends ProjectDiagnosticScopes {
 	readonly candidatePath: string;
 }
 
-interface PreparingWorkspaceProjectSnapshot extends ProjectDiagnosticScopes {
-	readonly status: 'preparingWorkspace';
-	readonly generation: number;
-	readonly project: ProjectSummaryDto;
-}
-
 interface OpenFailedProjectSnapshot extends ProjectDiagnosticScopes {
 	readonly status: 'openFailed';
 	readonly failure: string;
@@ -66,7 +60,7 @@ interface ServiceUnavailableProjectSnapshot extends ProjectDiagnosticScopes {
 
 /** Immutable editor-side projection of the current Java project-session lifecycle. */
 export type ProjectSnapshot = EmptyProjectSnapshot | OpenProjectSnapshot | ReplacingProjectSnapshot
-	| PreparingWorkspaceProjectSnapshot | OpenFailedProjectSnapshot | ServiceUnavailableProjectSnapshot;
+	| OpenFailedProjectSnapshot | ServiceUnavailableProjectSnapshot;
 
 /** Identifies which Java operation handled an explicit project selection. */
 export type ProjectSelectionResult =
@@ -117,21 +111,6 @@ export class ProjectState implements Disposable {
 		return this.trackSelection(this.performOpen(path));
 	}
 
-	/** Marks an accepted Java project ready only after its Code OSS workspace has been reconciled. */
-	ready(expectedGeneration: number): void {
-		if (this.snapshotValue.status !== 'preparingWorkspace') {
-			throw new Error('A JScene3D project is not preparing its workspace');
-		}
-		if (this.snapshotValue.generation !== expectedGeneration) {
-			throw new Error(
-				`Project workspace generation ${expectedGeneration} does not match accepted generation ${this.snapshotValue.generation}`
-			);
-		}
-		this.snapshotValue = { ...this.snapshotValue, status: 'open' };
-		this.logger.appendLine(`Project ready: ${this.snapshotValue.project.name}`);
-		this.emit();
-	}
-
 	async close(): Promise<void> {
 		if (this.disposed) {
 			return;
@@ -157,8 +136,7 @@ export class ProjectState implements Disposable {
 				}
 				return pending;
 			}
-			case 'open':
-			case 'preparingWorkspace': {
+			case 'open': {
 				const project = this.snapshotValue;
 				this.logger.appendLine(`Closing project: ${project.project.name}`);
 				this.snapshotValue = { ...project, status: 'closing' };
@@ -246,8 +224,8 @@ export class ProjectState implements Disposable {
 		}
 
 		if (result.opened) {
-			this.snapshotValue = preparingWorkspaceSnapshot(result.projectGeneration, result.project, result.diagnostics);
-			this.logger.appendLine(`Project accepted: ${result.project.name}`);
+			this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
+			this.logger.appendLine(`Project opened: ${result.project.name}`);
 		} else {
 			this.snapshotValue = {
 				status: 'openFailed',
@@ -275,8 +253,8 @@ export class ProjectState implements Disposable {
 		}
 		switch (result.outcome) {
 			case 'replaced':
-				this.snapshotValue = preparingWorkspaceSnapshot(result.projectGeneration, result.project, result.diagnostics);
-				this.logger.appendLine(`Replacement project accepted: ${result.project.name}`);
+				this.snapshotValue = openSnapshot(result.projectGeneration, result.project, result.diagnostics);
+				this.logger.appendLine(`Project replaced: ${result.project.name}`);
 				break;
 			case 'candidateRejected':
 				this.snapshotValue = { ...current, status: 'open', attemptDiagnostics: result.diagnostics };
@@ -291,7 +269,7 @@ export class ProjectState implements Disposable {
 		return { operation: 'replace', result };
 	}
 
-	private async performClose(project: OpenProjectSnapshot | PreparingWorkspaceProjectSnapshot): Promise<void> {
+	private async performClose(project: OpenProjectSnapshot): Promise<void> {
 		try {
 			await this.closeJavaSession(project.generation);
 		} catch (error) {
@@ -375,13 +353,13 @@ function closedSnapshot(): EmptyProjectSnapshot {
 	return emptySnapshot('closed');
 }
 
-function preparingWorkspaceSnapshot(
+function openSnapshot(
 	generation: number,
 	project: ProjectSummaryDto,
 	diagnostics: readonly ProjectDiagnosticDto[]
-): PreparingWorkspaceProjectSnapshot {
+): OpenProjectSnapshot {
 	return {
-		status: 'preparingWorkspace',
+		status: 'open',
 		generation,
 		project,
 		activeDiagnostics: diagnostics,
