@@ -16,6 +16,7 @@
 	type IJScene3DViewportLaunch = import('../common/jscene3dViewport.js').IJScene3DViewportLaunch;
 	type IJScene3DSceneViewSnapshot = import('../common/jscene3dViewport.js').IJScene3DSceneViewSnapshot;
 	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
+	type IJScene3DViewportSelection = import('../common/jscene3dViewport.js').IJScene3DViewportSelection;
 
 	//#region Utilities
 
@@ -102,6 +103,7 @@
 		readonly onReady: (session: IJScene3DViewportSessionIdentity) => void;
 		readonly onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>;
 		readonly onFailure: (failure: IJScene3DViewportFailure) => void;
+		readonly onSelection: (selection: IJScene3DViewportSelection) => void;
 		session?: IJScene3DViewportSessionIdentity;
 		pendingReady?: IJScene3DViewportSessionIdentity;
 		surfaceGeneration: number;
@@ -144,6 +146,14 @@
 		return nonEmpty(candidate.sceneAssetId)
 			&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
 			&& Array.isArray(candidate.occurrences);
+	};
+	const validSceneViewOccurrence = (value: unknown): boolean => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as { rootDefinitionAssetId?: unknown; entityPath?: unknown };
+		return nonEmpty(candidate.rootDefinitionAssetId)
+			&& Array.isArray(candidate.entityPath) && candidate.entityPath.length > 0 && candidate.entityPath.every(nonEmpty);
 	};
 	const validFrameIdentity = (value: unknown): value is IJScene3DViewportFrameIdentity => {
 		if (!validSession(value)) {
@@ -217,13 +227,29 @@
 		}
 	});
 
+	ipcRenderer.on('vscode:jscene3dViewport:selection', (_event: Electron.IpcRendererEvent, selection: unknown) => {
+		if (!selection || typeof selection !== 'object') {
+			return;
+		}
+		const candidate = selection as Partial<IJScene3DViewportSelection>;
+		if (!validPaneId(candidate.paneId) || !validSession(selection)
+			|| !Number.isInteger(candidate.revision) || candidate.revision! < 0
+			|| (candidate.occurrence !== null && !validSceneViewOccurrence(candidate.occurrence))) {
+			return;
+		}
+		const registration = jscene3dPanes.get(candidate.paneId);
+		if (registration && sameSession(registration.session, selection as IJScene3DViewportSelection)) {
+			registration.onSelection(candidate as IJScene3DViewportSelection);
+		}
+	});
+
 	const jscene3dViewport: IJScene3DViewportBridge = {
-		registerPane(paneId, onReady, onFrame, onFailure): void {
+		registerPane(paneId, onReady, onFrame, onFailure, onSelection): void {
 			if (!validPaneId(paneId) || typeof onReady !== 'function' || typeof onFrame !== 'function'
-				|| typeof onFailure !== 'function' || jscene3dPanes.has(paneId)) {
+				|| typeof onFailure !== 'function' || typeof onSelection !== 'function' || jscene3dPanes.has(paneId)) {
 				throw new Error('Invalid or duplicate JScene3D native viewport pane registration');
 			}
-			jscene3dPanes.set(paneId, { onReady, onFrame, onFailure, surfaceGeneration: 0, frameNumber: 0 });
+			jscene3dPanes.set(paneId, { onReady, onFrame, onFailure, onSelection, surfaceGeneration: 0, frameNumber: 0 });
 		},
 
 		unregisterPane(paneId): void {
@@ -255,6 +281,23 @@
 		updateSceneView(paneId, session, snapshot): void {
 			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validSceneViewSnapshot(snapshot)) {
 				ipcRenderer.send('vscode:jscene3dViewport:updateSceneView', paneId, session, snapshot);
+			}
+		},
+
+		selectSceneView(paneId, session, revision, occurrence): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session)
+				&& Number.isInteger(revision) && revision >= 0
+				&& (occurrence === null || validSceneViewOccurrence(occurrence))) {
+				ipcRenderer.send('vscode:jscene3dViewport:selectSceneView', paneId, session, revision, occurrence);
+			}
+		},
+
+		pickSceneView(paneId, session, revision, horizontal, vertical): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session)
+				&& Number.isInteger(revision) && revision >= 0
+				&& Number.isFinite(horizontal) && horizontal >= -1 && horizontal <= 1
+				&& Number.isFinite(vertical) && vertical >= -1 && vertical <= 1) {
+				ipcRenderer.send('vscode:jscene3dViewport:pickSceneView', paneId, session, revision, horizontal, vertical);
 			}
 		},
 

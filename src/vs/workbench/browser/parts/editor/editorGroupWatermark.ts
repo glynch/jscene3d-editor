@@ -32,6 +32,9 @@ interface WatermarkEntry {
 }
 
 const showChatContextKey = ContextKeyExpr.and(ContextKeyExpr.equals('chatSetupHidden', false), ContextKeyExpr.equals('chatSetupDisabledInWorkspace', false));
+const jscene3dProjectOpenContext = 'jscene3d.projectOpen';
+const jscene3dProjectNameContext = 'jscene3d.projectName';
+const jscene3dProjectContexts = new Set([jscene3dProjectOpenContext, jscene3dProjectNameContext]);
 
 const openChat: WatermarkEntry = { text: localize('watermark.openChat', "Open Chat"), id: 'workbench.action.chat.open', when: { native: showChatContextKey, web: showChatContextKey } };
 const showCommands: WatermarkEntry = { text: localize('watermark.showCommands', "Show All Commands"), id: 'workbench.action.showCommands' };
@@ -79,6 +82,7 @@ export class EditorGroupWatermark extends Disposable {
 	private readonly cachedWhen: { [when: string]: boolean };
 
 	private readonly shortcuts: HTMLElement;
+	private readonly letterpress: HTMLElement;
 	private readonly toolbarContainer: HTMLElement;
 	private readonly transientDisposables = this._register(new DisposableStore());
 	private readonly keybindingLabels = this._register(new DisposableStore());
@@ -104,7 +108,7 @@ export class EditorGroupWatermark extends Disposable {
 			h('.editor-group-watermark-toolbar-container@toolbarContainer'),
 			h('.editor-group-watermark', [
 				h('.watermark-container', [
-					h('.letterpress'),
+					h('.letterpress@letterpress'),
 					h('.shortcuts@shortcuts'),
 				])
 			])
@@ -112,6 +116,7 @@ export class EditorGroupWatermark extends Disposable {
 
 		append(container, elements.root);
 		this.shortcuts = elements.shortcuts;
+		this.letterpress = elements.letterpress;
 		this.toolbarContainer = elements.toolbarContainer;
 
 		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, this.toolbarContainer, MenuId.EditorGroupWatermarkToolbar, {
@@ -142,6 +147,12 @@ export class EditorGroupWatermark extends Disposable {
 			}
 		}));
 
+		this._register(this.contextKeyService.onDidChangeContext(event => {
+			if (event.affectsSome(jscene3dProjectContexts)) {
+				this.render();
+			}
+		}));
+
 		this._register(this.storageService.onWillSaveState(e => {
 			if (e.reason === WillSaveStateReason.SHUTDOWN) {
 				const entries = [...emptyWindowEntries, ...workspaceEntries, ...otherEntries];
@@ -162,6 +173,22 @@ export class EditorGroupWatermark extends Disposable {
 
 		clearNode(this.shortcuts);
 		this.transientDisposables.clear();
+		const project = jscene3dProjectEmptyEditorPresentation(
+			product.applicationName,
+			this.contextKeyService.getContextKeyValue<boolean>(jscene3dProjectOpenContext) === true,
+			this.contextKeyService.getContextKeyValue<string>(jscene3dProjectNameContext)
+		);
+		this.letterpress.hidden = project !== undefined;
+		this.toolbarContainer.hidden = project !== undefined;
+		this.shortcuts.classList.toggle('jscene3d-project-empty-container', project !== undefined);
+		if (project !== undefined) {
+			const emptyState = append(this.shortcuts, $('.jscene3d-project-empty'));
+			const title = append(emptyState, $('h1'));
+			title.textContent = project.projectName;
+			const instruction = append(emptyState, $('p'));
+			instruction.textContent = project.instruction;
+			return;
+		}
 
 		if (!this.enabled) {
 			return;
@@ -216,4 +243,19 @@ export class EditorGroupWatermark extends Disposable {
 
 		return filteredEntries;
 	}
+}
+
+/** Resolves the product-specific empty editor content without creating an editor input. */
+export function jscene3dProjectEmptyEditorPresentation(
+	applicationName: string,
+	projectOpen: boolean,
+	projectName: string | undefined
+): { readonly projectName: string; readonly instruction: string } | undefined {
+	if (applicationName !== 'jscene3d-editor' || !projectOpen || projectName === undefined || projectName.trim().length === 0) {
+		return undefined;
+	}
+	return {
+		projectName,
+		instruction: localize('jscene3d.emptyEditor.instruction', "Open a Scene or Entity to start editing.")
+	};
 }

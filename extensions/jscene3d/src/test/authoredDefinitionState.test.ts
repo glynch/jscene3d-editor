@@ -142,6 +142,21 @@ suite('JScene3D authored definition state', () => {
 		assert.strictEqual(state.selection, undefined);
 		assert.strictEqual(state.resolveAsset(1, 'scene-map')?.resource, currentResource);
 	});
+
+	test('selects a nested authoritative node by stable occurrence and rejects foreign identity', () => {
+		const state = stateWithGeneration();
+		const child = node('scene-map', 'crate', 'file:///scene-map.json');
+		const parent = { ...node('scene-map', 'environment', 'file:///scene-map.json'), children: [child] };
+		const snapshot = { ...definition('scene-map', 'scene-definition', []), roots: [parent] };
+		state.register('definition:/map', 3, snapshot);
+		state.activate('definition:/map');
+
+		assert.strictEqual(state.selectOccurrence(child.occurrence), true);
+		assert.strictEqual(state.selection?.target.identity, 'crate');
+		assert.strictEqual(state.selectOccurrence({ definitionAssetId: 'another-scene', entityPath: ['crate'] }), false);
+		assert.strictEqual(state.selectOccurrence({ definitionAssetId: 'scene-map', entityPath: ['missing'] }), false);
+		assert.strictEqual(state.selection?.target.identity, 'crate');
+	});
 });
 
 function stateWithGeneration(): AuthoredDefinitionState {

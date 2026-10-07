@@ -3,13 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Dimension } from '../../../../base/browser/dom.js';
+import { addDisposableListener, Dimension, EventType, isMouseEvent } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
-import { IJScene3DViewportFrameIdentity } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
@@ -38,13 +40,15 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	private resizeObserver: ResizeObserver | undefined;
 	private resizeTimer: number | undefined;
 	private readonly frameGate = new JScene3DViewportFrameGate();
+	private readonly selectionListener = this._register(new MutableDisposable());
 
 	constructor(
 		group: IEditorGroup,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
-		@ILifecycleService lifecycleService: ILifecycleService
+		@ILifecycleService lifecycleService: ILifecycleService,
+		@ICommandService private readonly commandService: ICommandService
 	) {
 		super(JScene3DViewportEditorPane.ID, group, telemetryService, themeService, storageService);
 		this._register(group.onWillCloseEditor(event => {
@@ -76,6 +80,20 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		canvas.setAttribute('aria-label', localize('jscene3dNativeViewportCanvas', "JScene3D native project viewport"));
 		parent.appendChild(canvas);
 		this.canvas = canvas;
+		this._register(addDisposableListener(canvas, EventType.CLICK, event => {
+			if (!isMouseEvent(event) || event.button !== 0) {
+				return;
+			}
+			const bounds = canvas.getBoundingClientRect();
+			if (bounds.width <= 0 || bounds.height <= 0) {
+				return;
+			}
+			this.viewportInput()?.selectAt(
+				this,
+				((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+				1 - ((event.clientY - bounds.top) / bounds.height) * 2
+			);
+		}));
 
 		const errorElement = parent.ownerDocument.createElement('div');
 		errorElement.style.position = 'absolute';
@@ -124,6 +142,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		const viewport = this.viewportInput(input);
+		this.selectionListener.value = viewport?.onDidChangeSceneSelection(selection => {
+			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, selection);
+		});
 		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting', viewport?.launch.kind ?? 'game');
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.canvas) {
@@ -154,6 +175,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	}
 
 	override clearInput(): void {
+		this.selectionListener.clear();
 		this.viewportInput()?.detach(this);
 		super.clearInput();
 	}

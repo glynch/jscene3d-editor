@@ -8,6 +8,35 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 suite('JScene3D workbench product integration', () => {
+	test('uses a persistent Hierarchy document while filtering', () => {
+		const source = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', 'src', 'hierarchy', 'hierarchyView.ts'),
+			'utf8'
+		);
+		const document = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', 'src', 'hierarchy', 'hierarchyViewDocument.ts'),
+			'utf8'
+		);
+
+		assert.match(document, /jscene3d\.hierarchy\.update/);
+		assert.match(source, /this\.document\.update/);
+		assert.doesNotMatch(source, /case 'filter':[\s\S]*?this\.render\(\)/);
+	});
+
+	test('does not create a Project placeholder editor', () => {
+		const feature = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', 'src', 'project', 'projectFeature.ts'),
+			'utf8'
+		);
+		const adapter = fs.readFileSync(
+			path.resolve(__dirname, '..', '..', 'src', 'project', 'vsCodeProjectWorkbench.ts'),
+			'utf8'
+		);
+
+		assert.doesNotMatch(feature, /VsCodeProjectPresentation|ProjectPresentationLifecycle|createWebviewPanel/);
+		assert.doesNotMatch(adapter, /createWebviewPanel|registerWebviewPanelSerializer/);
+	});
+
 	test('uses the always-available Project view as the non-forced initial product layout', () => {
 		const product = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', '..', 'product.json'), 'utf8')) as {
 			readonly defaultLayout?: { readonly force?: boolean; readonly views?: readonly { readonly id: string }[] };

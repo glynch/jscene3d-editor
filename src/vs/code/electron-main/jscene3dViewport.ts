@@ -7,7 +7,7 @@ import { app, sharedTexture } from 'electron';
 import { Disposable, IDisposable } from '../../base/common/lifecycle.js';
 import { isAbsolute, join } from '../../base/common/path.js';
 import { Promises, SymlinkSupport } from '../../base/node/pfs.js';
-import { IJScene3DSceneViewSnapshot, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { ICodeWindow } from '../../platform/window/electron-main/window.js';
@@ -17,6 +17,11 @@ import { IJScene3DRendererApi, IJScene3DRendererLaunchRequest, IJScene3DRenderer
 interface IJScene3DViewportSize {
 	readonly width: number;
 	readonly height: number;
+}
+
+interface IJScene3DPendingSelection {
+	readonly revision: number;
+	readonly occurrence: IJScene3DSceneViewOccurrence | null;
 }
 
 interface IJScene3DMainSession {
@@ -39,7 +44,9 @@ interface IJScene3DMainSession {
 	desiredSize: IJScene3DViewportSize;
 	pendingSize?: IJScene3DViewportSize;
 	pendingSnapshot?: IJScene3DSceneViewSnapshot;
+	pendingSelection?: IJScene3DPendingSelection;
 	currentSnapshotRevision: number;
+	selectionRequest: number;
 	frameTimer?: ReturnType<typeof setTimeout>;
 	stopPromise?: Promise<void>;
 }
@@ -53,6 +60,8 @@ export class JScene3DViewportController extends Disposable {
 	private readonly resumeListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity) => this.setPaused(event, paneId, session, false);
 	private readonly resizeListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number) => this.resize(event, paneId, session, width, height);
 	private readonly sceneViewUpdateListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot) => this.updateSceneView(event, paneId, session, snapshot);
+	private readonly sceneViewSelectListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null) => this.selectSceneView(event, paneId, session, revision, occurrence);
+	private readonly sceneViewPickListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number) => this.pickSceneView(event, paneId, session, revision, horizontal, vertical);
 	private readonly beforeQuitListener = () => { void this.stopAll('application shutdown'); };
 
 	constructor(
@@ -67,6 +76,8 @@ export class JScene3DViewportController extends Disposable {
 		validatedIpcMain.on('vscode:jscene3dViewport:resume', this.resumeListener);
 		validatedIpcMain.on('vscode:jscene3dViewport:resize', this.resizeListener);
 		validatedIpcMain.on('vscode:jscene3dViewport:updateSceneView', this.sceneViewUpdateListener);
+		validatedIpcMain.on('vscode:jscene3dViewport:selectSceneView', this.sceneViewSelectListener);
+		validatedIpcMain.on('vscode:jscene3dViewport:pickSceneView', this.sceneViewPickListener);
 		app.on('before-quit', this.beforeQuitListener);
 	}
 
@@ -100,7 +111,8 @@ export class JScene3DViewportController extends Disposable {
 				onReady: () => session && this.onReady(session),
 				onFrameReady: () => session && this.onFrameReady(session),
 				onExit: () => session && this.onExit(session),
-				onSurfaceReady: (surfaceGeneration, surfaceWidth, surfaceHeight) => session && this.onSurfaceReady(session, surfaceGeneration, surfaceWidth, surfaceHeight)
+				onSurfaceReady: (surfaceGeneration, surfaceWidth, surfaceHeight) => session && this.onSurfaceReady(session, surfaceGeneration, surfaceWidth, surfaceHeight),
+				onSceneSelection: (requestId, revision, selection) => session && this.onSceneSelection(session, requestId, revision, selection)
 			});
 			session = {
 				paneId,
@@ -121,7 +133,8 @@ export class JScene3DViewportController extends Disposable {
 				surfaceGeneration: launched.surfaceGeneration,
 				desiredSize: { width, height },
 				pendingSnapshot: launch.kind === 'scene' ? launch.snapshot : undefined,
-				currentSnapshotRevision: -1
+				currentSnapshotRevision: -1,
+				selectionRequest: 0
 			};
 			session.closeListener = window.onDidClose(() => { void this.stop(session!, 'workbench window closed'); });
 			this.panes.set(paneKey, session);
@@ -180,7 +193,7 @@ export class JScene3DViewportController extends Disposable {
 			classPath,
 			mainClass: 'io.github.glynch.jscene3d.editor.renderer.process.EditorRendererMain',
 			rendererArguments: [
-				'--protocol-version=1.1',
+				'--protocol-version=1.2',
 				...(launch.kind === 'scene' ? ['--scene-view'] : []),
 				`--project-root=${launch.projectRoot}`,
 				`--published-content-root=${launch.publishedContentRoot}`,
@@ -282,6 +295,9 @@ export class JScene3DViewportController extends Disposable {
 			return;
 		}
 		session.pendingSnapshot = snapshot;
+		if (session.pendingSelection?.revision !== snapshot.revision) {
+			session.pendingSelection = undefined;
+		}
 		if (session.rendererReady && !session.frameInFlight && this.applyPendingSnapshot(session)) {
 			this.requestFrame(session);
 		}
@@ -299,7 +315,71 @@ export class JScene3DViewportController extends Disposable {
 		}
 		session.currentSnapshotRevision = snapshot.revision;
 		session.pendingSnapshot = undefined;
+		this.applyPendingSelection(session);
 		return true;
+	}
+
+	private selectSceneView(event: Electron.IpcMainEvent, paneId: string, identity: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null): void {
+		const session = this.fromPane(event, paneId, identity);
+		const newestRevision = session?.pendingSnapshot?.revision ?? session?.currentSnapshotRevision;
+		if (!session || session.launch.kind !== 'scene' || revision !== newestRevision
+			|| (occurrence !== null && (!isSceneViewSelectableOccurrence(occurrence)
+				|| occurrence.rootDefinitionAssetId !== session.launch.sceneAssetId))) {
+			return;
+		}
+		session.pendingSelection = { revision, occurrence };
+		this.applyPendingSelection(session);
+	}
+
+	private applyPendingSelection(session: IJScene3DMainSession): void {
+		const pending = session.pendingSelection;
+		if (!pending || !session.rendererReady || pending.revision !== session.currentSnapshotRevision) {
+			return;
+		}
+		const encoded = pending.occurrence === null
+			? 'NONE'
+			: Buffer.from(JSON.stringify(pending.occurrence), 'utf8').toString('base64url');
+		if (this.renderer.sendRendererMessage(session.sessionId, `SCENE_SELECT ${pending.revision} ${encoded}`)) {
+			session.pendingSelection = undefined;
+		}
+	}
+
+	private pickSceneView(event: Electron.IpcMainEvent, paneId: string, identity: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number): void {
+		const session = this.fromPane(event, paneId, identity);
+		if (!session || session.launch.kind !== 'scene' || revision !== session.currentSnapshotRevision
+			|| !Number.isFinite(horizontal) || horizontal < -1 || horizontal > 1
+			|| !Number.isFinite(vertical) || vertical < -1 || vertical > 1) {
+			return;
+		}
+		const requestId = ++session.selectionRequest;
+		this.renderer.sendRendererMessage(session.sessionId, `SCENE_PICK ${requestId} ${revision} ${horizontal} ${vertical}`);
+	}
+
+	private onSceneSelection(session: IJScene3DMainSession, requestId: number, revision: number, encoded: string): void {
+		if (!this.isActive(session) || session.launch.kind !== 'scene'
+			|| requestId !== session.selectionRequest || revision !== session.currentSnapshotRevision || encoded === 'STALE') {
+			return;
+		}
+		let occurrence: IJScene3DSceneViewOccurrence | null = null;
+		if (encoded !== 'NONE') {
+			try {
+				const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+				if (!isSceneViewSelectableOccurrence(decoded) || decoded.rootDefinitionAssetId !== session.launch.sceneAssetId) {
+					return;
+				}
+				occurrence = decoded;
+			} catch {
+				return;
+			}
+		}
+		if (!session.frame.isDestroyed()) {
+			session.frame.send('vscode:jscene3dViewport:selection', {
+				paneId: session.paneId,
+				...this.identity(session),
+				revision,
+				occurrence
+			});
+		}
 	}
 
 	private onExit(session: IJScene3DMainSession): void {
@@ -421,6 +501,7 @@ export class JScene3DViewportController extends Disposable {
 		session.frameInFlight = false;
 		session.pendingSize = undefined;
 		session.pendingSnapshot = undefined;
+		session.pendingSelection = undefined;
 		if (session.frameTimer) {
 			clearTimeout(session.frameTimer);
 			session.frameTimer = undefined;
@@ -467,6 +548,8 @@ export class JScene3DViewportController extends Disposable {
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:resume', this.resumeListener);
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:resize', this.resizeListener);
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:updateSceneView', this.sceneViewUpdateListener);
+		validatedIpcMain.removeListener('vscode:jscene3dViewport:selectSceneView', this.sceneViewSelectListener);
+		validatedIpcMain.removeListener('vscode:jscene3dViewport:pickSceneView', this.sceneViewPickListener);
 		app.removeListener('before-quit', this.beforeQuitListener);
 		void this.stopAll('viewport controller disposed');
 		super.dispose();

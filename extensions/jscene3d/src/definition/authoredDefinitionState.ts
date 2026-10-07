@@ -168,6 +168,20 @@ export class AuthoredDefinitionState {
 		this.emit('selection');
 	}
 
+	/** Selects an authoritative snapshot node by stable occurrence identity. */
+	selectOccurrence(occurrence: HierarchyOccurrenceDto): boolean {
+		const active = this.active;
+		if (active === undefined || occurrence.definitionAssetId !== active.assetId) {
+			return false;
+		}
+		const node = findNodeByOccurrence(active.snapshot.roots, occurrence);
+		if (node === undefined) {
+			return false;
+		}
+		this.select(node);
+		return true;
+	}
+
 	clearSelection(): void {
 		const context = this.activeContext();
 		if (context?.selection === undefined) {
@@ -240,6 +254,22 @@ function findRetainedNode(
 			return node;
 		}
 		const nested = findRetainedNode(node.children, selection);
+		if (nested !== undefined) {
+			return nested;
+		}
+	}
+	return undefined;
+}
+
+function findNodeByOccurrence(
+	roots: readonly HierarchyNodeDto[],
+	occurrence: HierarchyOccurrenceDto
+): HierarchyNodeDto | undefined {
+	for (const node of roots) {
+		if (sameOccurrence(node.occurrence, occurrence)) {
+			return node;
+		}
+		const nested = findNodeByOccurrence(node.children, occurrence);
 		if (nested !== undefined) {
 			return nested;
 		}

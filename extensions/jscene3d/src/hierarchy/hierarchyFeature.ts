@@ -5,7 +5,7 @@
 
 import * as vscode from 'vscode';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
-import { HierarchyTreeDataProvider } from './hierarchyView';
+import { HierarchyViewProvider } from './hierarchyView';
 import { hierarchyViewId } from './hierarchyViewModel';
 
 /** Inspector reveal operation triggered by a semantic Hierarchy selection. */
@@ -19,22 +19,16 @@ export function registerHierarchyFeature(
 	inspector: HierarchyInspector,
 	logger: { appendLine(message: string): void }
 ): vscode.Disposable {
-	const provider = new HierarchyTreeDataProvider(definitions);
-	const tree = vscode.window.createTreeView(hierarchyViewId, { treeDataProvider: provider });
-	provider.attach(tree, error => logger.appendLine(
-		`Failed to restore JScene3D Hierarchy selection: ${errorMessage(error)}`));
-	const selection = tree.onDidChangeSelection(event => {
-		const selected = event.selection[0];
-		if (selected !== undefined) {
+	const provider = new HierarchyViewProvider(
+		definitions,
+		selected => {
 			definitions.select(selected);
 			void inspector.reveal();
-		} else if (!provider.isRestoringSelection) {
-			definitions.clearSelection();
-		}
-	});
-	return vscode.Disposable.from(selection, tree, provider);
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+		},
+		() => definitions.clearSelection(),
+		() => void vscode.window.showInformationMessage(vscode.l10n.t('Add Entity is not available yet.'))
+	);
+	const registration = vscode.window.registerWebviewViewProvider(hierarchyViewId, provider);
+	logger.appendLine('JScene3D Hierarchy registered with Java-authoritative Scene snapshots.');
+	return vscode.Disposable.from(registration, provider);
 }

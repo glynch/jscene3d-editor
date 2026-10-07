@@ -17,6 +17,7 @@ import { EditorInputCapabilities, IEditorIdentifier } from '../../../../common/e
 import { EditorInput } from '../../../../common/editor/editorInput.js';
 import { IViewsRegistry } from '../../../../common/views.js';
 import { breadcrumbsEnabledForEditor } from '../../../../browser/parts/editor/breadcrumbsControl.js';
+import { jscene3dProjectEmptyEditorPresentation } from '../../../../browser/parts/editor/editorGroupWatermark.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroup, IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 import { emptyViewName } from '../../../files/browser/views/emptyView.js';
@@ -79,6 +80,24 @@ suite('JScene3D workbench integration', () => {
 				visibleWithoutProject: false, enabledWithoutProject: false, enabledWithProject: true, enabledWhileBusy: false
 			}
 		]);
+	});
+
+	test('uses the actual Project name in a tabless JScene3D empty editor area', () => {
+		assert.deepStrictEqual(
+			jscene3dProjectEmptyEditorPresentation('jscene3d-editor', true, 'JScene3D Editor Sandbox'),
+			{
+				projectName: 'JScene3D Editor Sandbox',
+				instruction: 'Open a Scene or Entity to start editing.'
+			}
+		);
+		assert.strictEqual(
+			jscene3dProjectEmptyEditorPresentation('jscene3d-editor', false, 'JScene3D Editor Sandbox'),
+			undefined
+		);
+		assert.strictEqual(
+			jscene3dProjectEmptyEditorPresentation('code-oss', true, 'JScene3D Editor Sandbox'),
+			undefined
+		);
 	});
 
 	test('renders the branded Welcome composition and wires existing action commands', async () => {

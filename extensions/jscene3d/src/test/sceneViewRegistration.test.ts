@@ -5,8 +5,9 @@
 
 import * as assert from 'assert';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from '../definition/authoredDefinitionState';
-import { SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
-import { SceneViewLifecycleOperations, SceneViewRegistration } from '../sceneView/sceneViewRegistration';
+import { HierarchyNodeDto, HierarchyOccurrenceDto } from '../protocol/authoringProtocol';
+import { ResolvedSceneViewSelection, SceneViewSelectionEvent, SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
+import { SceneViewRegistration } from '../sceneView/sceneViewRegistration';
 
 suite('JScene3D Scene View feature registration', () => {
 	test('synchronizes the active Scene when its authoritative snapshot changes', async () => {
@@ -43,11 +44,61 @@ suite('JScene3D Scene View feature registration', () => {
 		assert.strictEqual(lifecycle.closeAllCount, 1);
 		assert.deepStrictEqual(lifecycle.synchronized, []);
 	});
+
+	test('uses authored definition state as the shared Hierarchy and Scene View selection', async () => {
+		const state = new AuthoredDefinitionState();
+		const lifecycle = new TestLifecycle();
+		const registration = new SceneViewRegistration(state, lifecycle, new TestLogger());
+		const current = snapshot('scene-a', 0, ['environment', 'crate']);
+		state.setProjectGeneration(7);
+		state.register('scene-resource', 7, current);
+		state.activate('scene-resource');
+
+		state.select(current.roots[0].children[0]);
+		await Promise.resolve();
+		lifecycle.resolved = {
+			resource: 'scene-resource',
+			occurrence: current.roots[0].occurrence
+		};
+		assert.strictEqual(registration.acceptSelection(selectionEvent()), true);
+
+		assert.deepStrictEqual({
+			forwarded: lifecycle.selected,
+			selected: state.selection?.occurrence
+		}, {
+			forwarded: [{
+				definition: 'scene-a',
+				occurrence: { definitionAssetId: 'scene-a', entityPath: ['environment', 'crate'] }
+			}, {
+				definition: 'scene-a',
+				occurrence: { definitionAssetId: 'scene-a', entityPath: ['environment'] }
+			}],
+			selected: { definitionAssetId: 'scene-a', entityPath: ['environment'] }
+		});
+		registration.dispose();
+	});
+
+	test('rejects stale native selection without changing the shared selection', () => {
+		const state = new AuthoredDefinitionState();
+		const lifecycle = new TestLifecycle();
+		const registration = new SceneViewRegistration(state, lifecycle, new TestLogger());
+		const current = snapshot('scene-a', 0, ['crate']);
+		state.setProjectGeneration(7);
+		state.register('scene-resource', 7, current);
+		state.activate('scene-resource');
+		state.select(current.roots[0]);
+
+		assert.strictEqual(registration.acceptSelection(selectionEvent()), false);
+		assert.deepStrictEqual(state.selection?.occurrence, current.roots[0].occurrence);
+		registration.dispose();
+	});
 });
 
-class TestLifecycle implements SceneViewLifecycleOperations {
+class TestLifecycle {
 	readonly synchronized: AuthoredDefinitionResource[] = [];
 	readonly closed: string[] = [];
+	readonly selected: { definition: string; occurrence: HierarchyOccurrenceDto | null }[] = [];
+	resolved: ResolvedSceneViewSelection | undefined;
 	closeAllCount = 0;
 
 	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome> {
@@ -64,6 +115,15 @@ class TestLifecycle implements SceneViewLifecycleOperations {
 		this.closeAllCount++;
 		return Promise.resolve();
 	}
+
+	select(definition: AuthoredDefinitionResource, occurrence: HierarchyOccurrenceDto | null): Promise<void> {
+		this.selected.push({ definition: definition.assetId, occurrence });
+		return Promise.resolve();
+	}
+
+	resolveSelection(_event: SceneViewSelectionEvent): ResolvedSceneViewSelection | undefined {
+		return this.resolved;
+	}
 }
 
 class TestLogger {
@@ -72,7 +132,11 @@ class TestLogger {
 	}
 }
 
-function snapshot(assetId: string, revision: number) {
+function snapshot(assetId: string, revision: number, path: readonly string[] = []) {
+	const hierarchy = path.reduceRight<readonly HierarchyNodeDto[]>(
+		(children, _identity, index) => [hierarchyNode(assetId, path.slice(0, index + 1), children)],
+		[]
+	);
 	return {
 		revision,
 		context: {
@@ -83,6 +147,34 @@ function snapshot(assetId: string, revision: number) {
 			source: `file:///project/${assetId}.scene.json`,
 			label: { kind: 'literal' as const, text: assetId, messageCode: null, arguments: [] }
 		},
-		roots: []
+		roots: hierarchy
+	};
+}
+
+function hierarchyNode(assetId: string, entityPath: readonly string[], children: readonly HierarchyNodeDto[]): HierarchyNodeDto {
+	const identity = entityPath.at(-1)!;
+	const occurrence = { definitionAssetId: assetId, entityPath };
+	return {
+		occurrence,
+		kind: 'local-entity' as const,
+		entityId: identity,
+		definitionId: null,
+		label: { kind: 'literal' as const, text: identity, messageCode: null, arguments: [] },
+		enabled: true,
+		modified: false,
+		editable: true,
+		target: { kind: 'local-entity' as const, source: `file:///project/${assetId}.scene.json`, identity, occurrence },
+		children
+	};
+}
+
+function selectionEvent(): SceneViewSelectionEvent {
+	return {
+		viewportId: 'viewport-1',
+		connectionGeneration: 'connection-a',
+		projectGeneration: 7,
+		sceneAssetId: 'scene-a',
+		revision: 0,
+		occurrence: { rootDefinitionAssetId: 'scene-a', entityPath: ['environment'] }
 	};
 }

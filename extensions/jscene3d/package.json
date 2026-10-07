@@ -111,6 +111,7 @@
 				{
 					"id": "jscene3d.hierarchy",
 					"name": "%view.hierarchy%",
+					"type": "webview",
 					"icon": "$(list-tree)",
 					"when": "jscene3d.extensionReady && jscene3d.projectOpen",
 					"visibility": "visible"

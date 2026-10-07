@@ -41,3 +41,20 @@ export function hierarchyTreeItem(node: HierarchyNodeDto): HierarchyTreeItemMode
 export function occurrenceKey(occurrence: HierarchyOccurrenceDto): string {
 	return `${occurrence.definitionAssetId}/${occurrence.entityPath.join('/')}`;
 }
+
+/** Filters by display name while retaining every ancestor needed to preserve tree context. */
+export function filterHierarchyNodes(
+	nodes: readonly HierarchyNodeDto[],
+	query: string
+): readonly HierarchyNodeDto[] {
+	const normalized = query.trim().toLocaleLowerCase();
+	if (normalized.length === 0) {
+		return nodes;
+	}
+	return nodes.flatMap(node => {
+		const children = filterHierarchyNodes(node.children, normalized);
+		return node.label.text.toLocaleLowerCase().includes(normalized) || children.length > 0
+			? [{ ...node, children }]
+			: [];
+	});
+}

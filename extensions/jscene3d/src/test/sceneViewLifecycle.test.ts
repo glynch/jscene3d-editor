@@ -5,8 +5,8 @@
 
 import * as assert from 'assert';
 import { AuthoredDefinitionResource } from '../definition/authoredDefinitionState';
-import { ConnectionScopedResult, ProjectDiagnosticDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
-import { SceneViewportLaunch, SceneViewAuthoringClient, SceneViewHost, SceneViewLifecycle } from '../sceneView/sceneViewLifecycle';
+import { ConnectionScopedResult, ProjectDiagnosticDto, SceneViewOccurrenceDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
+import { SceneViewportLaunch, SceneViewAuthoringClient, SceneViewHost, SceneViewLifecycle, SceneViewSelectionEvent } from '../sceneView/sceneViewLifecycle';
 
 suite('JScene3D safe Scene View lifecycle', () => {
 	test('opens and updates only Scene definitions with stable revision identity', async () => {
@@ -150,6 +150,37 @@ suite('JScene3D safe Scene View lifecycle', () => {
 			['viewport-2', 1]
 		]);
 	});
+
+	test('synchronizes one stable authored occurrence to the exact Scene revision', async () => {
+		const host = new TestHost();
+		const lifecycle = new SceneViewLifecycle(new TestClient(), host, new TestLogger(), sequenceIds());
+		const scene = definition('scene-a', 'scene-definition', 2);
+		const occurrence = { definitionAssetId: 'scene-a', entityPath: ['environment', 'crate'] };
+
+		await lifecycle.synchronize(scene);
+		await lifecycle.select(scene, occurrence);
+		await lifecycle.select(definition('scene-a', 'scene-definition', 1), occurrence);
+
+		assert.deepStrictEqual(host.selected, [{
+			viewportId: 'viewport-1',
+			revision: 2,
+			occurrence: { rootDefinitionAssetId: 'scene-a', entityPath: ['environment', 'crate'] }
+		}]);
+	});
+
+	test('resolves viewport selection only for the current session and revision', async () => {
+		const lifecycle = new SceneViewLifecycle(new TestClient(), new TestHost(), new TestLogger(), sequenceIds());
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 2));
+		const current = selectionEvent({ revision: 2 });
+		const stale = selectionEvent({ revision: 1 });
+
+		assert.deepStrictEqual(lifecycle.resolveSelection(current), {
+			resource: 'resource:scene-a',
+			occurrence: { definitionAssetId: 'scene-a', entityPath: ['crate'] }
+		});
+		assert.strictEqual(lifecycle.resolveSelection(stale), undefined);
+		assert.strictEqual(lifecycle.resolveSelection(selectionEvent({ viewportId: 'another' })), undefined);
+	});
 });
 
 class TestClient implements SceneViewAuthoringClient {
@@ -177,6 +208,7 @@ class TestHost implements SceneViewHost {
 	readonly opened: SceneViewportLaunch[] = [];
 	readonly ownerResources: string[] = [];
 	readonly updated: { viewportId: string; revision: number }[] = [];
+	readonly selected: { viewportId: string; revision: number; occurrence: SceneViewOccurrenceDto | null }[] = [];
 	readonly closed: string[] = [];
 	viewportAvailable = true;
 
@@ -192,6 +224,11 @@ class TestHost implements SceneViewHost {
 			return Promise.resolve(undefined);
 		}
 		this.updated.push({ viewportId, revision: snapshot.revision });
+		return Promise.resolve(true);
+	}
+
+	select(viewportId: string, revision: number, occurrence: SceneViewOccurrenceDto | null): Promise<boolean | undefined> {
+		this.selected.push({ viewportId, revision, occurrence });
 		return Promise.resolve(true);
 	}
 
@@ -256,4 +293,16 @@ function projected(sceneAssetId: string, revision: number): ConnectionScopedResu
 function sequenceIds(): () => string {
 	let next = 1;
 	return () => `viewport-${next++}`;
+}
+
+function selectionEvent(overrides: Partial<SceneViewSelectionEvent>): SceneViewSelectionEvent {
+	return {
+		viewportId: 'viewport-1',
+		connectionGeneration: 'connection-a',
+		projectGeneration: 7,
+		sceneAssetId: 'scene-a',
+		revision: 2,
+		occurrence: { rootDefinitionAssetId: 'scene-a', entityPath: ['crate'] },
+		...overrides
+	};
 }

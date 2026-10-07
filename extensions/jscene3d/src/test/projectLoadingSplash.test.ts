@@ -26,7 +26,7 @@ suite('JScene3D Project loading splash', () => {
 		assert.deepStrictEqual(fixture.scheduler.delays, [projectLoadingSplashMinimumVisibleMs]);
 		fixture.scheduler.advance(200);
 		await operation.complete('success');
-		await fixture.lifecycle.acceptProjectPresentationReady();
+		await fixture.lifecycle.acceptProjectWorkbenchReady();
 		fixture.scheduler.advance(1_799);
 		await settle();
 		assert.deepStrictEqual(fixture.host.events, ['show:1:Slow Project']);
@@ -46,7 +46,7 @@ suite('JScene3D Project loading splash', () => {
 
 		fixture.scheduler.advance(1_500);
 		await operation.complete('success');
-		await fixture.lifecycle.acceptProjectPresentationReady();
+		await fixture.lifecycle.acceptProjectWorkbenchReady();
 		fixture.scheduler.advance(499);
 		await settle();
 		assert.deepStrictEqual(fixture.host.events, ['show:1:Slow Project']);
@@ -69,7 +69,7 @@ suite('JScene3D Project loading splash', () => {
 		await operation.complete('success');
 		assert.deepStrictEqual(fixture.host.events, ['show:1:Slow Project']);
 
-		await fixture.lifecycle.acceptProjectPresentationReady();
+		await fixture.lifecycle.acceptProjectWorkbenchReady();
 		assert.deepStrictEqual(fixture.host.events, [
 			'show:1:Slow Project', `hide:1:${projectLoadingSplashFadeDurationMs}`
 		]);
@@ -87,7 +87,7 @@ suite('JScene3D Project loading splash', () => {
 		assert.strictEqual(fixture.lifecycle.active, false);
 	});
 
-	test('fade begins only after the terminal Project presentation is ready', async () => {
+	test('fade begins only after the terminal Project workbench is ready', async () => {
 		const fixture = createFixture();
 		const operation = fixture.lifecycle.begin(location('/projects/gated.j3d'));
 		await settle();
@@ -96,7 +96,7 @@ suite('JScene3D Project loading splash', () => {
 		await operation.complete('success');
 		assert.deepStrictEqual(fixture.host.events, ['show:1:Slow Project']);
 
-		await fixture.lifecycle.acceptProjectPresentationReady();
+		await fixture.lifecycle.acceptProjectWorkbenchReady();
 		assert.deepStrictEqual(fixture.host.events, [
 			'show:1:Slow Project', `hide:1:${projectLoadingSplashFadeDurationMs}`
 		]);
@@ -118,7 +118,7 @@ suite('JScene3D Project loading splash', () => {
 		]);
 		fixture.scheduler.advance(1);
 		await current.complete('success');
-		await fixture.lifecycle.acceptProjectPresentationReady();
+		await fixture.lifecycle.acceptProjectWorkbenchReady();
 		assert.deepStrictEqual(fixture.host.events, [
 			'show:1:Obsolete Project', 'hide:1:0', 'show:2:Current Project',
 			`hide:2:${projectLoadingSplashFadeDurationMs}`

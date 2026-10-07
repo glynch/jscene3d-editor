@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { JScene3DViewportFrameRouter, isViewportFrameIdentity, isViewportLaunch, stopViewportSessions } from '../../common/jscene3dViewport.js';
+import { JScene3DViewportFrameRouter, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, stopViewportSessions } from '../../common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('JScene3DViewportFrameRouter', () => {
@@ -74,6 +74,32 @@ suite('JScene3DViewportFrameRouter', () => {
 			}
 		};
 		assert.strictEqual(isViewportLaunch(richSceneLaunch), true);
+		const rootOccurrence = { rootDefinitionAssetId: launch.sceneAssetId, entityPath: [] };
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: {
+				...richSceneLaunch.snapshot,
+				occurrences: [{
+					...richSceneLaunch.snapshot.occurrences[0],
+					occurrence: rootOccurrence,
+					transform: null,
+					meshes: [],
+					directionalLight: null
+				}, {
+					...richSceneLaunch.snapshot.occurrences[0],
+					parent: rootOccurrence,
+					transform: {
+						...richSceneLaunch.snapshot.occurrences[0].transform,
+						identity: {
+							...identity,
+							scope: { definitionAssetId: launch.sceneAssetId, anchor: rootOccurrence }
+						}
+					}
+				}]
+			}
+		}), true, 'accepts the Java-authoritative Scene root occurrence with an empty entity path');
+		assert.strictEqual(isSceneViewSelectableOccurrence(rootOccurrence), false);
+		assert.strictEqual(isSceneViewSelectableOccurrence(occurrence), true);
 		assert.strictEqual(isViewportLaunch({
 			...richSceneLaunch,
 			snapshot: {

@@ -21,6 +21,7 @@ export interface IJScene3DRendererObservers {
 	readonly onFrameReady?: () => void;
 	readonly onExit?: () => void;
 	readonly onSurfaceReady?: (surfaceGeneration: number, width: number, height: number) => void;
+	readonly onSceneSelection?: (requestId: number, revision: number, selection: string) => void;
 }
 
 /** Identifies a launched native renderer session. */

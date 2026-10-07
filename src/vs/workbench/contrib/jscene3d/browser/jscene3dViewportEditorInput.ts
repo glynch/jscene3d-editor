@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneSelectionChange, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { EditorInputCapabilities } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
@@ -74,11 +74,14 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	private startToken = 0;
 	private failure: string | undefined;
 	private pendingReady: IJScene3DViewportSessionIdentity | undefined;
+	private desiredSelection: { readonly revision: number; readonly occurrence: IJScene3DSceneViewOccurrence | null } | undefined;
 	private _startupState: JScene3DViewportStartupState = 'renderer-starting';
 	private readonly startupStateEmitter = this._register(new Emitter<JScene3DViewportStartupState>());
 	private readonly sceneViewSnapshotEmitter = this._register(new Emitter<IJScene3DSceneViewSnapshot>());
+	private readonly sceneSelectionEmitter = this._register(new Emitter<IJScene3DSceneSelectionChange>());
 	readonly onDidChangeStartupState: Event<JScene3DViewportStartupState> = this.startupStateEmitter.event;
 	readonly onDidChangeSceneViewSnapshot: Event<IJScene3DSceneViewSnapshot> = this.sceneViewSnapshotEmitter.event;
+	readonly onDidChangeSceneSelection: Event<IJScene3DSceneSelectionChange> = this.sceneSelectionEmitter.event;
 
 	constructor(launch: IJScene3DViewportLaunch) {
 		super();
@@ -113,6 +116,23 @@ export class JScene3DViewportEditorInput extends EditorInput {
 			this.bridge?.updateSceneView(this.paneId, session, snapshot);
 		}
 		return true;
+	}
+
+	updateSceneViewSelection(revision: number, occurrence: IJScene3DSceneViewOccurrence | null): boolean {
+		if (this.launch.kind !== 'scene' || revision !== this.launch.snapshot.revision
+			|| (occurrence !== null && occurrence.rootDefinitionAssetId !== this.launch.sceneAssetId)) {
+			return false;
+		}
+		this.desiredSelection = { revision, occurrence };
+		this.applyDesiredSelection();
+		return true;
+	}
+
+	selectAt(presentation: IJScene3DViewportPresentation, horizontal: number, vertical: number): void {
+		const session = this.model.sessionIdentity;
+		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
+			this.bridge?.pickSceneView(this.paneId, session, this.launch.snapshot.revision, horizontal, vertical);
+		}
 	}
 
 	/** Rebinds a restored authored tab before its retained native session starts. */
@@ -162,7 +182,8 @@ export class JScene3DViewportEditorInput extends EditorInput {
 					this.paneId,
 					identity => this.onRendererReady(identity),
 					(frame, identity) => this.onFrame(frame, identity),
-					failure => this.onFailure(failure)
+					failure => this.onFailure(failure),
+					selection => this.onSelection(selection)
 				);
 				this.registered = true;
 			}
@@ -173,6 +194,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 				return;
 			}
 			this.applyLifecycleAction(this.model.bindSession(session));
+			this.applyDesiredSelection();
 			const pendingReady = this.pendingReady;
 			this.pendingReady = undefined;
 			if (pendingReady) {
@@ -275,6 +297,15 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		this.applyLifecycleAction(this.model.fail());
 	}
 
+	private applyDesiredSelection(): void {
+		const session = this.model.sessionIdentity;
+		const desired = this.desiredSelection;
+		if (session && desired && this.launch.kind === 'scene'
+			&& desired.revision === this.launch.snapshot.revision && !this.model.isTerminal) {
+			this.bridge?.selectSceneView(this.paneId, session, desired.revision, desired.occurrence);
+		}
+	}
+
 	private onRendererReady(identity: IJScene3DViewportSessionIdentity): void {
 		const session = this.model.sessionIdentity;
 		if (!session) {
@@ -284,6 +315,22 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		if (sameSession(session, identity)) {
 			this.transitionTo('waiting-for-first-frame');
 		}
+	}
+
+	private onSelection(selection: IJScene3DViewportSelection): void {
+		const session = this.model.sessionIdentity;
+		if (this.launch.kind !== 'scene' || !session || !sameSession(session, selection)
+			|| selection.revision !== this.launch.snapshot.revision || this.model.isTerminal) {
+			return;
+		}
+		this.sceneSelectionEmitter.fire({
+			viewportId: this.launch.viewportId,
+			connectionGeneration: this.launch.connectionGeneration,
+			projectGeneration: this.launch.projectGeneration,
+			sceneAssetId: this.launch.sceneAssetId,
+			revision: selection.revision,
+			occurrence: selection.occurrence
+		});
 	}
 
 	private async onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void> {

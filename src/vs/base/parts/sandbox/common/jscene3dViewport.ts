@@ -20,6 +20,25 @@ export interface IJScene3DViewportFailure {
 	readonly message: string;
 }
 
+/** Revision-qualified Scene View selection reported by the native renderer. */
+export interface IJScene3DViewportSelection extends IJScene3DViewportSessionIdentity {
+	readonly paneId: string;
+	readonly revision: number;
+	readonly occurrence: IJScene3DSceneViewOccurrence | null;
+}
+
+/** Selection payload forwarded from an active Scene View to the built-in extension. */
+export interface IJScene3DSceneSelectionChange {
+	readonly viewportId: string;
+	readonly connectionGeneration: string;
+	readonly projectGeneration: number;
+	readonly sceneAssetId: string;
+	readonly revision: number;
+	readonly occurrence: IJScene3DSceneViewOccurrence | null;
+}
+
+export const JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID = 'jscene3d.acceptSceneViewSelection';
+
 interface IJScene3DViewportLaunchBase {
 	readonly viewportId: string;
 	readonly connectionGeneration: string;
@@ -123,11 +142,14 @@ export interface IJScene3DViewportBridge {
 		paneId: string,
 		onReady: (session: IJScene3DViewportSessionIdentity) => void,
 		onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
-		onFailure: (failure: IJScene3DViewportFailure) => void
+		onFailure: (failure: IJScene3DViewportFailure) => void,
+		onSelection: (selection: IJScene3DViewportSelection) => void
 	): void;
 	unregisterPane(paneId: string): void;
 	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
 	updateSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot): void;
+	selectSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null): void;
+	pickSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number): void;
 	resize(paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number): void;
 	pause(paneId: string, session: IJScene3DViewportSessionIdentity): void;
 	resume(paneId: string, session: IJScene3DViewportSessionIdentity): void;
@@ -214,13 +236,18 @@ function isSceneViewVisualOccurrence(value: unknown): value is IJScene3DSceneVie
 		&& (candidate.directionalLight === null || isSceneViewDirectionalLight(candidate.directionalLight));
 }
 
-function isSceneViewOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
+export function isSceneViewOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
 	if (!value || typeof value !== 'object') {
 		return false;
 	}
 	const candidate = value as Partial<IJScene3DSceneViewOccurrence>;
 	return nonEmpty(candidate.rootDefinitionAssetId)
 		&& Array.isArray(candidate.entityPath) && candidate.entityPath.every(nonEmpty);
+}
+
+/** Returns whether an occurrence identifies a selectable authored entity rather than the Scene root. */
+export function isSceneViewSelectableOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
+	return isSceneViewOccurrence(value) && value.entityPath.length > 0;
 }
 
 function isSceneViewComponentIdentity(value: unknown): value is IJScene3DSceneViewComponentIdentity {

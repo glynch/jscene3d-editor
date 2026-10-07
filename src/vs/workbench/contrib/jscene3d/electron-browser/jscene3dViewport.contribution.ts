@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot, isViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -39,6 +39,7 @@ export const JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.ope
 export const JSCENE3D_OPEN_SCENE_EDITOR_COMMAND_ID = 'jscene3d.workbench.openSceneEditor';
 export const JSCENE3D_CLOSE_PROJECT_VIEWPORTS_COMMAND_ID = 'jscene3d.workbench.closeProjectViewports';
 export const JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID = 'jscene3d.workbench.updateSceneView';
+export const JSCENE3D_SELECT_SCENE_VIEW_COMMAND_ID = 'jscene3d.workbench.selectSceneView';
 export const JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.closeViewport';
 
 CommandsRegistry.registerCommand(JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID, async (accessor, launch: unknown) => {
@@ -91,6 +92,16 @@ CommandsRegistry.registerCommand(JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID, (accesso
 	const match = viewportEditors(accessor.get(IEditorService))
 		.find(entry => entry.viewport.launch.viewportId === viewportId && entry.viewport.launch.kind === 'scene');
 	return match?.viewport.updateSceneViewSnapshot(snapshot as IJScene3DSceneViewSnapshot);
+});
+
+CommandsRegistry.registerCommand(JSCENE3D_SELECT_SCENE_VIEW_COMMAND_ID, (accessor, viewportId: unknown, revision: unknown, occurrence: unknown) => {
+	if (typeof viewportId !== 'string' || !Number.isInteger(revision)
+		|| (occurrence !== null && !isSceneViewSelectableOccurrence(occurrence))) {
+		return false;
+	}
+	const match = viewportEditors(accessor.get(IEditorService))
+		.find(entry => entry.viewport.launch.viewportId === viewportId && entry.viewport.launch.kind === 'scene');
+	return match?.viewport.updateSceneViewSelection(revision as number, occurrence as IJScene3DSceneViewOccurrence | null) ?? false;
 });
 
 CommandsRegistry.registerCommand(JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID, async (accessor, viewportId: unknown) => {

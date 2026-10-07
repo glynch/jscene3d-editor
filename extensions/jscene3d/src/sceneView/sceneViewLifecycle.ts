@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'crypto';
 import { AuthoredDefinitionResource } from '../definition/authoredDefinitionState';
-import { ConnectionScopedResult, ProjectDiagnosticDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
+import { ConnectionScopedResult, HierarchyOccurrenceDto, ProjectDiagnosticDto, SceneViewOccurrenceDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
 
 /** Authoring operation required by the per-definition Scene View lifecycle. */
 export interface SceneViewAuthoringClient {
@@ -36,6 +36,7 @@ export interface SceneViewportLaunch {
 export interface SceneViewHost {
 	open(ownerResource: string, launch: SceneViewportLaunch): Promise<void>;
 	update(viewportId: string, snapshot: SceneViewSnapshotDto): Promise<boolean | undefined>;
+	select(viewportId: string, revision: number, occurrence: SceneViewOccurrenceDto | null): Promise<boolean | undefined>;
 	close(viewportId: string): Promise<void>;
 	publishDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
 }
@@ -51,6 +52,22 @@ interface SceneViewSession {
 	readonly projectGeneration: number;
 	readonly sceneAssetId: string;
 	revision: number;
+}
+
+/** Selection event emitted by one exact native Scene View revision. */
+export interface SceneViewSelectionEvent {
+	readonly viewportId: string;
+	readonly connectionGeneration: string;
+	readonly projectGeneration: number;
+	readonly sceneAssetId: string;
+	readonly revision: number;
+	readonly occurrence: SceneViewOccurrenceDto | null;
+}
+
+/** Validated authored occurrence resolved from a native Scene View event. */
+export interface ResolvedSceneViewSelection {
+	readonly resource: string;
+	readonly occurrence: HierarchyOccurrenceDto | null;
 }
 
 /** Owns one independent native safe-renderer session per open authored Scene document. */
@@ -173,6 +190,38 @@ export class SceneViewLifecycle {
 			this.log(`viewport disposed for ${session.sceneAssetId}`);
 			await this.host.close(session.viewportId);
 		}
+	}
+
+	async select(definition: AuthoredDefinitionResource, occurrence: HierarchyOccurrenceDto | null): Promise<void> {
+		const session = this.sessions.get(definition.resource);
+		if (session === undefined || session.projectGeneration !== definition.projectGeneration
+			|| session.sceneAssetId !== definition.assetId || session.revision !== definition.snapshot.revision) {
+			return;
+		}
+		await this.host.select(session.viewportId, session.revision, occurrence === null ? null : {
+			rootDefinitionAssetId: occurrence.definitionAssetId,
+			entityPath: occurrence.entityPath
+		});
+	}
+
+	resolveSelection(event: SceneViewSelectionEvent): ResolvedSceneViewSelection | undefined {
+		for (const [resource, session] of this.sessions) {
+			if (session.viewportId === event.viewportId
+				&& session.connectionGeneration === event.connectionGeneration
+				&& session.projectGeneration === event.projectGeneration
+				&& session.sceneAssetId === event.sceneAssetId
+				&& session.revision === event.revision
+				&& (event.occurrence === null || event.occurrence.rootDefinitionAssetId === event.sceneAssetId)) {
+				return {
+					resource,
+					occurrence: event.occurrence === null ? null : {
+						definitionAssetId: event.occurrence.rootDefinitionAssetId,
+						entityPath: event.occurrence.entityPath
+					}
+				};
+			}
+		}
+		return undefined;
 	}
 
 	async closeAll(): Promise<void> {

@@ -153,10 +153,31 @@
 	width: 100%;
 }
 
+.monaco-workbench .part.editor > .content .editor-group-container .jscene3d-project-empty {
+	text-align: center;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container .jscene3d-project-empty h1 {
+	margin: 0 0 10px;
+	color: var(--vscode-foreground);
+	font-size: var(--vscode-fontSize-heading2);
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container .jscene3d-project-empty p {
+	margin: 0;
+	color: var(--vscode-descriptionForeground);
+	line-height: 1.5;
+}
+
 .monaco-workbench .part.editor > .content:not(.empty) .editor-group-container > .editor-group-watermark-wrapper .editor-group-watermark .shortcuts,
 .monaco-workbench .part.editor > .content.auxiliary .editor-group-container > .editor-group-watermark-wrapper .editor-group-watermark .shortcuts,
 .monaco-workbench .part.editor > .content .editor-group-container.max-height-478px > .editor-group-watermark-wrapper .editor-group-watermark .shortcuts {
 	display: none;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark-wrapper .editor-group-watermark .shortcuts.jscene3d-project-empty-container {
+	display: block;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark-wrapper .editor-group-watermark .shortcuts > .watermark-box {

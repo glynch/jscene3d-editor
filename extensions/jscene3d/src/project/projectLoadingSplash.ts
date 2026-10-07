@@ -54,7 +54,7 @@ interface ActiveProjectLoadingSplash {
 	shownAt: number | undefined;
 	minimumVisibleElapsed: boolean;
 	completion: ProjectLoadingSplashOutcome | undefined;
-	projectPresentationReady: boolean;
+	projectWorkbenchReady: boolean;
 }
 
 /** Owns immediate, minimum-duration, stale-safe Project-loading presentation. */
@@ -93,7 +93,7 @@ export class ProjectLoadingSplashLifecycle {
 			shownAt: undefined,
 			minimumVisibleElapsed: false,
 			completion: undefined,
-			projectPresentationReady: false
+			projectWorkbenchReady: false
 		};
 		this.activeOperation = operation;
 		void this.show(operation);
@@ -102,12 +102,12 @@ export class ProjectLoadingSplashLifecycle {
 		};
 	}
 
-	async acceptProjectPresentationReady(): Promise<void> {
+	async acceptProjectWorkbenchReady(): Promise<void> {
 		const operation = this.activeOperation;
 		if (operation === undefined) {
 			return;
 		}
-		operation.projectPresentationReady = true;
+		operation.projectWorkbenchReady = true;
 		await this.dismissIfEligible(operation);
 	}
 
@@ -177,7 +177,7 @@ export class ProjectLoadingSplashLifecycle {
 
 	private async dismissIfEligible(operation: ActiveProjectLoadingSplash): Promise<void> {
 		if (operation.completion !== 'success'
-			|| !operation.projectPresentationReady
+			|| !operation.projectWorkbenchReady
 			|| !operation.displayed
 			|| !operation.minimumVisibleElapsed) {
 			return;

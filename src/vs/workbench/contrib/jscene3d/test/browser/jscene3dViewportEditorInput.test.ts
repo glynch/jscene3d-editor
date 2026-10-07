@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { EditorInputCapabilities, Verbosity } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
@@ -260,6 +260,41 @@ suite('JScene3DViewportEditorInput', () => {
 		}
 	});
 
+	test('retains Hierarchy selection until the first native Scene session is bound', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const occurrence = { rootDefinitionAssetId: 'main', entityPath: ['environment', 'crate'] };
+		try {
+			assert.strictEqual(input.updateSceneViewSelection(0, occurrence), true);
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+
+			assert.deepStrictEqual(bridge.selected, [{ viewportId: 'viewport-main', revision: 0, occurrence }]);
+		} finally {
+			await input.stop();
+			input.dispose();
+		}
+	});
+
+	test('reports only exact-session native picks to the shared Scene selection', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const selections: Array<IJScene3DSceneViewOccurrence | null> = [];
+		const listener = input.onDidChangeSceneSelection(selection => selections.push(selection.occurrence));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.sceneSelection({ revision: 1, occurrence: null });
+			bridge.sceneSelection({ occurrence: { rootDefinitionAssetId: 'main', entityPath: ['crate'] } });
+
+			assert.deepStrictEqual(selections, [{ rootDefinitionAssetId: 'main', entityPath: ['crate'] }]);
+		} finally {
+			listener.dispose();
+			await input.stop();
+			input.dispose();
+		}
+	});
+
 	test('keeps loading visible until the first native frame is presented', async () => {
 		const bridge = new TestViewportBridge();
 		const presentation = new TestPresentation();
@@ -434,10 +469,13 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 	readonly resumed: string[] = [];
 	readonly resized: Array<{ viewportId: string; width: number; height: number }> = [];
 	readonly updated: Array<{ viewportId: string; revision: number }> = [];
+	readonly selected: Array<{ viewportId: string; revision: number; occurrence: IJScene3DSceneViewOccurrence | null }> = [];
+	readonly picked: Array<{ viewportId: string; revision: number; horizontal: number; vertical: number }> = [];
 	private readonly consumers = new Map<string, {
 		onReady(session: IJScene3DViewportSessionIdentity): void;
 		onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
 		onFailure(failure: IJScene3DViewportFailure): void;
+		onSelection(selection: IJScene3DViewportSelection): void;
 	}>();
 	private startResolver: ((session: IJScene3DViewportSessionIdentity) => void) | undefined;
 
@@ -449,9 +487,10 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		paneId: string,
 		onReady: (session: IJScene3DViewportSessionIdentity) => void,
 		_onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
-		onFailure: (failure: IJScene3DViewportFailure) => void
+		onFailure: (failure: IJScene3DViewportFailure) => void,
+		onSelection: (selection: IJScene3DViewportSelection) => void
 	): void {
-		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure });
+		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure, onSelection });
 	}
 
 	unregisterPane(paneId: string): void {
@@ -470,6 +509,20 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		const launch = this.started.find(entry => entry.launch.sceneAssetId === snapshot.sceneAssetId)?.launch;
 		if (launch) {
 			this.updated.push({ viewportId: launch.viewportId, revision: snapshot.revision });
+		}
+	}
+
+	selectSceneView(paneId: string, _session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null): void {
+		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
+		if (viewportId) {
+			this.selected.push({ viewportId, revision, occurrence });
+		}
+	}
+
+	pickSceneView(paneId: string, _session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number): void {
+		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
+		if (viewportId) {
+			this.picked.push({ viewportId, revision, horizontal, vertical });
 		}
 	}
 
@@ -512,6 +565,18 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 			paneId: started.paneId,
 			session: { sessionId: 1, rendererGeneration: 1 },
 			message
+		});
+	}
+
+	sceneSelection(overrides: Partial<IJScene3DViewportSelection>): void {
+		const started = this.started[0];
+		this.consumers.get(started.paneId)?.onSelection({
+			paneId: started.paneId,
+			sessionId: 1,
+			rendererGeneration: 1,
+			revision: 0,
+			occurrence: null,
+			...overrides
 		});
 	}
 }

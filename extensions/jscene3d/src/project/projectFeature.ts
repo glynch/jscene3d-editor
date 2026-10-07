@@ -18,7 +18,7 @@ import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { publishProjectDiagnostics } from './projectDiagnostics';
 import { ProjectLoadingSplashLifecycle } from './projectLoadingSplash';
-import { ProjectPresentationLifecycle, projectVisibility } from './projectPresentation';
+import { ProjectWorkbenchLifecycle, projectVisibility } from './projectWorkbench';
 import {
 	getRecentProjectsCommandId,
 	openRecentProjectCommandId,
@@ -44,10 +44,8 @@ import {
 	VsCodeProjectLoadingSplashHost,
 	VsCodeProjectLoadingSplashScheduler
 } from './vsCodeProjectLoadingSplash';
-import { VsCodeProjectPresentation } from './vsCodeProjectPresentation';
+import { VsCodeProjectWorkbench } from './vsCodeProjectWorkbench';
 
-const projectOpenContext = 'jscene3d.projectOpen';
-const projectBusyContext = 'jscene3d.projectBusy';
 const extensionReadyContext = 'jscene3d.extensionReady';
 
 /** Definition operations coordinated by the Project feature. */
@@ -90,7 +88,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	private readonly attemptDiagnostics = vscode.languages.createDiagnosticCollection('jscene3d.projectAttempt');
 	private readonly sessionLifecycle: ProjectSessionLifecycle;
 	private readonly workflow: AuthoringWorkflow;
-	private readonly presentationLifecycle: ProjectPresentationLifecycle;
+	private readonly workbenchLifecycle: ProjectWorkbenchLifecycle;
 	private readonly disposables: vscode.Disposable[] = [];
 	private disposed = false;
 
@@ -136,15 +134,15 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
 		);
-		const presentation = new VsCodeProjectPresentation(logger, loadingPresentation);
-		this.presentationLifecycle = new ProjectPresentationLifecycle(presentation, logger);
+		const workbench = new VsCodeProjectWorkbench(loadingPresentation);
+		this.workbenchLifecycle = new ProjectWorkbenchLifecycle(workbench, logger);
 		definitions.registerOpenCommand((assetId, projectGeneration) =>
 			this.workflow.openDefinition(assetId, projectGeneration));
 		this.disposables.push(
 			this.activeDiagnostics,
 			this.attemptDiagnostics,
 			loadingPresentation,
-			presentation,
+			workbench,
 			provider,
 			tree,
 			projectState.onDidChange(() => this.projectStateChanged(projectState, definitionState, viewports)),
@@ -166,16 +164,13 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			vscode.commands.registerCommand(closeProjectCommandId, () => this.workflow.closeProject()),
 			vscode.commands.registerCommand(gettingStartedCommandId, () => this.workflow.gettingStarted())
 		);
-		this.ready = Promise.all([
-			vscode.commands.executeCommand('setContext', projectOpenContext, false),
-			vscode.commands.executeCommand('setContext', projectBusyContext, false),
-			vscode.commands.executeCommand('setContext', extensionReadyContext, true)
-		]).then(() => pendingReopen ? undefined : this.presentationLifecycle.synchronize(projectState.snapshot));
+		this.ready = Promise.resolve(vscode.commands.executeCommand('setContext', extensionReadyContext, true))
+			.then(() => pendingReopen ? undefined : this.workbenchLifecycle.synchronize(projectState.snapshot));
 	}
 
 	async reopenPersistedProject(): Promise<void> {
 		await this.workflow.reopenPersistedProject();
-		await this.presentationLifecycle.synchronize(this.projectState.snapshot);
+		await this.workbenchLifecycle.synchronize(this.projectState.snapshot);
 	}
 
 	dispose(): void {
@@ -196,7 +191,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		viewports: ProjectViewportLifecycle
 	): void {
 		const snapshot = projectState.snapshot;
-		void this.presentationLifecycle.synchronize(snapshot);
+		void this.workbenchLifecycle.synchronize(snapshot);
 		publishProjectDiagnostics(this.activeDiagnostics, snapshot.activeDiagnostics);
 		publishProjectDiagnostics(this.attemptDiagnostics, snapshot.attemptDiagnostics);
 		const visibility = projectVisibility(snapshot);
@@ -205,15 +200,6 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			void viewports.closeProjectViewports().catch(error => this.logger.appendLine(
 				`Failed to close JScene3D project viewports: ${errorMessage(error)}`));
 		}
-		void Promise.all([
-			vscode.commands.executeCommand('setContext', projectOpenContext, visibility.open),
-			vscode.commands.executeCommand(
-				'setContext',
-				projectBusyContext,
-				visibility.busy
-			)
-		]).catch(error => this.logger.appendLine(
-			`Failed to update JScene3D context keys: ${errorMessage(error)}`));
 	}
 }
 
