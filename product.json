@@ -1,6 +1,7 @@
 {
 	"nameShort": "JScene3D Editor",
 	"nameLong": "JScene3D Editor",
+	"jscene3dVersion": "0.1.0",
 	"applicationName": "jscene3d-editor",
 	"dataFolderName": ".jscene3d-editor",
 	"sharedDataFolderName": ".jscene3d-editor-shared",

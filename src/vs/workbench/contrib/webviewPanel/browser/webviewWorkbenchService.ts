@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { getWindowById } from '../../../../base/browser/dom.js';
 import { CancelablePromise, createCancelablePromise, DeferredPromise } from '../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { memoize } from '../../../../base/common/decorators.js';
@@ -25,6 +26,7 @@ import { WebviewIconPath, WebviewInput, WebviewInputInitInfo } from './webviewEd
 export interface IWebViewShowOptions {
 	readonly group?: IEditorGroup | GroupIdentifier | ACTIVE_GROUP_TYPE | SIDE_GROUP_TYPE;
 	readonly preserveFocus?: boolean;
+	readonly initializeInBackground?: boolean;
 }
 
 export const IWebviewWorkbenchService = createDecorator<IWebviewWorkbenchService>('webviewEditorService');
@@ -208,14 +210,14 @@ export class WebviewEditorService extends Disposable implements IWebviewWorkbenc
 	private readonly _revivalPool = new RevivalPool();
 
 	constructor(
-		@IEditorGroupsService editorGroupsService: IEditorGroupsService,
+		@IEditorGroupsService private readonly _editorGroupsService: IEditorGroupsService,
 		@IEditorService private readonly _editorService: IEditorService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@IWebviewService private readonly _webviewService: IWebviewService,
 	) {
 		super();
 
-		this._register(editorGroupsService.registerContextKeyProvider({
+		this._register(_editorGroupsService.registerContextKeyProvider({
 			contextKey: CONTEXT_ACTIVE_WEBVIEW_PANEL_ID,
 			getGroupContextKeyValue: (group) => this.getWebviewId(group.activeEditor),
 		}));
@@ -280,12 +282,22 @@ export class WebviewEditorService extends Disposable implements IWebviewWorkbenc
 	): WebviewInput {
 		const webview = this._webviewService.createWebviewOverlay(webviewInitInfo);
 		const webviewInput = this._instantiationService.createInstance(WebviewInput, { viewType, name: title, providedId: webviewInitInfo.providedViewType, iconPath }, webview);
+		if (showOptions.initializeInBackground) {
+			const targetGroup = typeof showOptions.group === 'object'
+				? showOptions.group
+				: typeof showOptions.group === 'number' && showOptions.group >= 0
+					? this._editorGroupsService.getGroup(showOptions.group)
+					: undefined;
+			const windowId = (targetGroup ?? this._editorGroupsService.activeGroup).windowId;
+			webview.preload(getWindowById(windowId, true).window);
+		}
+		const preserveFocus = !!showOptions.preserveFocus || !!showOptions.initializeInBackground;
 		this._editorService.openEditor(webviewInput, {
 			pinned: true,
-			preserveFocus: showOptions.preserveFocus,
+			preserveFocus,
 			// preserve pre 1.38 behaviour to not make group active when preserveFocus: true
 			// but make sure to restore the editor to fix https://github.com/microsoft/vscode/issues/79633
-			activation: showOptions.preserveFocus ? EditorActivation.RESTORE : undefined
+			activation: preserveFocus ? EditorActivation.RESTORE : undefined
 		}, showOptions.group);
 		return webviewInput;
 	}

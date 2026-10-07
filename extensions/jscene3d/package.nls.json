@@ -11,7 +11,7 @@
 	"view.project": "JScene3D Project",
 	"view.hierarchy": "Hierarchy",
 	"view.inspector": "Inspector",
-	"view.hierarchy.noActiveDefinition": "Open a JScene3D authored definition to show its hierarchy.",
+	"view.hierarchy.noActiveDefinition": "Open a Scene or Entity to view its hierarchy.",
 	"customEditor.sceneDefinition": "JScene3D Scene",
 	"customEditor.authoredDefinition": "JScene3D Authored Definition",
 	"configuration.authoring.javaExecutable": "Java executable used to launch the development authoring service. The JSCENE3D_JAVA_EXECUTABLE environment variable takes precedence.",

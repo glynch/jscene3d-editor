@@ -203,13 +203,14 @@ export class ExtHostWebviewPanels extends Disposable implements extHostProtocol.
 		extension: IExtensionDescription,
 		viewType: string,
 		title: string,
-		showOptions: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus?: boolean },
+		showOptions: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus?: boolean; initializeInBackground?: boolean },
 		options: (vscode.WebviewPanelOptions & vscode.WebviewOptions) = {},
 	): vscode.WebviewPanel {
 		const viewColumn = typeof showOptions === 'object' ? showOptions.viewColumn : showOptions;
 		const webviewShowOptions = {
 			viewColumn: typeConverters.ViewColumn.from(viewColumn),
-			preserveFocus: typeof showOptions === 'object' && !!showOptions.preserveFocus
+			preserveFocus: typeof showOptions === 'object' && !!showOptions.preserveFocus,
+			initializeInBackground: typeof showOptions === 'object' && !!showOptions.initializeInBackground
 		};
 
 		const serializeBuffersForPostMessage = shouldSerializeBuffersForPostMessage(extension);

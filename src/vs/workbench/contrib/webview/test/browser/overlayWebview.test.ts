@@ -4,13 +4,17 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { CodeWindow, mainWindow } from '../../../../../base/browser/window.js';
 import { timeout } from '../../../../../base/common/async.js';
+import { Event } from '../../../../../base/common/event.js';
+import { observableValue } from '../../../../../base/common/observable.js';
+import { mock } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IWorkbenchLayoutService } from '../../../../services/layout/browser/layoutService.js';
 import { OverlayWebview } from '../../browser/overlayWebview.js';
-import { IWebviewService } from '../../browser/webview.js';
+import { IWebviewElement, IWebviewService } from '../../browser/webview.js';
 
 suite('OverlayWebview', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
@@ -100,6 +104,71 @@ suite('OverlayWebview', () => {
 				modal: true,
 			},
 			modalRemovedAfterReanchor: true,
+		});
+	});
+
+	test('preloads one hidden webview document without claiming the overlay', () => {
+		const root = document.createElement('div');
+		let createCount = 0;
+		let mountCount = 0;
+		let html = '';
+		const element = new class extends mock<IWebviewElement>() {
+			override state: string | undefined;
+			override initialScrollProgress = 0;
+			override isFocused = false;
+			override onDidFocus = Event.None;
+			override onDidBlur = Event.None;
+			override onDidDispose = Event.None;
+			override onDidClickLink = Event.None;
+			override onDidScroll = Event.None;
+			override onDidWheel = Event.None;
+			override onDidUpdateState = Event.None;
+			override onFatalError = Event.None;
+			override onMissingCsp = Event.None;
+			override onMessage = Event.None;
+			override intrinsicContentSize = observableValue(this, undefined);
+
+			override setHtml(value: string): void {
+				html = value;
+			}
+
+			override mountTo(_parent: HTMLElement, targetWindow: CodeWindow): void {
+				mountCount++;
+				assert.strictEqual(targetWindow, mainWindow);
+			}
+
+			override dispose(): void { }
+		};
+		const instantiationService = store.add(new TestInstantiationService());
+		instantiationService.stub(IWorkbenchLayoutService, { getContainer: () => root });
+		instantiationService.stub(IWebviewService, new class extends mock<IWebviewService>() {
+			override createWebviewElement(): IWebviewElement {
+				createCount++;
+				return element;
+			}
+		});
+		instantiationService.stub(IContextKeyService, {});
+		const overlay = store.add(instantiationService.createInstance(OverlayWebview, {
+			title: undefined,
+			options: {},
+			contentOptions: {},
+			extension: undefined,
+		}));
+		overlay.setHtml('<p>Project ready</p>');
+
+		overlay.preload(mainWindow);
+		overlay.preload(mainWindow);
+
+		assert.deepStrictEqual({
+			createCount,
+			mountCount,
+			html,
+			visibility: overlay.container.style.visibility,
+		}, {
+			createCount: 1,
+			mountCount: 1,
+			html: '<p>Project ready</p>',
+			visibility: 'hidden',
 		});
 	});
 });

@@ -159,7 +159,8 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
 	): void {
 		const targetGroup = this.getTargetGroupFromShowOptions(showOptions);
 		const mainThreadShowOptions: IWebViewShowOptions = showOptions ? {
-			preserveFocus: !!showOptions.preserveFocus,
+			preserveFocus: !!showOptions.preserveFocus || !!showOptions.initializeInBackground,
+			initializeInBackground: !!showOptions.initializeInBackground,
 			group: targetGroup
 		} : {};
 

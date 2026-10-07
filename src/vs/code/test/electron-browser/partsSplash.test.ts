@@ -12,6 +12,7 @@ import { ThemeTypeSelector } from '../../../platform/theme/common/theme.js';
 import { getPartsSplashColors } from '../../electron-browser/workbench/partsSplash.js';
 import { hideJScene3DSplash, showJScene3DSplash } from '../../electron-browser/workbench/jscene3dSplash.js';
 import { shouldShowJScene3DSplash } from '../../../platform/window/common/window.js';
+import product from '../../../platform/product/common/product.js';
 
 suite('Parts splash colors', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -107,7 +108,7 @@ suite('JScene3D startup splash', () => {
 	teardown(() => hideJScene3DSplash(mainWindow));
 
 	test('composes the owned background, mark, and product name', () => {
-		showJScene3DSplash(mainWindow);
+		showJScene3DSplash(mainWindow, product.jscene3dVersion);
 
 		const splash = mainWindow.document.getElementById('monaco-parts-splash');
 		assert.deepStrictEqual({
@@ -125,8 +126,59 @@ suite('JScene3D startup splash', () => {
 		});
 	});
 
+	test('uses the product-owned JScene3D version and restrained static product information', () => {
+		showJScene3DSplash(mainWindow, product.jscene3dVersion);
+
+		const splash = mainWindow.document.getElementById('monaco-parts-splash');
+		const text = splash?.textContent ?? '';
+		assert.deepStrictEqual({
+			jscene3dVersion: product.jscene3dVersion,
+			codeOssVersion: product.version,
+			shownVersion: splash?.querySelector('.jscene3d-startup-splash-version')?.textContent,
+			engine: splash?.querySelector('.jscene3d-startup-splash-engine')?.textContent,
+			java: splash?.querySelector('.jscene3d-startup-splash-java')?.textContent,
+			copyright: splash?.querySelector('.jscene3d-startup-splash-copyright')?.textContent,
+			futureProgressReserve: splash?.querySelector('.jscene3d-startup-splash-progress-reserve')?.textContent,
+			showsCodeOssVersion: text.includes(product.version),
+			hasFakeProgress: /Starting|Loading|Ready|\d+%/i.test(text)
+		}, {
+			jscene3dVersion: '0.1.0',
+			codeOssVersion: '1.138.0',
+			shownVersion: '0.1.0',
+			engine: 'Powered by JScene3D Engine',
+			java: 'Java 21',
+			copyright: '© 2026 Graham Lynch',
+			futureProgressReserve: '',
+			showsCodeOssVersion: false,
+			hasFakeProgress: false
+		});
+	});
+
+	test('fills the splash with cropped artwork and overlays metadata without a footer', () => {
+		showJScene3DSplash(mainWindow, product.jscene3dVersion);
+
+		const splash = mainWindow.document.getElementById('monaco-parts-splash');
+		const style = mainWindow.document.head.querySelector<HTMLStyleElement>('.jscene3d-startup-splash-styles');
+		const information = splash?.querySelector('.jscene3d-startup-splash-information');
+		assert.deepStrictEqual({
+			backgroundIsDirectChild: splash?.firstElementChild?.classList.contains('jscene3d-startup-splash-background'),
+			informationIsOverlay: information?.parentElement === splash,
+			hasFooter: splash?.querySelector('[class*="footer"]') !== null,
+			cropsSourceFooter: style?.textContent?.includes('height: 116%;'),
+			anchorsArtworkAtTop: style?.textContent?.includes('object-position: center top;'),
+			artworkContainerFillsWindow: style?.textContent?.includes('position: fixed;\n\t\t\tinset: 0;')
+		}, {
+			backgroundIsDirectChild: true,
+			informationIsOverlay: true,
+			hasFooter: false,
+			cropsSourceFooter: true,
+			anchorsArtworkAtTop: true,
+			artworkContainerFillsWindow: true
+		});
+	});
+
 	test('removes the splash and its initial styles on startup failure', () => {
-		showJScene3DSplash(mainWindow);
+		showJScene3DSplash(mainWindow, product.jscene3dVersion);
 		hideJScene3DSplash(mainWindow);
 
 		assert.deepStrictEqual({

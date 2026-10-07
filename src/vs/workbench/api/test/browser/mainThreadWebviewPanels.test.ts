@@ -22,9 +22,9 @@ import { UriIdentityService } from '../../../../platform/uriIdentity/common/uriI
 import { getResourceToLoad } from '../../../contrib/webview/browser/resourceLoading.js';
 import { IOverlayWebview, WebviewContentOptions, WebviewExtensionDescription } from '../../../contrib/webview/browser/webview.js';
 import { WebviewInput } from '../../../contrib/webviewPanel/browser/webviewEditorInput.js';
-import { IWebviewWorkbenchService } from '../../../contrib/webviewPanel/browser/webviewWorkbenchService.js';
+import { IWebViewShowOptions, IWebviewWorkbenchService } from '../../../contrib/webviewPanel/browser/webviewWorkbenchService.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
-import { TestEditorGroupsService, TestEditorService } from '../../../test/browser/workbenchTestServices.js';
+import { TestEditorGroupsService, TestEditorGroupView, TestEditorService } from '../../../test/browser/workbenchTestServices.js';
 import { MainThreadWebviewPanels } from '../../browser/mainThreadWebviewPanels.js';
 import { MainThreadWebviews } from '../../browser/mainThreadWebviews.js';
 import { ExtHostWebviewPanelsShape, IWebviewContentOptions } from '../../common/extHost.protocol.js';
@@ -35,6 +35,62 @@ suite('MainThreadWebviewPanels', () => {
 	const extensionId = new ExtensionIdentifier('publisher.extension');
 	const oldLocation = URI.file('/extensions/publisher.extension-1.0.0');
 	const newLocation = URI.file('/extensions/publisher.extension-2.0.0');
+
+	test('maps background initialization to an inactive workbench webview', () => {
+		const webview = new class extends mock<IOverlayWebview>() {
+			override onDidDispose = Event.None;
+			override dispose(): void { }
+		};
+		const input = store.add(new WebviewInput({
+			viewType: 'mainThreadWebview-test',
+			providedId: 'test',
+			name: 'Test',
+			iconPath: undefined,
+		}, webview, new TestThemeService()));
+		let capturedShowOptions: IWebViewShowOptions | undefined;
+		const groups = new TestEditorGroupsService([new TestEditorGroupView(7)]);
+		const panels = store.add(new MainThreadWebviewPanels(
+			SingleProxyRPCProtocol(new class extends mock<ExtHostWebviewPanelsShape>() { }),
+			new class extends mock<MainThreadWebviews>() {
+				override addWebview(): void { }
+			},
+			new TestConfigurationService(),
+			groups,
+			store.add(new TestEditorService()),
+			new class extends mock<IExtensionService>() { },
+			store.add(new InMemoryStorageService()),
+			new class extends mock<IWebviewWorkbenchService>() {
+				override onDidChangeActiveWebviewEditor = Event.None;
+				override registerResolver() {
+					return Disposable.None;
+				}
+				override openWebview(
+					_initInfo: Parameters<IWebviewWorkbenchService['openWebview']>[0],
+					_viewType: string,
+					_title: string,
+					_iconPath: Parameters<IWebviewWorkbenchService['openWebview']>[3],
+					showOptions: IWebViewShowOptions
+				): WebviewInput {
+					capturedShowOptions = showOptions;
+					return input;
+				}
+			},
+			store.add(new UriIdentityService(store.add(new FileService(new NullLogService())))),
+		));
+
+		panels.$createWebviewPanel(
+			{ id: extensionId, location: oldLocation },
+			'handle',
+			'test',
+			{ title: 'Test', panelOptions: {}, webviewOptions: {}, serializeBuffersForPostMessage: false },
+			{ viewColumn: 0, preserveFocus: false, initializeInBackground: true });
+
+		assert.deepStrictEqual(capturedShowOptions, {
+			preserveFocus: true,
+			initializeInBackground: true,
+			group: -1,
+		});
+	});
 
 	async function restore(
 		localResourceRoots: readonly URI[] | undefined,

@@ -17,6 +17,106 @@ export interface ProjectPresentationHost {
 	show(presentation: ProjectPresentation): Promise<void>;
 }
 
+/** Workbench operations performed when an initialized Project presentation becomes visible. */
+export interface ProjectPresentationActivationHost {
+	reveal(): void;
+	closeWelcome(): Promise<void>;
+	completeStartupPresentation(revealApplicationSplash: boolean): Promise<void>;
+}
+
+/** Gates first activation until the Project presentation has crossed its rendered-ready boundary. */
+export class ProjectPresentationActivation {
+	private state: 'pending' | 'active' | 'disposed' = 'pending';
+
+	constructor(private readonly host: ProjectPresentationActivationHost) { }
+
+	get active(): boolean {
+		return this.state === 'active';
+	}
+
+	async acceptRenderedReady(revealApplicationSplash: boolean): Promise<void> {
+		if (this.state !== 'pending') {
+			return;
+		}
+		this.host.reveal();
+		this.state = 'active';
+		await this.host.closeWelcome();
+		await this.host.completeStartupPresentation(revealApplicationSplash);
+	}
+
+	dispose(): void {
+		if (this.state === 'pending') {
+			this.state = 'disposed';
+		}
+	}
+}
+
+/** Message used to update the contents of the persistent Project presentation document. */
+export interface ProjectPresentationUpdate {
+	readonly type: 'jscene3d.projectPresentation.update';
+	readonly revision: number;
+	readonly content: string;
+}
+
+/** Message emitted when the persistent Project presentation document can accept updates. */
+export interface ProjectPresentationReady {
+	readonly type: 'jscene3d.projectPresentation.ready';
+	readonly revision: number;
+}
+
+/** Platform surface that owns one persistent Project presentation document. */
+export interface ProjectPresentationDocumentSurface {
+	initializeDocument(html: string): void;
+	postMessage(message: ProjectPresentationUpdate): PromiseLike<boolean>;
+}
+
+/** Updates loading, ready, and failure content without navigating or replacing the owning editor. */
+export class ProjectPresentationDocument {
+	private revision = 0;
+	private readyRevision: number | undefined;
+	private latestUpdate: ProjectPresentationUpdate;
+
+	constructor(
+		private readonly surface: ProjectPresentationDocumentSurface,
+		initialPresentation: Exclude<ProjectPresentation, { readonly status: 'welcome' }>,
+		private readonly translate: (message: string, ...args: string[]) => string,
+		nonce: string
+	) {
+		this.latestUpdate = this.createUpdate(initialPresentation);
+		this.surface.initializeDocument(projectPresentationDocumentHtml(this.latestUpdate, nonce));
+	}
+
+	async update(presentation: Exclude<ProjectPresentation, { readonly status: 'welcome' }>): Promise<void> {
+		this.latestUpdate = this.createUpdate(presentation);
+		await this.deliverLatestUpdate();
+	}
+
+	async acceptReady(message: ProjectPresentationReady): Promise<void> {
+		this.readyRevision = Math.max(this.readyRevision ?? 0, message.revision);
+		await this.deliverLatestUpdate();
+	}
+
+	private createUpdate(
+		presentation: Exclude<ProjectPresentation, { readonly status: 'welcome' }>
+	): ProjectPresentationUpdate {
+		return {
+			type: 'jscene3d.projectPresentation.update',
+			revision: ++this.revision,
+			content: projectPresentationContent(presentation, this.translate)
+		};
+	}
+
+	private async deliverLatestUpdate(): Promise<void> {
+		if (this.readyRevision === undefined || this.latestUpdate.revision <= this.readyRevision) {
+			return;
+		}
+		const update = this.latestUpdate;
+		if (await this.surface.postMessage(update)) {
+			this.readyRevision = Math.max(this.readyRevision, update.revision);
+		}
+	}
+}
+
 /** Context and definition-generation visibility applied atomically for one Project snapshot. */
 export interface ProjectVisibility {
 	readonly open: boolean;
@@ -27,24 +127,31 @@ export interface ProjectVisibility {
 /** Keeps the central Project presentation synchronized with ProjectState. */
 export class ProjectPresentationLifecycle {
 	private lastKey: string | undefined;
+	private pendingUpdate: Promise<void> = Promise.resolve();
 
 	constructor(
 		private readonly host: ProjectPresentationHost,
 		private readonly logger: { appendLine(message: string): void }
 	) { }
 
-	async synchronize(snapshot: ProjectSnapshot): Promise<void> {
+	synchronize(snapshot: ProjectSnapshot): Promise<void> {
 		const presentation = projectPresentation(snapshot);
 		const key = JSON.stringify(presentation);
 		if (key === this.lastKey) {
-			return;
+			return this.pendingUpdate;
 		}
 		this.lastKey = key;
-		try {
-			await this.host.show(presentation);
-		} catch (error) {
-			this.logger.appendLine(`Failed to update JScene3D Project presentation: ${errorMessage(error)}`);
-		}
+		this.pendingUpdate = this.pendingUpdate.then(async () => {
+			if (key !== this.lastKey) {
+				return;
+			}
+			try {
+				await this.host.show(presentation);
+			} catch (error) {
+				this.logger.appendLine(`Failed to update JScene3D Project presentation: ${errorMessage(error)}`);
+			}
+		});
+		return this.pendingUpdate;
 	}
 }
 
@@ -86,26 +193,63 @@ export function shouldRevealStartupPresentation(presentation: ProjectPresentatio
 	return presentation.status !== 'loading';
 }
 
-/** Creates the script-free central Project lifecycle document. */
-export function projectPresentationHtml(
+/** Creates the trusted body content for one Project lifecycle state. */
+export function projectPresentationContent(
 	presentation: Exclude<ProjectPresentation, { readonly status: 'welcome' }>,
 	translate: (message: string, ...args: string[]) => string
 ): string {
-	const content = presentation.status === 'loading'
+	return presentation.status === 'loading'
 		? loadingContent(presentation, translate)
 		: presentation.status === 'ready'
 			? readyContent(translate)
 			: failureContent(presentation.failure, translate);
+}
+
+/** Creates the persistent central Project lifecycle document. */
+export function projectPresentationDocumentHtml(initialUpdate: ProjectPresentationUpdate, nonce: string): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${escapeHtml(nonce)}'; script-src 'nonce-${escapeHtml(nonce)}';">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<style>${styles}</style>
+	<style nonce="${escapeHtml(nonce)}">${styles}</style>
 </head>
-<body><main>${content}</main></body>
+<body>
+	<main>${initialUpdate.content}</main>
+	<script nonce="${escapeHtml(nonce)}">
+		const vscode = acquireVsCodeApi();
+		const main = document.querySelector('main');
+		let revision = ${initialUpdate.revision};
+		window.addEventListener('message', event => {
+			const message = event.data;
+			if (message?.type !== 'jscene3d.projectPresentation.update'
+				|| typeof message.revision !== 'number'
+				|| typeof message.content !== 'string'
+				|| message.revision <= revision) {
+				return;
+			}
+			main.innerHTML = message.content;
+			revision = message.revision;
+		});
+		requestAnimationFrame(() => requestAnimationFrame(() => {
+			vscode.postMessage({ type: 'jscene3d.projectPresentation.ready', revision });
+		}));
+	</script>
+</body>
 </html>`;
+}
+
+/** Checks a webview message without trusting arbitrary page data. */
+export function isProjectPresentationReady(value: unknown): value is ProjectPresentationReady {
+	if (typeof value !== 'object' || value === null) {
+		return false;
+	}
+	const candidate = value as Partial<ProjectPresentationReady>;
+	return candidate.type === 'jscene3d.projectPresentation.ready'
+		&& typeof candidate.revision === 'number'
+		&& Number.isSafeInteger(candidate.revision)
+		&& candidate.revision >= 0;
 }
 
 function loadingContent(
@@ -125,7 +269,7 @@ function loadingContent(
 
 function readyContent(translate: (message: string, ...args: string[]) => string): string {
 	return `<section class="ready" role="status">
-	<p class="empty-scene">${escapeHtml(translate('Open a Scene to start editing'))}</p>
+	<p class="empty-scene">${escapeHtml(translate('Open a Scene or Entity to start editing'))}</p>
 </section>`;
 }
 

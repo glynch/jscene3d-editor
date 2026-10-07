@@ -14,7 +14,7 @@ import { NullLogService } from '../../../../platform/log/common/log.js';
 import { MainThreadWebviewManager } from '../../browser/mainThreadWebviewManager.js';
 import { NullApiDeprecationService } from '../../common/extHostApiDeprecationService.js';
 import { IExtHostRpcService } from '../../common/extHostRpcService.js';
-import { IWebviewContentOptions } from '../../common/extHost.protocol.js';
+import { IWebviewContentOptions, IWebviewInitData, WebviewExtensionDescription, WebviewPanelShowOptions } from '../../common/extHost.protocol.js';
 import { ExtHostWebviews } from '../../common/extHostWebview.js';
 import { ExtHostWebviewPanels } from '../../common/extHostWebviewPanels.js';
 import { IExtHostWorkspace } from '../../common/extHostWorkspace.js';
@@ -106,6 +106,44 @@ suite('ExtHostWebview', () => {
 			active: true,
 		}, 0 as EditorGroupColumn);
 		assert.strictEqual(lastInvokedDeserializer, serializerB);
+	});
+
+	test('forwards background initialization for a webview panel', () => {
+		let capturedShowOptions: WebviewPanelShowOptions | undefined;
+		const shape = new class extends mock<MainThreadWebviewManager>() {
+			$createWebviewPanel(
+				_extension: WebviewExtensionDescription,
+				_handle: string,
+				_viewType: string,
+				_initData: IWebviewInitData,
+				showOptions: WebviewPanelShowOptions
+			): void {
+				capturedShowOptions = showOptions;
+			}
+			$disposeWebview(): void { }
+		};
+		const captureRpc = SingleProxyRPCProtocol(shape);
+		const extHostWebviews = disposables.add(new ExtHostWebviews(
+			captureRpc,
+			{ authority: undefined, isRemote: false },
+			undefined,
+			new NullLogService(),
+			NullApiDeprecationService));
+		const panels = disposables.add(new ExtHostWebviewPanels(captureRpc, extHostWebviews, undefined));
+
+		disposables.add(panels.createWebviewPanel({
+			extensionLocation: URI.file('/ext/path')
+		} as IExtensionDescription, 'type', 'title', {
+			viewColumn: 1,
+			preserveFocus: true,
+			initializeInBackground: true,
+		}, {}));
+
+		assert.deepStrictEqual(capturedShowOptions, {
+			viewColumn: 0,
+			preserveFocus: true,
+			initializeInBackground: true,
+		});
 	});
 
 	test('asWebviewUri for local file paths', () => {

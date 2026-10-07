@@ -119,6 +119,8 @@ export interface IProductConfiguration {
 
 	readonly nameShort: string;
 	readonly nameLong: string;
+	/** JScene3D Editor product version, owned independently of the inherited Code OSS version. */
+	readonly jscene3dVersion?: string;
 
 	readonly win32AppUserModelId?: string;
 	readonly win32MutexName?: string;

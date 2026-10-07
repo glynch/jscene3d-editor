@@ -106,7 +106,7 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
 		);
-		const presentation = new VsCodeProjectPresentation();
+		const presentation = new VsCodeProjectPresentation(logger);
 		this.presentationLifecycle = new ProjectPresentationLifecycle(presentation, logger);
 		definitions.registerOpenCommand((assetId, projectGeneration) =>
 			this.workflow.openDefinition(assetId, projectGeneration));

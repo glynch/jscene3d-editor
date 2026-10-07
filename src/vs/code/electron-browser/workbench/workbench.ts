@@ -35,7 +35,7 @@ import { hideJScene3DSplash, showJScene3DSplash } from './jscene3dSplash.js';
 					preloadGlobals.webFrame.setZoomLevel(zoomLevel);
 				}
 
-				showJScene3DSplash(window);
+				showJScene3DSplash(window, configuration.product.jscene3dVersion);
 			} catch (error) {
 				console.error('[JScene3D splash] Unable to show the branded startup splash.', error);
 				showDefaultSplash(configuration);

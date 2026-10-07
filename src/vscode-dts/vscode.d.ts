@@ -11553,6 +11553,11 @@ declare module 'vscode' {
 			 * An optional flag that when `true` will stop the panel from taking focus.
 			 */
 			readonly preserveFocus?: boolean;
+			/**
+			 * An optional flag that initializes the webview document while keeping the panel inactive.
+			 * This implies {@link preserveFocus} so the initialized panel can be revealed explicitly later.
+			 */
+			readonly initializeInBackground?: boolean;
 		}, options?: WebviewPanelOptions & WebviewOptions): WebviewPanel;
 
 		/**

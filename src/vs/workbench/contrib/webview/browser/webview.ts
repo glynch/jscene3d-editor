@@ -322,6 +322,11 @@ export interface IOverlayWebview extends IWebview {
 	options: WebviewOptions;
 
 	/**
+	 * Creates and initializes the underlying webview while leaving its overlay hidden.
+	 */
+	preload(targetWindow: CodeWindow): void;
+
+	/**
 	 * Take ownership of the webview.
 	 *
 	 * This will create the underlying webview element.

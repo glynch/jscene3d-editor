@@ -121,7 +121,7 @@ suite('JScene3D extension contributions', () => {
 				{
 					contents: '%view.hierarchy.noActiveDefinition%',
 					when: 'jscene3d.extensionReady && jscene3d.projectOpen && !jscene3d.definitionActive',
-					localized: 'Open a JScene3D authored definition to show its hierarchy.'
+					localized: 'Open a Scene or Entity to view its hierarchy.'
 				}
 			]
 		);

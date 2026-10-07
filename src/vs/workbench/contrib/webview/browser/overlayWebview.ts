@@ -129,25 +129,23 @@ export class OverlayWebview extends Disposable implements IOverlayWebview {
 		return this._overlayLayout;
 	}
 
+	public preload(targetWindow: CodeWindow): void {
+		if (this._isDisposed) {
+			return;
+		}
+
+		this.prepareForWindow(targetWindow);
+		this.load(targetWindow);
+	}
+
 	public claim(owner: unknown, targetWindow: CodeWindow, scopedContextKeyService: IContextKeyService | undefined) {
 		if (this._isDisposed) {
 			return;
 		}
 
 		const oldOwner = this._owner;
-
-		if (this._windowId !== targetWindow.vscodeWindowId) {
-			// moving to a new window
-			this.release(oldOwner);
-			// since we are moving to a new window, we need to dispose the webview and recreate
-			this._webview.clear();
-			this._webviewEvents.clear();
-			this._overlayLayout?.dispose();
-			this._overlayLayout = undefined;
-		}
-
+		this.prepareForWindow(targetWindow);
 		this._owner = owner;
-		this._windowId = targetWindow.vscodeWindowId;
 		this._show(targetWindow);
 
 		if (this._anchorState) {
@@ -173,6 +171,19 @@ export class OverlayWebview extends Disposable implements IOverlayWebview {
 
 			this._webview.value?.setContextKeyService(this._scopedContextKeyService.value);
 		}
+	}
+
+	private prepareForWindow(targetWindow: CodeWindow): void {
+		if (this._windowId !== targetWindow.vscodeWindowId) {
+			// moving to a new window
+			this.release(this._owner);
+			// since we are moving to a new window, we need to dispose the webview and recreate
+			this._webview.clear();
+			this._webviewEvents.clear();
+			this._overlayLayout?.dispose();
+			this._overlayLayout = undefined;
+		}
+		this._windowId = targetWindow.vscodeWindowId;
 	}
 
 	public release(owner: unknown) {
@@ -228,7 +239,7 @@ export class OverlayWebview extends Disposable implements IOverlayWebview {
 		}
 	}
 
-	private _show(targetWindow: CodeWindow) {
+	private load(targetWindow: CodeWindow): void {
 		if (this._isDisposed) {
 			throw new Error('OverlayWebview is disposed');
 		}
@@ -292,6 +303,10 @@ export class OverlayWebview extends Disposable implements IOverlayWebview {
 			this._isFirstLoad = false;
 			this._firstLoadPendingMessages.clear();
 		}
+	}
+
+	private _show(targetWindow: CodeWindow) {
+		this.load(targetWindow);
 
 		// https://github.com/microsoft/vscode/issues/157424
 		if (this.options.retainContextWhenHidden && this._shouldShowFindWidgetOnRestore) {
