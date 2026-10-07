@@ -17,11 +17,18 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
 import { removePartsSplash } from '../../splash/browser/partsSplash.js';
+import {
+	JScene3DProjectLoadingSplashData,
+	hideJScene3DProjectLoadingSplash,
+	showJScene3DProjectLoadingSplash
+} from './jscene3dProjectLoadingSplash.js';
 import { JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE, JSCENE3D_SCENE_DEFINITION_VIEW_TYPE } from './jscene3dSemanticEditor.js';
 
 export const JSCENE3D_OPEN_DEFINITION_EDITOR_COMMAND_ID = 'jscene3d.workbench.openDefinitionEditor';
 export const JSCENE3D_CLOSE_WELCOME_COMMAND_ID = 'jscene3d.workbench.closeWelcome';
 export const JSCENE3D_COMPLETE_STARTUP_PRESENTATION_COMMAND_ID = 'jscene3d.workbench.completeStartupPresentation';
+export const JSCENE3D_SHOW_PROJECT_LOADING_SPLASH_COMMAND_ID = 'jscene3d.workbench.showProjectLoadingSplash';
+export const JSCENE3D_HIDE_PROJECT_LOADING_SPLASH_COMMAND_ID = 'jscene3d.workbench.hideProjectLoadingSplash';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
@@ -130,6 +137,20 @@ if (product.applicationName === 'jscene3d-editor') {
 		JSCENE3D_COMPLETE_STARTUP_PRESENTATION_COMMAND_ID,
 		(accessor, revealApplicationSplash) => completeJScene3DStartupPresentation(
 			accessor.get(IEditorGroupsService), mainWindow, revealApplicationSplash)
+	);
+
+	CommandsRegistry.registerCommand<[number, JScene3DProjectLoadingSplashData]>(
+		JSCENE3D_SHOW_PROJECT_LOADING_SPLASH_COMMAND_ID,
+		(_accessor, operationId, data) => showJScene3DProjectLoadingSplash(mainWindow, operationId, data)
+	);
+
+	CommandsRegistry.registerCommand<[number, number]>(
+		JSCENE3D_HIDE_PROJECT_LOADING_SPLASH_COMMAND_ID,
+		(_accessor, operationId, fadeDurationMs) => hideJScene3DProjectLoadingSplash(
+			mainWindow,
+			operationId,
+			fadeDurationMs
+		)
 	);
 
 	registerJScene3DFileMenu();

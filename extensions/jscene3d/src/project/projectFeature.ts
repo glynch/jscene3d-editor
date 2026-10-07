@@ -16,6 +16,7 @@ import { VsCodeAuthoringWorkflowHost } from '../authoring/vsCodeAuthoringWorkflo
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { publishProjectDiagnostics } from './projectDiagnostics';
+import { ProjectLoadingSplashLifecycle } from './projectLoadingSplash';
 import { ProjectPresentationLifecycle, projectVisibility } from './projectPresentation';
 import { ProjectState } from './projectState';
 import { ProjectTreeDataProvider } from './projectView';
@@ -28,6 +29,11 @@ import {
 	ProjectViewportLifecycle
 } from './projectSessionLifecycle';
 import { ExtensionProjectSessionRecordStore, VsCodeProjectSessionResources } from './vsCodeProjectSession';
+import {
+	VsCodeProjectLoadingMetadataSource,
+	VsCodeProjectLoadingSplashHost,
+	VsCodeProjectLoadingSplashScheduler
+} from './vsCodeProjectLoadingSplash';
 import { VsCodeProjectPresentation } from './vsCodeProjectPresentation';
 
 const projectOpenContext = 'jscene3d.projectOpen';
@@ -91,13 +97,20 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: provider });
 		const recordStore = new ExtensionProjectSessionRecordStore(globalState);
 		const pendingReopen = recordStore.read() !== undefined;
+		const loadingPresentation = new ProjectLoadingSplashLifecycle(
+			new VsCodeProjectLoadingMetadataSource(),
+			new VsCodeProjectLoadingSplashHost(),
+			new VsCodeProjectLoadingSplashScheduler(),
+			logger
+		);
 		this.sessionLifecycle = new ProjectSessionLifecycle(
 			projectState,
 			new VsCodeProjectSessionResources(),
 			recordStore,
 			logger,
 			new CoordinatedProjectDocumentLifecycle(inspector, definitions),
-			viewports
+			viewports,
+			loadingPresentation
 		);
 		this.workflow = new AuthoringWorkflow(
 			projectState,
@@ -106,13 +119,14 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			new VsCodeAuthoringWorkflowHost(diagnostics => definitions.publishDiagnostics(diagnostics)),
 			logger
 		);
-		const presentation = new VsCodeProjectPresentation(logger);
+		const presentation = new VsCodeProjectPresentation(logger, loadingPresentation);
 		this.presentationLifecycle = new ProjectPresentationLifecycle(presentation, logger);
 		definitions.registerOpenCommand((assetId, projectGeneration) =>
 			this.workflow.openDefinition(assetId, projectGeneration));
 		this.disposables.push(
 			this.activeDiagnostics,
 			this.attemptDiagnostics,
+			loadingPresentation,
 			presentation,
 			provider,
 			tree,

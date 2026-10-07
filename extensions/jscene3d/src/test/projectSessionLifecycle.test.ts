@@ -9,6 +9,7 @@ import {
 	CoordinatedProjectDocumentLifecycle,
 	ProjectDocumentLifecycle,
 	ProjectDocumentPreparation,
+	ProjectLoadingPresentationLifecycle,
 	ProjectSessionLifecycle,
 	ProjectSessionRecord,
 	ProjectSessionRecordStore,
@@ -31,6 +32,35 @@ suite('JScene3D Project session lifecycle', () => {
 		assert.deepStrictEqual(state.openCalls, ['/selected/a.j3d']);
 		assert.deepStrictEqual(store.value, record(summaryA));
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
+	});
+
+	test('starts loading presentation before Java open and waits for initial terminal presentation', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		const loading = new TestLoadingPresentation(events);
+
+		await lifecycleFor(
+			state, new TestRecordStore(events), undefined, undefined, loading
+		).openProject({ scheme: 'file', fsPath: '/selected/a.j3d' });
+
+		assert.deepStrictEqual(events, [
+			'loading-begin:/selected/a.j3d', 'java-open', 'record-write', 'loading-complete:success'
+		]);
+	});
+
+	test('failed explicit open promptly completes loading presentation as failed', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.nextSelection = openSelection(failedOpenResult());
+		const loading = new TestLoadingPresentation(events);
+
+		await lifecycleFor(
+			state, new TestRecordStore(events), undefined, undefined, loading
+		).openProject({ scheme: 'file', fsPath: '/bad/bad.j3d' });
+
+		assert.deepStrictEqual(events, [
+			'loading-begin:/bad/bad.j3d', 'java-open', 'record-clear', 'loading-complete:failure'
+		]);
 	});
 
 	test('opening remains independent when an unrelated Code OSS workspace exists', async () => {
@@ -130,17 +160,41 @@ suite('JScene3D Project session lifecycle', () => {
 	});
 
 	test('automatic reopen ignores the current workspace and establishes fresh Java generations', async () => {
-		const state = new TestProjectState();
+		const events: string[] = [];
+		const state = new TestProjectState(events);
 		state.nextSelection = openSelection(openResult(summaryB, 12));
-		const store = new TestRecordStore();
+		const store = new TestRecordStore(events);
 		store.value = record(summaryB);
+		const loading = new TestLoadingPresentation(events);
 
-		const result = await lifecycleFor(state, store).reopenPersistedProject();
+		const result = await lifecycleFor(state, store, undefined, undefined, loading).reopenPersistedProject();
 
 		assert.deepStrictEqual(result, { status: 'reopened' });
 		assert.deepStrictEqual(state.openCalls, ['/projects/b/b.j3d']);
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryB, 12));
 		assert.deepStrictEqual(store.value, record(summaryB));
+		assert.deepStrictEqual(events, [
+			'loading-begin:/projects/b/b.j3d', 'java-open', 'record-write', 'loading-complete:success'
+		]);
+	});
+
+	test('failed automatic reopen promptly completes loading presentation as failed', async () => {
+		const events: string[] = [];
+		const state = new TestProjectState(events);
+		state.nextSelection = openSelection(failedOpenResult());
+		const store = new TestRecordStore(events);
+		store.value = record(summaryB);
+		const loading = new TestLoadingPresentation(events);
+
+		const result = await lifecycleFor(
+			state, store, undefined, undefined, loading
+		).reopenPersistedProject();
+
+		assert.deepStrictEqual(result, { status: 'failed', reason: 'project.invalid' });
+		assert.deepStrictEqual(events, [
+			'loading-begin:/projects/b/b.j3d', 'java-open', 'record-clear',
+			'loading-complete:failure'
+		]);
 	});
 
 	test('migrates a legacy workspace-transition intent without validating workspace equivalence', async () => {
@@ -186,10 +240,11 @@ function lifecycleFor(
 	state: TestProjectState,
 	store: TestRecordStore,
 	documents?: ProjectDocumentLifecycle,
-	viewports?: ProjectViewportLifecycle
+	viewports?: ProjectViewportLifecycle,
+	loading?: ProjectLoadingPresentationLifecycle
 ): ProjectSessionLifecycle {
 	return new ProjectSessionLifecycle(
-		state, new TestResources(), store, new TestLogger(), documents, viewports
+		state, new TestResources(), store, new TestLogger(), documents, viewports, loading
 	);
 }
 
@@ -265,6 +320,20 @@ class TestViewports implements ProjectViewportLifecycle {
 	closeProjectViewports(): Promise<void> {
 		this.events.push('viewport-close');
 		return Promise.resolve();
+	}
+}
+
+class TestLoadingPresentation implements ProjectLoadingPresentationLifecycle {
+	constructor(private readonly events: string[]) { }
+
+	begin(location: { readonly fsPath: string }): { complete(outcome: 'success' | 'failure'): Promise<void> } {
+		this.events.push(`loading-begin:${location.fsPath}`);
+		return {
+			complete: outcome => {
+				this.events.push(`loading-complete:${outcome}`);
+				return Promise.resolve();
+			}
+		};
 	}
 }
 

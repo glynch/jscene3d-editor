@@ -73,8 +73,15 @@ export interface ProjectPresentationDocumentSurface {
 /** Updates loading, ready, and failure content without navigating or replacing the owning editor. */
 export class ProjectPresentationDocument {
 	private revision = 0;
-	private readyRevision: number | undefined;
+	private receiverRevision: number | undefined;
+	private renderedRevision = 0;
 	private latestUpdate: ProjectPresentationUpdate;
+	private readonly renderedWaiters: {
+		readonly revision: number;
+		readonly resolve: () => void;
+		readonly reject: (error: Error) => void;
+	}[] = [];
+	private disposed = false;
 
 	constructor(
 		private readonly surface: ProjectPresentationDocumentSurface,
@@ -88,12 +95,29 @@ export class ProjectPresentationDocument {
 
 	async update(presentation: Exclude<ProjectPresentation, { readonly status: 'welcome' }>): Promise<void> {
 		this.latestUpdate = this.createUpdate(presentation);
+		const rendered = this.whenRendered(this.latestUpdate.revision);
 		await this.deliverLatestUpdate();
+		await rendered;
 	}
 
 	async acceptReady(message: ProjectPresentationReady): Promise<void> {
-		this.readyRevision = Math.max(this.readyRevision ?? 0, message.revision);
+		if (this.disposed) {
+			return;
+		}
+		this.receiverRevision = Math.max(this.receiverRevision ?? 0, message.revision);
+		this.renderedRevision = Math.max(this.renderedRevision, message.revision);
+		this.resolveRenderedWaiters();
 		await this.deliverLatestUpdate();
+	}
+
+	dispose(): void {
+		if (this.disposed) {
+			return;
+		}
+		this.disposed = true;
+		for (const waiter of this.renderedWaiters.splice(0)) {
+			waiter.reject(new Error('JScene3D Project presentation document was disposed'));
+		}
 	}
 
 	private createUpdate(
@@ -107,12 +131,32 @@ export class ProjectPresentationDocument {
 	}
 
 	private async deliverLatestUpdate(): Promise<void> {
-		if (this.readyRevision === undefined || this.latestUpdate.revision <= this.readyRevision) {
+		if (this.disposed || this.receiverRevision === undefined || this.latestUpdate.revision <= this.receiverRevision) {
 			return;
 		}
 		const update = this.latestUpdate;
 		if (await this.surface.postMessage(update)) {
-			this.readyRevision = Math.max(this.readyRevision, update.revision);
+			this.receiverRevision = Math.max(this.receiverRevision, update.revision);
+		}
+	}
+
+	private whenRendered(revision: number): Promise<void> {
+		if (revision <= this.renderedRevision) {
+			return Promise.resolve();
+		}
+		if (this.disposed) {
+			return Promise.reject(new Error('JScene3D Project presentation document was disposed'));
+		}
+		return new Promise<void>((resolve, reject) => this.renderedWaiters.push({ revision, resolve, reject }));
+	}
+
+	private resolveRenderedWaiters(): void {
+		for (let index = this.renderedWaiters.length - 1; index >= 0; index--) {
+			const waiter = this.renderedWaiters[index];
+			if (waiter.revision <= this.renderedRevision) {
+				this.renderedWaiters.splice(index, 1);
+				waiter.resolve();
+			}
 		}
 	}
 }
@@ -221,6 +265,9 @@ export function projectPresentationDocumentHtml(initialUpdate: ProjectPresentati
 		const vscode = acquireVsCodeApi();
 		const main = document.querySelector('main');
 		let revision = ${initialUpdate.revision};
+		const signalReady = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+			vscode.postMessage({ type: 'jscene3d.projectPresentation.ready', revision });
+		}));
 		window.addEventListener('message', event => {
 			const message = event.data;
 			if (message?.type !== 'jscene3d.projectPresentation.update'
@@ -231,10 +278,9 @@ export function projectPresentationDocumentHtml(initialUpdate: ProjectPresentati
 			}
 			main.innerHTML = message.content;
 			revision = message.revision;
+			signalReady();
 		});
-		requestAnimationFrame(() => requestAnimationFrame(() => {
-			vscode.postMessage({ type: 'jscene3d.projectPresentation.ready', revision });
-		}));
+		signalReady();
 	</script>
 </body>
 </html>`;

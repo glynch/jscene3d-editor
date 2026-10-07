@@ -28,6 +28,11 @@ import {
 	registerJScene3DFileMenu
 } from '../../browser/jscene3dWorkbench.contribution.js';
 import {
+	hideJScene3DProjectLoadingSplash,
+	isJScene3DProjectLoadingSplashVisible,
+	showJScene3DProjectLoadingSplash
+} from '../../browser/jscene3dProjectLoadingSplash.js';
+import {
 	JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE,
 	JSCENE3D_SCENE_DEFINITION_VIEW_TYPE,
 	jscene3dDefinitionEditorPresentation
@@ -238,6 +243,140 @@ suite('JScene3D workbench integration', () => {
 		assert.strictEqual(shouldRemovePartsSplashOnInitialLayout(mainWindow), false);
 
 		splash.remove();
+	});
+
+	test('shows one compact Project overlay with metadata and blocks the workbench', async () => {
+		const workbench = mainWindow.document.querySelector<HTMLElement>('.monaco-workbench')
+			?? mainWindow.document.body.appendChild(mainWindow.document.createElement('div'));
+		workbench.classList.add('monaco-workbench');
+		const wasInert = workbench.inert;
+		try {
+			showJScene3DProjectLoadingSplash(mainWindow, 41, {
+				name: 'Doomed Corridors',
+				version: '0.1.0-SNAPSHOT',
+				description: 'An unofficial Doom-compatible first-person game built with JScene3D.',
+				authors: ['Graham Lynch', 'JScene3D Team']
+			});
+
+			const overlay = mainWindow.document.querySelector<HTMLElement>('.jscene3d-project-loading-overlay');
+			assert.ok(overlay);
+			assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), true);
+			assert.strictEqual(workbench.inert, true);
+			assert.strictEqual(mainWindow.document.querySelectorAll('.jscene3d-project-loading-overlay').length, 1);
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-name')?.textContent, 'Doomed Corridors');
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-version')?.textContent, '0.1.0-SNAPSHOT');
+			assert.match(overlay.querySelector('.jscene3d-project-loading-description')?.textContent ?? '', /Doom-compatible/);
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-authors')?.textContent, 'Graham Lynch · JScene3D Team');
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-label')?.textContent, 'Loading Project…');
+			assert.match((overlay.querySelector('.jscene3d-project-loading-artwork') as HTMLImageElement).src, /project-loading-artwork\.svg/);
+			assert.match((overlay.querySelector('.jscene3d-project-loading-icon') as HTMLImageElement).src, /jscene3d-project-icon\.svg/);
+		} finally {
+			await hideJScene3DProjectLoadingSplash(mainWindow, 41, 0);
+			workbench.inert = wasInert;
+		}
+		assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), false);
+		assert.strictEqual(workbench.inert, wasInert);
+	});
+
+	test('collapses optional metadata and falls back when a Project icon fails', async () => {
+		try {
+			showJScene3DProjectLoadingSplash(mainWindow, 51, {
+				name: 'Minimal Project',
+				authors: [],
+				iconUri: 'file:///projects/minimal/missing.png'
+			});
+			const overlay = mainWindow.document.querySelector<HTMLElement>('.jscene3d-project-loading-overlay');
+			assert.ok(overlay);
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-description'), null);
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-authors'), null);
+			const icon = overlay.querySelector('.jscene3d-project-loading-icon') as HTMLImageElement;
+			assert.match(icon.src, /missing\.png/);
+			icon.dispatchEvent(new mainWindow.Event('error'));
+			assert.match(icon.src, /jscene3d-project-icon\.svg/);
+		} finally {
+			await hideJScene3DProjectLoadingSplash(mainWindow, 51, 0);
+		}
+	});
+
+	test('replaces an existing overlay atomically and rejects stale completion', async () => {
+		try {
+			showJScene3DProjectLoadingSplash(mainWindow, 61, { name: 'Project A', authors: [] });
+			showJScene3DProjectLoadingSplash(mainWindow, 62, { name: 'Project B', authors: [] });
+			await hideJScene3DProjectLoadingSplash(mainWindow, 61, 0);
+
+			assert.strictEqual(mainWindow.document.querySelectorAll('.jscene3d-project-loading-overlay').length, 1);
+			assert.strictEqual(mainWindow.document.querySelector('.jscene3d-project-loading-name')?.textContent, 'Project B');
+			assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), true);
+		} finally {
+			await hideJScene3DProjectLoadingSplash(mainWindow, 62, 0);
+		}
+	});
+
+	test('keeps workbench dimming through the fade and removes it after opacity transition', async () => {
+		const workbench = mainWindow.document.querySelector<HTMLElement>('.monaco-workbench')
+			?? mainWindow.document.body.appendChild(mainWindow.document.createElement('div'));
+		workbench.classList.add('monaco-workbench');
+		const wasInert = workbench.inert;
+		showJScene3DProjectLoadingSplash(mainWindow, 71, { name: 'Project Fade', authors: [] });
+		const overlay = mainWindow.document.querySelector<HTMLElement>('.jscene3d-project-loading-overlay');
+		assert.ok(overlay);
+
+		const hiding = hideJScene3DProjectLoadingSplash(mainWindow, 71, 200);
+		assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), true);
+		assert.strictEqual(workbench.inert, true);
+		assert.strictEqual(overlay.classList.contains('jscene3d-project-loading-overlay-dismissing'), true);
+		const transition = new mainWindow.Event('transitionend', { bubbles: true });
+		Object.defineProperty(transition, 'propertyName', { value: 'opacity' });
+		overlay.dispatchEvent(transition);
+		await hiding;
+
+		assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), false);
+		assert.strictEqual(workbench.inert, wasInert);
+	});
+
+	test('reduced motion removes the overlay immediately after minimum-duration eligibility', async () => {
+		const ownMatchMedia = Object.getOwnPropertyDescriptor(mainWindow, 'matchMedia');
+		Object.defineProperty(mainWindow, 'matchMedia', {
+			configurable: true,
+			value: () => ({ matches: true }) as MediaQueryList
+		});
+		try {
+			showJScene3DProjectLoadingSplash(mainWindow, 72, { name: 'Reduced Motion', authors: [] });
+
+			await hideJScene3DProjectLoadingSplash(mainWindow, 72, 200);
+
+			assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), false);
+			assert.strictEqual(mainWindow.document.querySelector('.jscene3d-project-loading-overlay'), null);
+		} finally {
+			if (ownMatchMedia === undefined) {
+				delete (mainWindow as Partial<Window>).matchMedia;
+			} else {
+				Object.defineProperty(mainWindow, 'matchMedia', ownMatchMedia);
+			}
+			await hideJScene3DProjectLoadingSplash(mainWindow, 72, 0);
+		}
+	});
+
+	test('a stale fade completion cannot remove a replacement splash', async () => {
+		try {
+			showJScene3DProjectLoadingSplash(mainWindow, 81, { name: 'Fading Project', authors: [] });
+			const oldOverlay = mainWindow.document.querySelector<HTMLElement>('.jscene3d-project-loading-overlay');
+			assert.ok(oldOverlay);
+			const fading = hideJScene3DProjectLoadingSplash(mainWindow, 81, 200);
+			showJScene3DProjectLoadingSplash(mainWindow, 82, { name: 'Replacement Project', authors: [] });
+			const transition = new mainWindow.Event('transitionend', { bubbles: true });
+			Object.defineProperty(transition, 'propertyName', { value: 'opacity' });
+			oldOverlay.dispatchEvent(transition);
+			await fading;
+
+			assert.strictEqual(isJScene3DProjectLoadingSplashVisible(mainWindow), true);
+			assert.strictEqual(
+				mainWindow.document.querySelector('.jscene3d-project-loading-name')?.textContent,
+				'Replacement Project'
+			);
+		} finally {
+			await hideJScene3DProjectLoadingSplash(mainWindow, 82, 0);
+		}
 	});
 });
 

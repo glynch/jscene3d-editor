@@ -5,6 +5,7 @@
 
 import { randomBytes } from 'crypto';
 import * as vscode from 'vscode';
+import { ProjectLoadingSplashLifecycle } from './projectLoadingSplash';
 import {
 	ProjectPresentation,
 	ProjectPresentationActivation,
@@ -29,7 +30,10 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 	private disposed = false;
 	private startupPresentationComplete = false;
 
-	constructor(private readonly logger: { appendLine(message: string): void }) {
+	constructor(
+		private readonly logger: { appendLine(message: string): void },
+		private readonly loadingPresentation: ProjectLoadingSplashLifecycle
+	) {
 		this.serializer = vscode.window.registerWebviewPanelSerializer(projectPresentationViewType, {
 			deserializeWebviewPanel: async panel => this.attach(panel)
 		});
@@ -40,8 +44,12 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 			return;
 		}
 		this.presentation = presentation;
+		if (presentation.status === 'loading' && this.loadingPresentation.active) {
+			return;
+		}
 		if (presentation.status === 'welcome') {
 			this.activation?.dispose();
+			this.document?.dispose();
 			this.panel?.dispose();
 			this.panel = undefined;
 			this.document = undefined;
@@ -71,6 +79,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		activePanel.reveal(vscode.ViewColumn.Active, false);
 		await vscode.commands.executeCommand(closeWelcomeWorkbenchCommandId);
 		await this.completeStartupPresentation(shouldRevealStartupPresentation(presentation));
+		await this.loadingPresentation.acceptProjectPresentationReady();
 	}
 
 	dispose(): void {
@@ -80,6 +89,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		this.disposed = true;
 		this.serializer.dispose();
 		this.activation?.dispose();
+		this.document?.dispose();
 		this.panel?.dispose();
 		this.panel = undefined;
 		this.document = undefined;
@@ -113,6 +123,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		}
 		if (this.panel !== panel) {
 			this.activation?.dispose();
+			this.document?.dispose();
 			this.panel?.dispose();
 		}
 		this.panel = panel;
@@ -148,6 +159,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 		panel.onDidDispose(() => {
 			if (this.panel === panel) {
 				activation.dispose();
+				document.dispose();
 				this.panel = undefined;
 				this.document = undefined;
 				this.activation = undefined;
@@ -167,6 +179,7 @@ export class VsCodeProjectPresentation implements ProjectPresentationHost, vscod
 				return;
 			}
 			await activation.acceptRenderedReady(shouldRevealStartupPresentation(this.presentation));
+			await this.loadingPresentation.acceptProjectPresentationReady();
 		} catch (error) {
 			this.logger.appendLine(`Failed to initialize JScene3D Project presentation: ${errorMessage(error)}`);
 			if (!activation.active && this.panel === panel && this.activation === activation) {

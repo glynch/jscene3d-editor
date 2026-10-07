@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 600" role="img" aria-label="JScene3D project loading artwork">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111927"/>
+      <stop offset="0.55" stop-color="#16243a"/>
+      <stop offset="1" stop-color="#0b111c"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#263650" stop-opacity="0.76"/>
+      <stop offset="1" stop-color="#0a1019" stop-opacity="0.96"/>
+    </linearGradient>
+    <linearGradient id="cubeTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c9bcff"/>
+      <stop offset="1" stop-color="#7861e8"/>
+    </linearGradient>
+    <linearGradient id="cubeLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#725ce1"/>
+      <stop offset="1" stop-color="#3b2b8f"/>
+    </linearGradient>
+    <linearGradient id="cubeRight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9d86ff"/>
+      <stop offset="1" stop-color="#5842bd"/>
+    </linearGradient>
+    <radialGradient id="sphere" cx="35%" cy="28%" r="72%">
+      <stop offset="0" stop-color="#d9f8ff"/>
+      <stop offset="0.38" stop-color="#58bed4"/>
+      <stop offset="1" stop-color="#174b67"/>
+    </radialGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+  </defs>
+  <rect width="1120" height="600" fill="url(#background)"/>
+  <path d="M0 266h1120v334H0z" fill="url(#floor)"/>
+  <g stroke="#6681a8" stroke-width="1" opacity="0.25">
+    <path d="M560 266 82 600M560 266 212 600M560 266 342 600M560 266 472 600M560 266 648 600M560 266 778 600M560 266 908 600M560 266 1038 600"/>
+    <path d="M0 292h1120M0 331h1120M0 382h1120M0 450h1120M0 542h1120"/>
+  </g>
+  <ellipse cx="829" cy="476" rx="119" ry="27" fill="#02050a" opacity="0.46" filter="url(#shadow)"/>
+  <g transform="translate(725 218)">
+    <path d="m0 58 98-50 112 57-99 52z" fill="url(#cubeTop)"/>
+    <path d="m0 58 111 59v130L0 184z" fill="url(#cubeLeft)"/>
+    <path d="m111 117 99-52v126l-99 56z" fill="url(#cubeRight)"/>
+    <path d="m0 58 98-50 112 57-99 52zm0 0v126l111 63m0-130v130m99-182v126l-99 56" fill="none" stroke="#e0d9ff" stroke-width="2" opacity="0.55"/>
+  </g>
+  <ellipse cx="589" cy="472" rx="87" ry="20" fill="#02050a" opacity="0.42" filter="url(#shadow)"/>
+  <circle cx="592" cy="364" r="78" fill="url(#sphere)"/>
+  <circle cx="592" cy="364" r="78" fill="none" stroke="#b9eff7" stroke-width="2" opacity="0.4"/>
+  <path d="M590 364h128" stroke="#ef5b67" stroke-width="5"/>
+  <path d="m718 364-20-12v24z" fill="#ef5b67"/>
+  <path d="M590 364V230" stroke="#64d985" stroke-width="5"/>
+  <path d="m590 230-12 20h24z" fill="#64d985"/>
+  <path d="m590 364-74 69" stroke="#5492ff" stroke-width="5"/>
+  <path d="m516 433 7-23 16 17z" fill="#5492ff"/>
+  <g transform="translate(968 60)" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" font-weight="600">
+    <circle r="40" fill="#0a111d" stroke="#8fa3bf" stroke-opacity="0.42"/>
+    <path d="M0 0h46" stroke="#ef5b67" stroke-width="4"/>
+    <path d="m46 0-12-7v14z" fill="#ef5b67"/>
+    <path d="M0 0v-46" stroke="#64d985" stroke-width="4"/>
+    <path d="m0-46-7 12h14z" fill="#64d985"/>
+    <path d="m0 0-28 30" stroke="#5492ff" stroke-width="4"/>
+    <circle r="5" fill="#e7edf7"/>
+    <text x="50" y="6" fill="#ef7a84">X</text>
+    <text x="-6" y="-52" fill="#78e497">Y</text>
+    <text x="-43" y="43" fill="#76a7ff">Z</text>
+  </g>
+  <g fill="none" stroke="#9d86ff" opacity="0.18">
+    <circle cx="825" cy="336" r="154"/>
+    <circle cx="825" cy="336" r="164"/>
+  </g>
+</svg>

@@ -5,6 +5,7 @@
 
 import { ProjectSummaryDto } from '../protocol/authoringProtocol';
 import { ProjectLocation, localProjectPath } from './projectLocation';
+import { ProjectLoadingSplashOperation } from './projectLoadingSplash';
 import { ProjectSelectionResult, ProjectSnapshot } from './projectState';
 
 /** Stable local resource representation used by Project-session persistence. */
@@ -60,6 +61,11 @@ export interface ProjectViewportLifecycle {
 	closeProjectViewports(): Promise<void>;
 }
 
+/** Starts presentation-only loading state for an explicit Project selection. */
+export interface ProjectLoadingPresentationLifecycle {
+	begin(location: ProjectLocation): ProjectLoadingSplashOperation;
+}
+
 /** Commits valid local editor state before delegating to VS Code's native dirty-document lifecycle. */
 export class CoordinatedProjectDocumentLifecycle implements ProjectDocumentLifecycle {
 	constructor(
@@ -96,7 +102,10 @@ export class ProjectSessionLifecycle {
 		private readonly recordStore: ProjectSessionRecordStore,
 		private readonly logger: ProjectSessionLogger,
 		private readonly documents: ProjectDocumentLifecycle = { closeProjectDocuments: () => Promise.resolve(true) },
-		private readonly viewports: ProjectViewportLifecycle = { closeProjectViewports: () => Promise.resolve() }
+		private readonly viewports: ProjectViewportLifecycle = { closeProjectViewports: () => Promise.resolve() },
+		private readonly loadingPresentation: ProjectLoadingPresentationLifecycle = {
+			begin: () => ({ complete: () => Promise.resolve() })
+		}
 	) { }
 
 	openProject(location: ProjectLocation): Promise<ProjectSessionOpenResult> {
@@ -109,27 +118,34 @@ export class ProjectSessionLifecycle {
 				await this.viewports.closeProjectViewports();
 			}
 
-			const selection = await this.projectState.open(localProjectPath(location));
-			const outcome = projectSelectionOutcome(selection);
-			if (outcome.status !== 'opened' && outcome.status !== 'replaced') {
-				if (selection.operation === 'open') {
-					await this.recordStore.write(undefined);
-				}
-				return { status: outcome.status };
-			}
-			if (this.disposed) {
-				return { status: outcome.status };
-			}
-
+			const loading = this.loadingPresentation.begin(location);
+			let loadingOutcome: 'success' | 'failure' = 'failure';
 			try {
-				await this.recordStore.write(this.record(outcome.project));
-			} catch (error) {
-				this.logger.appendLine(`Project session persistence failed: ${errorMessage(error)}`);
-				await this.projectState.close();
-				throw error;
+				const selection = await this.projectState.open(localProjectPath(location));
+				const outcome = projectSelectionOutcome(selection);
+				if (outcome.status !== 'opened' && outcome.status !== 'replaced') {
+					if (selection.operation === 'open') {
+						await this.recordStore.write(undefined);
+					}
+					return { status: outcome.status };
+				}
+				if (this.disposed) {
+					return { status: outcome.status };
+				}
+
+				try {
+					await this.recordStore.write(this.record(outcome.project));
+				} catch (error) {
+					this.logger.appendLine(`Project session persistence failed: ${errorMessage(error)}`);
+					await this.projectState.close();
+					throw error;
+				}
+				this.logger.appendLine(`Project session ready: ${outcome.project.name}`);
+				loadingOutcome = 'success';
+				return { status: outcome.status };
+			} finally {
+				await loading.complete(loadingOutcome);
 			}
-			this.logger.appendLine(`Project session ready: ${outcome.project.name}`);
-			return { status: outcome.status };
 		});
 	}
 
@@ -149,6 +165,8 @@ export class ProjectSessionLifecycle {
 			}
 
 			this.logger.appendLine(`Reopening JScene3D Project: ${descriptor.fsPath}`);
+			const loading = this.loadingPresentation.begin({ scheme: 'file', fsPath: descriptor.fsPath });
+			let loadingOutcome: 'success' | 'failure' = 'failure';
 			try {
 				const selection = await this.projectState.open(descriptor.fsPath);
 				if (selection.operation !== 'open') {
@@ -164,12 +182,15 @@ export class ProjectSessionLifecycle {
 				}
 				await this.recordStore.write(this.record(result.project));
 				this.logger.appendLine(`Project reopened: ${result.project.name}`);
+				loadingOutcome = 'success';
 				return { status: 'reopened' };
 			} catch (error) {
 				await this.recordStore.write(undefined);
 				const reason = errorMessage(error);
 				this.logger.appendLine(`Project reopen failed: ${reason}`);
 				return { status: 'failed', reason };
+			} finally {
+				await loading.complete(loadingOutcome);
 			}
 		});
 	}

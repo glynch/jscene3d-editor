@@ -146,13 +146,15 @@ suite('JScene3D Project presentation', () => {
 			'test-nonce'
 		);
 
-		await document.update({ status: 'ready' });
+		const updating = document.update({ status: 'ready' });
 		assert.strictEqual(surface.messages.length, 0);
 		await document.acceptReady({ type: 'jscene3d.projectPresentation.ready', revision: 1 });
+		await document.acceptReady({ type: 'jscene3d.projectPresentation.ready', revision: 2 });
+		await updating;
 
 		assert.strictEqual(surface.documents.length, 1);
 		assert.match(surface.documents[0], /Opening Project/);
-		assert.match(surface.documents[0], /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) => \{/);
+		assert.match(surface.documents[0], /const signalReady = \(\) => requestAnimationFrame/);
 		assert.deepStrictEqual(surface.messages.map(message => ({
 			revision: message.revision,
 			content: message.content
@@ -185,8 +187,12 @@ suite('JScene3D Project presentation', () => {
 		);
 		await document.acceptReady({ type: 'jscene3d.projectPresentation.ready', revision: 1 });
 
-		await document.update({ status: 'loading', projectName: 'Next', phase: 'opening' });
-		await document.update({ status: 'ready' });
+		const loading = document.update({ status: 'loading', projectName: 'Next', phase: 'opening' });
+		await document.acceptReady({ type: 'jscene3d.projectPresentation.ready', revision: 2 });
+		await loading;
+		const ready = document.update({ status: 'ready' });
+		await document.acceptReady({ type: 'jscene3d.projectPresentation.ready', revision: 3 });
+		await ready;
 
 		assert.strictEqual(surface.documents.length, 1);
 		assert.deepStrictEqual(surface.messages.map(message => message.revision), [2, 3]);
