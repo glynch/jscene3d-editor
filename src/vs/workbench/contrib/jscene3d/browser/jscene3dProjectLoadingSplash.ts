@@ -63,7 +63,7 @@ export function showJScene3DProjectLoadingSplash(
 	const artwork = document.createElement('img');
 	artwork.className = 'jscene3d-project-loading-artwork';
 	artwork.src = validated.artworkUri === undefined
-		? productResource('project-loading-artwork.svg')
+		? productResource('jscene3d-welcome-hero.png')
 		: browserResource(validated.artworkUri);
 	artwork.alt = '';
 	card.appendChild(artwork);
@@ -96,10 +96,6 @@ export function showJScene3DProjectLoadingSplash(
 	if (validated.description !== undefined) {
 		appendText(document, identity, 'p', 'jscene3d-project-loading-description', validated.description);
 	}
-	if (validated.authors.length > 0) {
-		appendText(document, identity, 'div', 'jscene3d-project-loading-authors', validated.authors.join(' · '));
-	}
-
 	const loading = document.createElement('div');
 	loading.className = 'jscene3d-project-loading-progress';
 	card.appendChild(loading);
@@ -283,12 +279,12 @@ const projectLoadingSplashStyles = `
 .${overlayDismissingClass} { opacity: 0; pointer-events: none; }
 .jscene3d-project-loading-card {
 	position: relative;
-	width: min(560px, calc(100vw - 48px));
-	min-height: 300px;
+	width: min(640px, calc(100vw - 48px));
+	min-height: 330px;
 	overflow: hidden;
 	border: 1px solid rgb(148 163 184 / 26%);
 	border-radius: 12px;
-	background: #101722;
+	background: #0b111b;
 	box-shadow: 0 20px 64px rgb(0 0 0 / 58%);
 	color: #edf2f8;
 	font-family: var(--monaco-workbench-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
@@ -300,32 +296,38 @@ const projectLoadingSplashStyles = `
 	width: 100%;
 	height: 100%;
 }
-.jscene3d-project-loading-artwork { object-fit: cover; }
+.jscene3d-project-loading-artwork {
+	object-fit: cover;
+	object-position: 62% center;
+	filter: saturate(72%) brightness(66%);
+}
 .jscene3d-project-loading-veil {
-	background: linear-gradient(90deg, rgb(11 17 27 / 96%) 0%, rgb(11 17 27 / 86%) 55%, rgb(11 17 27 / 40%) 100%);
+	background:
+		linear-gradient(90deg, rgb(6 10 18 / 96%) 0%, rgb(6 10 18 / 89%) 53%, rgb(6 10 18 / 48%) 100%),
+		linear-gradient(0deg, rgb(6 10 18 / 72%) 0%, transparent 48%);
 }
 .jscene3d-project-loading-content {
 	position: relative;
 	display: grid;
-	grid-template-columns: 88px minmax(0, 1fr);
-	gap: 22px;
-	min-height: 226px;
-	padding: 34px 36px 70px;
+	grid-template-columns: 76px minmax(0, 1fr);
+	gap: 24px;
+	min-height: 246px;
+	padding: 42px 42px 72px;
 }
 .jscene3d-project-loading-icon {
-	width: 88px;
-	height: 88px;
+	width: 76px;
+	height: 76px;
 	margin-top: 2px;
-	border-radius: 12px;
+	border-radius: 10px;
 	object-fit: contain;
-	background: rgb(12 18 28 / 82%);
-	box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%), 0 8px 24px rgb(0 0 0 / 28%);
+	background: rgb(10 16 25 / 78%);
+	box-shadow: inset 0 0 0 1px rgb(255 255 255 / 11%), 0 8px 24px rgb(0 0 0 / 26%);
 }
 .jscene3d-project-loading-identity { min-width: 0; text-shadow: 0 2px 12px rgb(0 0 0 / 72%); }
 .jscene3d-project-loading-name {
 	margin: 0;
 	overflow: hidden;
-	font-size: 24px;
+	font-size: 26px;
 	font-weight: 600;
 	line-height: 1.2;
 	text-overflow: ellipsis;
@@ -334,20 +336,19 @@ const projectLoadingSplashStyles = `
 .jscene3d-project-loading-version { margin-top: 5px; color: #b9c4d3; font-size: 13px; }
 .jscene3d-project-loading-description {
 	display: -webkit-box;
-	margin: 20px 0 0;
+	margin: 18px 0 0;
 	overflow: hidden;
 	color: #d2d9e4;
 	font-size: 14px;
 	line-height: 1.45;
 	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 3;
+	-webkit-line-clamp: 4;
 }
-.jscene3d-project-loading-authors { margin-top: 16px; color: #9ba9bb; font-size: 13px; }
 .jscene3d-project-loading-progress {
 	position: absolute;
-	right: 36px;
-	bottom: 24px;
-	left: 36px;
+	right: 42px;
+	bottom: 28px;
+	left: 42px;
 }
 .jscene3d-project-loading-label { margin-bottom: 10px; color: #dbe4ef; font-size: 13px; }
 .jscene3d-project-loading-track {
@@ -370,8 +371,8 @@ const projectLoadingSplashStyles = `
 }
 @media (max-width: 620px), (max-height: 380px) {
 	.jscene3d-project-loading-card { min-height: 272px; }
-	.jscene3d-project-loading-content { min-height: 200px; padding: 28px 28px 64px; grid-template-columns: 72px minmax(0, 1fr); gap: 18px; }
-	.jscene3d-project-loading-icon { width: 72px; height: 72px; }
+	.jscene3d-project-loading-content { min-height: 200px; padding: 28px 28px 64px; grid-template-columns: 68px minmax(0, 1fr); gap: 18px; }
+	.jscene3d-project-loading-icon { width: 68px; height: 68px; }
 	.jscene3d-project-loading-progress { right: 28px; bottom: 20px; left: 28px; }
 }
 @media (prefers-reduced-motion: reduce) {

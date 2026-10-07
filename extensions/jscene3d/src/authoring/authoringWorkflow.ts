@@ -85,6 +85,11 @@ export class AuthoringWorkflow {
 		if (location === undefined) {
 			return;
 		}
+		await this.openProjectLocation(location);
+	}
+
+	/** Opens a selected or recent Project through the same application Project-session lifecycle. */
+	async openProjectLocation(location: ProjectLocation): Promise<void> {
 		try {
 			localProjectPath(location);
 		} catch (error) {

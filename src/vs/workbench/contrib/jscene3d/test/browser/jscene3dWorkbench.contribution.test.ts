@@ -6,8 +6,10 @@
 import * as assert from 'assert';
 import { mainWindow } from '../../../../../base/browser/window.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { MenuId, MenuRegistry, isIMenuItem } from '../../../../../platform/actions/common/actions.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ContextKeyValue, IContext } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IResourceEditorInput } from '../../../../../platform/editor/common/editor.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
@@ -24,6 +26,7 @@ import { shouldRemovePartsSplashOnInitialLayout } from '../../../splash/browser/
 import {
 	closeJScene3DWelcomeEditors,
 	completeJScene3DStartupPresentation,
+	JScene3DWelcomeSidebarController,
 	openJScene3DDefinitionEditor,
 	registerJScene3DFileMenu
 } from '../../browser/jscene3dWorkbench.contribution.js';
@@ -32,6 +35,10 @@ import {
 	isJScene3DProjectLoadingSplashVisible,
 	showJScene3DProjectLoadingSplash
 } from '../../browser/jscene3dProjectLoadingSplash.js';
+import {
+	createJScene3DWelcome,
+	formatJScene3DRecentProjectTime
+} from '../../browser/jscene3dWelcome.js';
 import {
 	JSCENE3D_AUTHORED_DEFINITION_VIEW_TYPE,
 	JSCENE3D_SCENE_DEFINITION_VIEW_TYPE,
@@ -72,6 +79,138 @@ suite('JScene3D workbench integration', () => {
 				visibleWithoutProject: false, enabledWithoutProject: false, enabledWithProject: true, enabledWhileBusy: false
 			}
 		]);
+	});
+
+	test('renders the branded Welcome composition and wires existing action commands', async () => {
+		const calls: Array<{ command: string; args: readonly unknown[] }> = [];
+		const commandService = {
+			executeCommand: <T>(command: string, ...args: unknown[]): Promise<T> => {
+				calls.push({ command, args });
+				return Promise.resolve((command === 'jscene3d.getRecentProjects' ? [] : undefined) as T);
+			}
+		} as ICommandService;
+		const store = disposables.add(new DisposableStore());
+		const welcome = createJScene3DWelcome(commandService, store);
+		await Promise.resolve();
+
+		assert.strictEqual(welcome.querySelector('h1')?.textContent, 'JScene3D');
+		assert.strictEqual(welcome.querySelector('.jscene3d-welcome-hero h2')?.textContent, 'Create. Build. Play.');
+		assert.strictEqual(
+			welcome.querySelector('.jscene3d-welcome-description')?.textContent,
+			'A modular 3D engine and authoring platform for Java developers.'
+		);
+		assert.match((welcome.querySelector('.jscene3d-welcome-mark') as HTMLImageElement).src, /jscene3d-mark\.svg/);
+		assert.match((welcome.querySelector('.jscene3d-welcome-hero-artwork') as HTMLImageElement).src, /jscene3d-welcome-hero\.png/);
+		assert.deepStrictEqual(
+			[...welcome.querySelectorAll('.jscene3d-welcome-card h2')].map(element => element.textContent),
+			['Create Project', 'Open Project', 'Clone Repository', 'Get Started']
+		);
+		const icons = [...welcome.querySelectorAll<HTMLElement>('.jscene3d-welcome-card-icon')];
+		assert.match((icons[0] as HTMLImageElement).src, /jscene3d-welcome-project-new\.svg/);
+		assert.ok(icons[1].classList.contains('codicon-folder'));
+		assert.ok(icons[2].classList.contains('codicon-source-control'));
+		assert.match((icons[3] as HTMLImageElement).src, /jscene3d-welcome-documentation\.svg/);
+		assert.strictEqual(icons[1].tagName, 'SPAN');
+		assert.strictEqual(icons[2].tagName, 'SPAN');
+		assert.strictEqual(welcome.querySelectorAll('.jscene3d-welcome-card-icon-area').length, 4);
+		assert.strictEqual(welcome.querySelectorAll('.jscene3d-welcome-card-spacer').length, 4);
+		for (const card of welcome.querySelectorAll('.jscene3d-welcome-card')) {
+			assert.deepStrictEqual([...card.children].map(element => element.tagName), ['DIV', 'H2', 'P', 'DIV', 'BUTTON']);
+			assert.ok(card.children[4].classList.contains('jscene3d-welcome-card-button'));
+		}
+		assert.match(welcome.querySelector('.jscene3d-welcome-recent-empty')?.textContent ?? '', /will appear here/);
+
+		for (const button of welcome.querySelectorAll<HTMLButtonElement>('.jscene3d-welcome-card-button')) {
+			button.click();
+		}
+		assert.deepStrictEqual(calls.slice(1).map(call => call.command), [
+			'jscene3d.createProject', 'jscene3d.openProject', 'git.cloneRecursive', 'jscene3d.gettingStarted'
+		]);
+	});
+
+	test('temporarily hides the Welcome sidebar and restores the prior visible state', () => {
+		let sidebarVisible = true;
+		const visibilityChanges: boolean[] = [];
+		const controller = disposables.add(new JScene3DWelcomeSidebarController({
+			isVisible: () => sidebarVisible,
+			setPartHidden: hidden => {
+				sidebarVisible = !hidden;
+				visibilityChanges.push(sidebarVisible);
+			}
+		}));
+
+		controller.update(true);
+		controller.update(true);
+		assert.strictEqual(sidebarVisible, false);
+		assert.deepStrictEqual(visibilityChanges, [false]);
+
+		controller.update(false);
+		assert.strictEqual(sidebarVisible, true);
+		assert.deepStrictEqual(visibilityChanges, [false, true]);
+	});
+
+	test('preserves an already-hidden sidebar and a sidebar the user reveals on Welcome', () => {
+		let sidebarVisible = false;
+		const visibilityChanges: boolean[] = [];
+		const controller = disposables.add(new JScene3DWelcomeSidebarController({
+			isVisible: () => sidebarVisible,
+			setPartHidden: hidden => {
+				sidebarVisible = !hidden;
+				visibilityChanges.push(sidebarVisible);
+			}
+		}));
+
+		controller.update(true);
+		controller.update(false);
+		assert.deepStrictEqual(visibilityChanges, []);
+
+		sidebarVisible = true;
+		controller.update(true);
+		assert.deepStrictEqual(visibilityChanges, [false]);
+		sidebarVisible = true;
+		controller.update(false);
+		assert.deepStrictEqual(visibilityChanges, [false]);
+	});
+
+	test('renders and opens Java Project history through the recent-Project command', async () => {
+		const now = 1_800_000;
+		const calls: Array<{ command: string; args: readonly unknown[] }> = [];
+		const commandService = {
+			executeCommand: <T>(command: string, ...args: unknown[]): Promise<T> => {
+				calls.push({ command, args });
+				const result = command === 'jscene3d.getRecentProjects'
+					? Array.from({ length: 5 }, (_, index) => ({
+						projectId: index === 0 ? 'sandbox' : `project-${index}`,
+						name: index === 0 ? 'JScene3D Editor Sandbox' : `Project ${index}`,
+						descriptorUri: index === 0
+							? 'file:///projects/sandbox/sandbox.j3d'
+							: `file:///projects/${index}/project-${index}.j3d`,
+						compactPath: index === 0 ? '~/projects/sandbox' : `~/projects/${index}`,
+						lastOpenedAt: now - (index + 2) * 60_000
+					}))
+					: undefined;
+				return Promise.resolve(result as T);
+			}
+		} as ICommandService;
+		const store = disposables.add(new DisposableStore());
+		const welcome = createJScene3DWelcome(commandService, store, () => now);
+		await Promise.resolve();
+
+		const recent = welcome.querySelector<HTMLButtonElement>('.jscene3d-welcome-recent-row');
+		assert.strictEqual(recent?.querySelector('.jscene3d-welcome-recent-name')?.textContent, 'JScene3D Editor Sandbox');
+		assert.strictEqual(recent?.querySelector('.jscene3d-welcome-recent-path')?.textContent, '~/projects/sandbox');
+		assert.strictEqual(recent?.querySelector('.jscene3d-welcome-recent-time')?.textContent, '2 minutes ago');
+		const rows = welcome.querySelectorAll<HTMLButtonElement>('.jscene3d-welcome-recent-row');
+		assert.strictEqual(rows[4].hidden, true);
+		welcome.querySelector<HTMLButtonElement>('.jscene3d-welcome-show-more')?.click();
+		assert.strictEqual(rows[4].hidden, false);
+		recent?.click();
+
+		assert.deepStrictEqual(calls.at(-1), {
+			command: 'jscene3d.openRecentProject',
+			args: ['file:///projects/sandbox/sandbox.j3d']
+		});
+		assert.strictEqual(formatJScene3DRecentProjectTime(now - 3_600_000, now), '1 hour ago');
 	});
 
 	test('opens semantic definitions with Java labels and stable source resources', async () => {
@@ -266,9 +405,9 @@ suite('JScene3D workbench integration', () => {
 			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-name')?.textContent, 'Doomed Corridors');
 			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-version')?.textContent, '0.1.0-SNAPSHOT');
 			assert.match(overlay.querySelector('.jscene3d-project-loading-description')?.textContent ?? '', /Doom-compatible/);
-			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-authors')?.textContent, 'Graham Lynch · JScene3D Team');
+			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-authors'), null);
 			assert.strictEqual(overlay.querySelector('.jscene3d-project-loading-label')?.textContent, 'Loading Project…');
-			assert.match((overlay.querySelector('.jscene3d-project-loading-artwork') as HTMLImageElement).src, /project-loading-artwork\.svg/);
+			assert.match((overlay.querySelector('.jscene3d-project-loading-artwork') as HTMLImageElement).src, /jscene3d-welcome-hero\.png/);
 			assert.match((overlay.querySelector('.jscene3d-project-loading-icon') as HTMLImageElement).src, /jscene3d-project-icon\.svg/);
 		} finally {
 			await hideJScene3DProjectLoadingSplash(mainWindow, 41, 0);

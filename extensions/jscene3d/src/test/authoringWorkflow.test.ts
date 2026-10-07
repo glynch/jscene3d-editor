@@ -32,6 +32,16 @@ suite('JScene3D authoring workflow', () => {
 		assert.deepStrictEqual(fixture.opener.calls, []);
 	});
 
+	test('opens a recent Project directly through the same Project lifecycle', async () => {
+		const fixture = workflowFixture(closedSnapshot());
+		fixture.lifecycle.nextOpen = { status: 'opened' };
+
+		await fixture.workflow.openProjectLocation({ scheme: 'file', fsPath: '/recent/recent.j3d' });
+
+		assert.deepStrictEqual(fixture.lifecycle.opened, [{ scheme: 'file', fsPath: '/recent/recent.j3d' }]);
+		assert.strictEqual(fixture.host.projectRevealCalls, 1);
+	});
+
 	test('treats project selection cancellation as a no-op', async () => {
 		const fixture = workflowFixture(closedSnapshot());
 		fixture.host.selection = undefined;

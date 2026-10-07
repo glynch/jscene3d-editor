@@ -41,6 +41,11 @@ export interface ProjectSessionRecordStore {
 	write(value: ProjectSessionRecord | undefined): Promise<void>;
 }
 
+/** Records successfully opened Projects for workspace-independent Welcome history. */
+export interface ProjectRecentProjects {
+	record(project: ProjectSummaryDto): Promise<void>;
+}
+
 /** Receives Project-session lifecycle messages. */
 export interface ProjectSessionLogger {
 	appendLine(message: string): void;
@@ -105,7 +110,8 @@ export class ProjectSessionLifecycle {
 		private readonly viewports: ProjectViewportLifecycle = { closeProjectViewports: () => Promise.resolve() },
 		private readonly loadingPresentation: ProjectLoadingPresentationLifecycle = {
 			begin: () => ({ complete: () => Promise.resolve() })
-		}
+		},
+		private readonly recentProjects: ProjectRecentProjects = { record: () => Promise.resolve() }
 	) { }
 
 	openProject(location: ProjectLocation): Promise<ProjectSessionOpenResult> {
@@ -140,6 +146,7 @@ export class ProjectSessionLifecycle {
 					await this.projectState.close();
 					throw error;
 				}
+				await this.recordRecentProject(outcome.project);
 				this.logger.appendLine(`Project session ready: ${outcome.project.name}`);
 				loadingOutcome = 'success';
 				return { status: outcome.status };
@@ -181,6 +188,7 @@ export class ProjectSessionLifecycle {
 					return this.failReopen('Persisted Project identity no longer matches the descriptor');
 				}
 				await this.recordStore.write(this.record(result.project));
+				await this.recordRecentProject(result.project);
 				this.logger.appendLine(`Project reopened: ${result.project.name}`);
 				loadingOutcome = 'success';
 				return { status: 'reopened' };
@@ -228,6 +236,14 @@ export class ProjectSessionLifecycle {
 		await this.recordStore.write(undefined);
 		this.logger.appendLine(`Project reopen failed: ${reason}`);
 		return { status: 'failed', reason };
+	}
+
+	private async recordRecentProject(project: ProjectSummaryDto): Promise<void> {
+		try {
+			await this.recentProjects.record(project);
+		} catch (error) {
+			this.logger.appendLine(`Recent Project history update failed: ${errorMessage(error)}`);
+		}
 	}
 
 	private runExclusive<T>(operation: () => Promise<T>): Promise<T> {

@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as os from 'os';
 import * as vscode from 'vscode';
 import {
 	AuthoringWorkflow,
@@ -18,6 +19,11 @@ import { ProjectDiagnosticDto } from '../protocol/authoringProtocol';
 import { publishProjectDiagnostics } from './projectDiagnostics';
 import { ProjectLoadingSplashLifecycle } from './projectLoadingSplash';
 import { ProjectPresentationLifecycle, projectVisibility } from './projectPresentation';
+import {
+	getRecentProjectsCommandId,
+	openRecentProjectCommandId,
+	ProjectRecentHistory
+} from './projectRecentHistory';
 import { ProjectState } from './projectState';
 import { ProjectTreeDataProvider } from './projectView';
 import { projectViewId } from './projectViewModel';
@@ -28,7 +34,11 @@ import {
 	ProjectSessionLifecycle,
 	ProjectViewportLifecycle
 } from './projectSessionLifecycle';
-import { ExtensionProjectSessionRecordStore, VsCodeProjectSessionResources } from './vsCodeProjectSession';
+import {
+	ExtensionProjectRecentHistoryStore,
+	ExtensionProjectSessionRecordStore,
+	VsCodeProjectSessionResources
+} from './vsCodeProjectSession';
 import {
 	VsCodeProjectLoadingMetadataSource,
 	VsCodeProjectLoadingSplashHost,
@@ -95,7 +105,13 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 	) {
 		const provider = new ProjectTreeDataProvider(projectState);
 		const tree = vscode.window.createTreeView(projectViewId, { treeDataProvider: provider });
+		const resources = new VsCodeProjectSessionResources();
 		const recordStore = new ExtensionProjectSessionRecordStore(globalState);
+		const recentProjects = new ProjectRecentHistory(
+			new ExtensionProjectRecentHistoryStore(globalState),
+			resources,
+			os.homedir()
+		);
 		const pendingReopen = recordStore.read() !== undefined;
 		const loadingPresentation = new ProjectLoadingSplashLifecycle(
 			new VsCodeProjectLoadingMetadataSource(),
@@ -105,12 +121,13 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 		);
 		this.sessionLifecycle = new ProjectSessionLifecycle(
 			projectState,
-			new VsCodeProjectSessionResources(),
+			resources,
 			recordStore,
 			logger,
 			new CoordinatedProjectDocumentLifecycle(inspector, definitions),
 			viewports,
-			loadingPresentation
+			loadingPresentation,
+			recentProjects
 		);
 		this.workflow = new AuthoringWorkflow(
 			projectState,
@@ -133,6 +150,19 @@ class VsCodeProjectFeature implements RegisteredProjectFeature {
 			projectState.onDidChange(() => this.projectStateChanged(projectState, definitionState, viewports)),
 			vscode.commands.registerCommand(createProjectCommandId, () => this.workflow.createProject()),
 			vscode.commands.registerCommand(openProjectCommandId, () => this.workflow.openProject()),
+			vscode.commands.registerCommand(getRecentProjectsCommandId, () => recentProjects.entries()),
+			vscode.commands.registerCommand(openRecentProjectCommandId, async (descriptorUri: unknown) => {
+				if (typeof descriptorUri !== 'string') {
+					this.logger.appendLine('Recent Project open rejected: descriptor URI is missing');
+					return;
+				}
+				const descriptor = resources.parseLocalResource(descriptorUri);
+				if (descriptor === undefined || !descriptor.fsPath.toLowerCase().endsWith('.j3d')) {
+					this.logger.appendLine('Recent Project open rejected: descriptor is not a local .j3d resource');
+					return;
+				}
+				await this.workflow.openProjectLocation({ scheme: 'file', fsPath: descriptor.fsPath });
+			}),
 			vscode.commands.registerCommand(closeProjectCommandId, () => this.workflow.closeProject()),
 			vscode.commands.registerCommand(gettingStartedCommandId, () => this.workflow.gettingStarted())
 		);

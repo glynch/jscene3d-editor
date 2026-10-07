@@ -10,6 +10,7 @@ import {
 	ProjectDocumentLifecycle,
 	ProjectDocumentPreparation,
 	ProjectLoadingPresentationLifecycle,
+	ProjectRecentProjects,
 	ProjectSessionLifecycle,
 	ProjectSessionRecord,
 	ProjectSessionRecordStore,
@@ -32,6 +33,31 @@ suite('JScene3D Project session lifecycle', () => {
 		assert.deepStrictEqual(state.openCalls, ['/selected/a.j3d']);
 		assert.deepStrictEqual(store.value, record(summaryA));
 		assert.deepStrictEqual(state.snapshot, openSnapshot(summaryA, 7));
+	});
+
+	test('records a successfully opened Project in Welcome history', async () => {
+		const recent = new TestRecentProjects();
+
+		await lifecycleFor(
+			new TestProjectState(), new TestRecordStore(), undefined, undefined, undefined, recent
+		).openProject({ scheme: 'file', fsPath: '/selected/a.j3d' });
+
+		assert.deepStrictEqual(recent.recorded, [summaryA]);
+	});
+
+	test('does not fail an open Project when optional recent history persistence fails', async () => {
+		const recent = new TestRecentProjects();
+		recent.error = new Error('history unavailable');
+		const logger = new TestLogger();
+		const lifecycle = new ProjectSessionLifecycle(
+			new TestProjectState(), new TestResources(), new TestRecordStore(), logger,
+			undefined, undefined, undefined, recent
+		);
+
+		const result = await lifecycle.openProject({ scheme: 'file', fsPath: '/selected/a.j3d' });
+
+		assert.deepStrictEqual(result, { status: 'opened' });
+		assert.ok(logger.lines.includes('Recent Project history update failed: history unavailable'));
 	});
 
 	test('starts loading presentation before Java open and waits for initial terminal presentation', async () => {
@@ -241,10 +267,11 @@ function lifecycleFor(
 	store: TestRecordStore,
 	documents?: ProjectDocumentLifecycle,
 	viewports?: ProjectViewportLifecycle,
-	loading?: ProjectLoadingPresentationLifecycle
+	loading?: ProjectLoadingPresentationLifecycle,
+	recentProjects?: ProjectRecentProjects
 ): ProjectSessionLifecycle {
 	return new ProjectSessionLifecycle(
-		state, new TestResources(), store, new TestLogger(), documents, viewports, loading
+		state, new TestResources(), store, new TestLogger(), documents, viewports, loading, recentProjects
 	);
 }
 
@@ -337,6 +364,16 @@ class TestLoadingPresentation implements ProjectLoadingPresentationLifecycle {
 	}
 }
 
+class TestRecentProjects implements ProjectRecentProjects {
+	readonly recorded: ProjectSummaryDto[] = [];
+	error: Error | undefined;
+
+	record(project: ProjectSummaryDto): Promise<void> {
+		this.recorded.push(project);
+		return this.error === undefined ? Promise.resolve() : Promise.reject(this.error);
+	}
+}
+
 class TestDocumentPreparation implements ProjectDocumentPreparation {
 	constructor(private readonly events: string[] = []) { }
 
@@ -347,7 +384,11 @@ class TestDocumentPreparation implements ProjectDocumentPreparation {
 }
 
 class TestLogger {
-	appendLine(): void { }
+	readonly lines: string[] = [];
+
+	appendLine(message: string): void {
+		this.lines.push(message);
+	}
 }
 
 function resource(fsPath: string): ProjectSessionResource {

@@ -4,17 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { mainWindow } from '../../../../base/browser/window.js';
-import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import * as perf from '../../../../base/common/performance.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import product from '../../../../platform/product/common/product.js';
+import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { EditorsOrder } from '../../../common/editor.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
+import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
+import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
 import { GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
 import { removePartsSplash } from '../../splash/browser/partsSplash.js';
 import {
@@ -32,6 +35,85 @@ export const JSCENE3D_HIDE_PROJECT_LOADING_SPLASH_COMMAND_ID = 'jscene3d.workben
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
+const projectContextKeys = new Set([projectOpenContext]);
+
+interface WelcomeSidebarLayout {
+	isVisible(part: Parts.SIDEBAR_PART): boolean;
+	setPartHidden(hidden: boolean, part: Parts.SIDEBAR_PART): void;
+}
+
+/** Temporarily gives top-level Welcome the editor width without changing the user's sidebar preference. */
+export class JScene3DWelcomeSidebarController implements IDisposable {
+	private controllingSidebar = false;
+	private restoreVisibleSidebar = false;
+
+	constructor(private readonly layoutService: WelcomeSidebarLayout) { }
+
+	update(welcomeActiveWithoutProject: boolean): void {
+		if (welcomeActiveWithoutProject === this.controllingSidebar) {
+			return;
+		}
+
+		this.controllingSidebar = welcomeActiveWithoutProject;
+		if (welcomeActiveWithoutProject) {
+			this.restoreVisibleSidebar = this.layoutService.isVisible(Parts.SIDEBAR_PART);
+			if (this.restoreVisibleSidebar) {
+				this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
+			}
+			return;
+		}
+
+		this.restoreSidebar();
+	}
+
+	dispose(): void {
+		this.controllingSidebar = false;
+		this.restoreSidebar();
+	}
+
+	private restoreSidebar(): void {
+		if (this.restoreVisibleSidebar && !this.layoutService.isVisible(Parts.SIDEBAR_PART)) {
+			this.layoutService.setPartHidden(false, Parts.SIDEBAR_PART);
+		}
+		this.restoreVisibleSidebar = false;
+	}
+}
+
+/** Owns the Welcome-only sidebar presentation at the workbench layout boundary. */
+export class JScene3DWelcomeLayoutContribution extends Disposable implements IWorkbenchContribution {
+	static readonly ID = 'workbench.contrib.jscene3dWelcomeLayout';
+
+	private readonly sidebarController: JScene3DWelcomeSidebarController;
+
+	constructor(
+		@IEditorService private readonly editorService: IEditorService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+		@ILifecycleService lifecycleService: ILifecycleService
+	) {
+		super();
+		this.sidebarController = this._register(new JScene3DWelcomeSidebarController(layoutService));
+		this._register(this.editorService.onDidActiveEditorChange(() => this.updateSidebar()));
+		this._register(this.contextKeyService.onDidChangeContext(event => {
+			if (event.affectsSome(projectContextKeys)) {
+				this.updateSidebar();
+			}
+		}));
+		this._register(lifecycleService.onWillShutdown(() => this.sidebarController.dispose()));
+		this.updateSidebar();
+	}
+
+	private updateSidebar(): void {
+		const editor = this.editorService.activeEditor;
+		const welcomeActive = editor instanceof GettingStartedInput
+			&& editor.showWelcome
+			&& editor.selectedCategory === undefined
+			&& editor.walkthroughPageTitle === undefined;
+		const projectOpen = this.contextKeyService.getContextKeyValue<boolean>(projectOpenContext) === true;
+		this.sidebarController.update(welcomeActive && !projectOpen);
+	}
+}
+
 /** Registers the JScene3D semantic project commands directly in the first-level File menu. */
 export function registerJScene3DFileMenu(): IDisposable {
 	return MenuRegistry.appendMenuItems([
@@ -154,4 +236,9 @@ if (product.applicationName === 'jscene3d-editor') {
 	);
 
 	registerJScene3DFileMenu();
+	registerWorkbenchContribution2(
+		JScene3DWelcomeLayoutContribution.ID,
+		JScene3DWelcomeLayoutContribution,
+		WorkbenchPhase.AfterRestored
+	);
 }

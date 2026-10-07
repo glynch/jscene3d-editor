@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { ProjectRecentHistoryStore } from './projectRecentHistory';
 import {
 	ProjectSessionRecord,
 	ProjectSessionRecordStore,
@@ -13,6 +14,7 @@ import {
 
 const sessionRecordKey = 'activeProjectSession';
 const legacyReopenIntentKey = 'pendingProjectReopen';
+const recentProjectsKey = 'recentProjects';
 
 /** Converts local paths and URIs without reading or mutating the Code OSS workspace. */
 export class VsCodeProjectSessionResources implements ProjectSessionResources {
@@ -45,6 +47,19 @@ export class ExtensionProjectSessionRecordStore implements ProjectSessionRecordS
 			this.state.update(sessionRecordKey, value),
 			this.state.update(legacyReopenIntentKey, undefined)
 		]);
+	}
+}
+
+/** Stores bounded JScene3D Project history independently of Code OSS workspace history. */
+export class ExtensionProjectRecentHistoryStore implements ProjectRecentHistoryStore {
+	constructor(private readonly state: vscode.Memento) { }
+
+	read(): unknown {
+		return this.state.get<unknown>(recentProjectsKey);
+	}
+
+	async write(value: unknown): Promise<void> {
+		await this.state.update(recentProjectsKey, value);
 	}
 }
 

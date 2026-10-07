@@ -13,7 +13,9 @@
 	],
 	"main": "./out/extension.js",
 	"activationEvents": [
-		"onStartupFinished"
+		"onStartupFinished",
+		"onCommand:jscene3d.getRecentProjects",
+		"onCommand:jscene3d.openRecentProject"
 	],
 	"capabilities": {
 		"virtualWorkspaces": false,
@@ -93,7 +95,7 @@
 				{
 					"id": "jscene3d",
 					"title": "%viewsContainer.jscene3d%",
-					"icon": "resources/jscene3d-mark.svg"
+					"icon": "$(type-hierarchy-sub)"
 				}
 			],
 			"secondarySidebar": [

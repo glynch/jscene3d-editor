@@ -59,12 +59,11 @@ suite('JScene3D extension contributions', () => {
 		const hierarchy = contributions.views.jscene3d.find(view => view.id === hierarchyViewId);
 		const project = contributions.views.jscene3d.find(view => view.id === projectViewId);
 		const messages = extensionMessages();
-		const icon = path.join(__dirname, '..', '..', container?.icon ?? '');
 
 		assert.deepStrictEqual(container, {
 			id: 'jscene3d',
 			title: '%viewsContainer.jscene3d%',
-			icon: 'resources/jscene3d-mark.svg'
+			icon: '$(type-hierarchy-sub)'
 		});
 		assert.strictEqual(localizedMessage(messages['viewsContainer.jscene3d']), 'JScene3D');
 		assert.deepStrictEqual(contributions.views.jscene3d.map(view => view.id), [
@@ -76,8 +75,6 @@ suite('JScene3D extension contributions', () => {
 		assert.strictEqual(project?.when, 'jscene3d.extensionReady');
 		assert.strictEqual(project?.visibility, 'collapsed');
 		assert.ok((contributions.views.explorer ?? []).every(view => !view.id.startsWith('jscene3d.')));
-		assert.strictEqual(path.extname(icon), '.svg');
-		assert.ok(fs.statSync(icon).isFile());
 	});
 
 	test('contributes the Inspector as a localized Secondary Side Bar webview', () => {
@@ -151,6 +148,13 @@ suite('JScene3D extension contributions', () => {
 		]);
 	});
 
+	test('activates Project history commands before the Welcome editor queries them', () => {
+		const activationEvents = extensionManifest().activationEvents;
+
+		assert.ok(activationEvents.includes('onCommand:jscene3d.getRecentProjects'));
+		assert.ok(activationEvents.includes('onCommand:jscene3d.openRecentProject'));
+	});
+
 	test('contributes a separate installed extension metadata artifact path', () => {
 		const manifest = extensionManifest();
 		const metadata = manifest.contributes.configuration.properties['jscene3d.authoring.installedExtensionMetadata'];
@@ -182,6 +186,7 @@ suite('JScene3D extension contributions', () => {
 });
 
 interface ExtensionManifest {
+	readonly activationEvents: readonly string[];
 	readonly contributes: {
 		readonly commands: readonly { readonly command: string; readonly enablement?: string }[];
 		readonly menus: Readonly<Record<string, readonly { readonly command: string; readonly when?: string }[]>>;
