@@ -7,6 +7,70 @@ readonly JSCENE3D_DEVELOPMENT_BUNDLE_IDENTIFIER="com.jscene3d.editor.dev"
 readonly JSCENE3D_STOCK_SOURCE_EDITOR_BUNDLE_IDENTIFIER="com.jscene3d.editor"
 readonly JSCENE3D_RETIRED_EDITOR_BUNDLE_IDENTIFIER="io.github.glynch.jscene3d.editor"
 
+jscene3d_require_current_output() {
+	local source="$1"
+	local output="$2"
+	local rebuild_command="$3"
+
+	if [[ ! -f "$output" ]]; then
+		echo "required JScene3D development output is missing: $output; run: $rebuild_command" >&2
+		return 1
+	fi
+	if [[ "$source" -nt "$output" ]]; then
+		echo "stale JScene3D development output: $output is older than $source; run: $rebuild_command" >&2
+		return 1
+	fi
+}
+
+jscene3d_validate_code_oss_outputs() {
+	local repository="$1"
+	local relative_path
+	local output
+	local rebuild_command="cd $repository && npm run compile-client"
+
+	while IFS= read -r relative_path; do
+		[[ -f "$repository/$relative_path" ]] || continue
+		case "$relative_path" in
+			extensions/jscene3d/src/*.ts)
+				[[ "$relative_path" != */test/* && "$relative_path" != *.d.ts ]] || continue
+				output="extensions/jscene3d/out/${relative_path#extensions/jscene3d/src/}"
+				;;
+			src/vs/*)
+				[[ "$relative_path" == *jscene3d* && "$relative_path" == *.ts \
+					&& "$relative_path" != */test/* && "$relative_path" != *.d.ts ]] || continue
+				output="out/${relative_path#src/}"
+				;;
+			*) continue ;;
+		esac
+		output="${output%.ts}.js"
+		jscene3d_require_current_output \
+			"$repository/$relative_path" "$repository/$output" "$rebuild_command" || return 1
+	done < <(git -C "$repository" ls-files --cached --others --exclude-standard | LC_ALL=C sort)
+}
+
+jscene3d_validate_electron_output() {
+	local electron_repository="$1"
+	local framework_binary="$2"
+	local relative_path
+	local electron_source_root
+	local rebuild_command
+	electron_source_root="$(dirname "$electron_repository")"
+	rebuild_command="cd $electron_source_root && ninja -C out/JScene3D-Electron42 electron"
+
+	while IFS= read -r relative_path; do
+		[[ -f "$electron_repository/$relative_path" ]] || continue
+		case "$relative_path" in
+			filenames.auto.gni \
+			| lib/browser/api/jscene3d-renderer.ts \
+			| shell/browser/api/electron_api_jscene3d_renderer.cc \
+			| shell/browser/jscene3d/*)
+				jscene3d_require_current_output \
+					"$electron_repository/$relative_path" "$framework_binary" "$rebuild_command" || return 1
+				;;
+		esac
+	done < <(git -C "$electron_repository" ls-files --cached --others --exclude-standard | LC_ALL=C sort)
+}
+
 jscene3d_macos_app_bundle_for_executable() {
 	local executable="$1"
 	local macos_directory
@@ -33,15 +97,11 @@ jscene3d_development_editor_restart_command() {
 	local executable="$1"
 	local launcher="$2"
 	local profile="$3"
-	local use_authoring_environment="$4"
-	shift 4
+	shift 3
 	local command
 	local argument
 
 	printf -v command 'JSCENE3D_ELECTRON_EXECUTABLE=%q %q' "$executable" "$launcher"
-	if [[ "$use_authoring_environment" == true ]]; then
-		command+=' --use-authoring-environment'
-	fi
 	printf -v command '%s --profile %q' "$command" "$profile"
 	if (($# > 0)); then
 		command+=' --'

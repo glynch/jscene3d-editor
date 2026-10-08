@@ -6,7 +6,7 @@
 import { JsonRpcClient } from './jsonRpcClient';
 import { JsonObject, JsonValue } from './messageTransport';
 
-export const authoringProtocolVersion = { major: 2, minor: 2 } as const;
+export const authoringProtocolVersion = { major: 1, minor: 0 } as const;
 
 /** Single authority for method and capability names in the authoring protocol. */
 export const authoringProtocolMethods = {
@@ -34,7 +34,7 @@ type AuthoringOperationMethod = Exclude<AuthoringProtocolMethod, typeof authorin
 const requiredAuthoringCapabilities = Object.values(authoringProtocolMethods)
 	.filter((method): method is AuthoringOperationMethod => method !== authoringProtocolMethods.initialize);
 
-/** Wire representation of the negotiated authoring protocol version. */
+/** Wire representation of the exact internal authoring protocol version. */
 export interface ProtocolVersionDto {
 	readonly major: number;
 	readonly minor: number;
@@ -43,6 +43,8 @@ export interface ProtocolVersionDto {
 /** Wire result returned by the authoring service during initialization. */
 export interface InitializeResultDto {
 	readonly protocolVersion: ProtocolVersionDto;
+	readonly contractIdentity: string;
+	readonly buildIdentity: string;
 	readonly processKind: string;
 	readonly serviceVersion: string;
 	readonly engineVersion: string;
@@ -520,15 +522,23 @@ export class AuthoringProtocolClient {
 		return this.rpc.onDidFail(listener);
 	}
 
-	async initialize(clientLanguage: string): Promise<InitializeResultDto> {
+	async initialize(clientLanguage: string, contractIdentity: string, buildIdentity: string): Promise<InitializeResultDto> {
 		const response = await this.rpc.request(authoringProtocolMethods.initialize, {
 			protocolVersion: authoringProtocolVersion,
+			contractIdentity: requiredNonBlankIdentity(contractIdentity, 'contractIdentity'),
+			buildIdentity: requiredNonBlankIdentity(buildIdentity, 'buildIdentity'),
 			clientLanguage: requiredLanguageTag(clientLanguage)
 		}, validateInitializeResult);
 		const result = response.result;
 		if (result.protocolVersion.major !== authoringProtocolVersion.major
-			|| result.protocolVersion.minor < authoringProtocolVersion.minor) {
+			|| result.protocolVersion.minor !== authoringProtocolVersion.minor) {
 			throw new Error(`Incompatible authoring protocol ${result.protocolVersion.major}.${result.protocolVersion.minor}`);
+		}
+		if (result.contractIdentity !== contractIdentity) {
+			throw new Error(`Incompatible authoring contract ${result.contractIdentity}; expected ${contractIdentity}`);
+		}
+		if (result.buildIdentity !== buildIdentity) {
+			throw new Error(`Stale authoring build ${result.buildIdentity}; expected ${buildIdentity}`);
 		}
 		if (result.processKind !== 'authoring') {
 			throw new Error(`Expected an authoring service but received process kind ${result.processKind}`);
@@ -693,6 +703,8 @@ function validateInitializeResult(value: JsonValue): InitializeResultDto {
 	const object = requiredObject(value, 'initialize result');
 	return {
 		protocolVersion: validateProtocolVersion(object.protocolVersion),
+		contractIdentity: requiredString(object.contractIdentity, 'contractIdentity'),
+		buildIdentity: requiredString(object.buildIdentity, 'buildIdentity'),
 		processKind: requiredString(object.processKind, 'processKind'),
 		serviceVersion: requiredString(object.serviceVersion, 'serviceVersion'),
 		engineVersion: requiredString(object.engineVersion, 'engineVersion'),
@@ -1686,6 +1698,14 @@ function requiredDecimal(value: JsonValue | undefined, name: string): string {
 		throw new Error(`${name} must be canonical decimal text`);
 	}
 	return result;
+}
+
+/** Requires one exact non-blank development identity. */
+function requiredNonBlankIdentity(value: string, name: string): string {
+	if (value.length === 0 || value.trim() !== value) {
+		throw new Error(`${name} must be non-blank without surrounding whitespace`);
+	}
+	return value;
 }
 
 /** Requires and canonicalizes a non-empty BCP 47 language tag. */

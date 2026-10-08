@@ -52,7 +52,7 @@ interface ReadonlyComponentPropertyEditorModel {
 	readonly unit: 'degrees' | null;
 }
 
-/** Closed presentation vocabulary used only by the built-in read-only Inspector. */
+/** Closed presentation vocabulary used by the built-in Inspector. */
 export type ReadonlyPropertyEditorModel =
 	| { readonly kind: 'boolean'; readonly value: boolean | null; readonly editable: boolean }
 	| ({ readonly kind: 'decimal' } & ReadonlyNumericPropertyEditorModel)

@@ -7,7 +7,6 @@ import { randomBytes } from 'crypto';
 import type * as vscode from 'vscode';
 import { DefinitionMutationValueDto, InspectorMutationTargetDto, InspectorSnapshotDto } from '../protocol/authoringProtocol';
 import { InspectorState, InspectorStateSnapshot } from './inspectorState';
-import { inspectorSearchIndex } from './inspectorViewModel';
 import { acceptsPropertyEditorCandidate, resolvePropertyEditor } from './propertyEditorResolver';
 
 export const inspectorViewId = 'jscene3d.inspector';
@@ -48,6 +47,10 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 		private readonly mutations?: InspectorMutationHandler
 	) {
 		this.stateSubscription = state.onDidChange(() => this.render());
+	}
+
+	get visible(): boolean {
+		return this.view?.visible ?? false;
 	}
 
 	resolveWebviewView(view: vscode.WebviewView): void {
@@ -227,15 +230,25 @@ export function inspectorHtml(
 
 function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTranslate): object {
 	const strings = {
-		empty: translate('Select an entity in the Hierarchy to inspect it.'),
+		inspector: translate('Inspector'),
+		empty: translate('No entity selected'),
+		emptyDetail: translate('Select an entity in the Hierarchy or Scene View to inspect its components.'),
 		loading: translate('Loading Inspector…'),
 		rejected: translate('Inspector data is unavailable.'),
-		filterPlaceholder: translate('Filter components and properties…'),
-		filterOptions: translate('Filter options'),
-		noFilterOptions: translate('No additional filters are available yet.'),
-		noResults: translate('No matching components or properties.'),
-		properties: translate('Properties'),
 		readOnly: translate('Read-only'),
+		entityName: translate('Entity name'),
+		enabled: translate('Enabled'),
+		static: translate('Static'),
+		tag: translate('Tag'),
+		untagged: translate('Untagged'),
+		layer: translate('Layer'),
+		defaultLayer: translate('Default'),
+		deferred: translate('Not available yet'),
+		componentHelp: translate('Component help'),
+		componentSettings: translate('Component settings'),
+		componentActions: translate('Component actions'),
+		addComponent: translate('Add Component'),
+		chooseResource: translate('Choose resource'),
 		unset: translate('Unset'),
 		required: translate('Required'),
 		broken: translate('Broken reference'),
@@ -254,7 +267,6 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 			status: state.status,
 			snapshot: inspectorPresentationSnapshot(state.inspector),
 			selectedGroupId: state.selectedGroupId,
-			searchIndex: inspectorSearchIndex(state.inspector),
 			strings
 		}
 		: state.status === 'rejected'
@@ -285,197 +297,210 @@ function escapeAttribute(value: string): string {
 }
 
 const styles = `
-:root { --navigator-size: 42%; color-scheme: light dark; }
+:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; }
-body { color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font: var(--vscode-font-size) var(--vscode-font-family); }
-button, input { font: inherit; }
-.message { padding: 16px; color: var(--vscode-descriptionForeground); }
-.shell { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(80px, var(--navigator-size)) 5px minmax(100px, 1fr); }
-.header { padding: 10px 12px 7px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); }
-.header-row { display: flex; gap: 8px; align-items: center; }
-.title { min-width: 0; flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subtitle { margin-top: 3px; color: var(--vscode-descriptionForeground); font-size: 0.9em; text-transform: capitalize; }
-.filter-row { display: flex; gap: 4px; margin-top: 8px; }
-.search-input { min-width: 0; height: 26px; flex: 1; border: 1px solid var(--vscode-input-border); padding: 3px 7px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
-.search-input:focus, .filter-button:focus, .search-result:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-.filter-options { position: relative; }
-.filter-button { width: 28px; height: 26px; display: grid; place-items: center; border: 1px solid transparent; padding: 4px; color: var(--vscode-icon-foreground); background: var(--vscode-button-secondaryBackground); cursor: pointer; }
-.filter-button:hover { background: var(--vscode-button-secondaryHoverBackground); }
-.filter-button svg { width: 16px; height: 16px; fill: currentColor; }
-.filter-menu { position: absolute; z-index: 4; top: 29px; right: 0; width: max-content; max-width: 240px; padding: 5px 8px; color: var(--vscode-menu-foreground); background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border); box-shadow: 0 3px 8px var(--vscode-widget-shadow); }
-.filter-menu[hidden], .search-results[hidden], .navigator-scroll[hidden] { display: none; }
-.filter-menu-empty { color: var(--vscode-disabledForeground); }
-.search-results { min-height: 0; overflow: auto; padding: 6px 0; }
-.search-result { width: 100%; border: 0; padding: 5px 10px; text-align: left; color: var(--vscode-foreground); background: transparent; cursor: pointer; }
-.search-result:hover, .search-result:focus { background: var(--vscode-list-hoverBackground); }
-.search-primary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.search-context { display: block; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
-.navigator-scroll, .property-scroll { min-height: 0; overflow: auto; }
-.navigator-scroll { padding: 6px 0; }
-.group { width: 100%; display: flex; gap: 8px; align-items: center; border: 0; border-left: 2px solid transparent; padding: 4px 10px; text-align: left; color: var(--vscode-foreground); background: transparent; cursor: pointer; }
-.group:hover { background: var(--vscode-list-hoverBackground); }
-.group.active { border-left-color: var(--vscode-focusBorder); background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
-.group-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.warning { color: var(--vscode-problemsWarningIcon-foreground); }
-.divider { cursor: row-resize; background: var(--vscode-sideBarSectionHeader-border); }
-.divider:hover, .divider.dragging { background: var(--vscode-focusBorder); }
-.property-scroll { padding: 0 10px 12px; }
-.property-heading { position: sticky; top: 0; z-index: 2; margin: 0 -10px 6px; padding: 8px 10px 6px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); font-weight: 600; text-transform: uppercase; }
-.group-description { margin: 0 0 8px; color: var(--vscode-descriptionForeground); }
-.property { display: grid; grid-template-columns: minmax(80px, 42%) minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--vscode-sideBarSectionHeader-border) 55%, transparent); }
-.property.modified { border-left: 2px solid var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)); padding-left: 6px; background: color-mix(in srgb, var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)) 7%, transparent); }
+body { overflow: hidden; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font: var(--vscode-font-size) var(--vscode-font-family); }
+button, input, select { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.message-shell { height: 100%; display: grid; place-items: center; padding: 28px; text-align: center; }
+.message-content { max-width: 260px; color: var(--vscode-descriptionForeground); }
+.message-icon { width: 42px; height: 42px; margin: 0 auto 12px; color: var(--vscode-disabledForeground); }
+.message-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.25; }
+.message-title { margin: 0 0 6px; color: var(--vscode-foreground); font-size: 1.05em; font-weight: 600; }
+.message-detail { margin: 0; line-height: 1.45; }
+.inspector-shell { height: 100%; min-height: 0; display: grid; grid-template-rows: 35px minmax(0, 1fr); }
+.inspector-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); background: var(--vscode-sideBarSectionHeader-background); }
+.inspector-title { min-width: 0; flex: 1; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.inspector-readonly { color: var(--vscode-descriptionForeground); font-size: .86em; }
+.inspector-menu, .component-action, .resource-action { display: grid; place-items: center; border: 0; color: var(--vscode-icon-foreground); background: transparent; }
+.inspector-menu { width: 24px; height: 24px; font-size: 18px; }
+.inspector-menu:disabled, .component-action:disabled, .resource-action:disabled { opacity: .62; }
+.inspector-scroll { min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 10px 10px 18px; }
+.entity-card { padding: 2px 2px 12px; }
+.entity-primary { display: grid; grid-template-columns: 26px auto minmax(70px, 1fr) auto; gap: 7px; align-items: center; }
+.entity-icon, .component-icon { display: grid; place-items: center; color: var(--vscode-icon-foreground); }
+.entity-icon { width: 24px; height: 24px; }
+.entity-icon svg, .component-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.entity-name, .property-input, .deferred-select, .resource-field, .property-component-value { min-width: 0; height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+.entity-name { width: 100%; padding: 2px 6px; font-weight: 600; }
+.entity-name[readonly] { color: var(--vscode-foreground); }
+.check-label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.property-checkbox, .deferred-checkbox { width: 15px; height: 15px; margin: 0; accent-color: var(--vscode-checkbox-selectBackground); }
+.deferred-control { color: var(--vscode-disabledForeground); }
+.entity-metadata { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 6px 8px; align-items: center; margin-top: 10px; }
+.metadata-label { color: var(--vscode-descriptionForeground); }
+.deferred-select { width: 100%; padding: 1px 24px 1px 6px; color: var(--vscode-disabledForeground); }
+.component-stack { display: grid; gap: 8px; }
+.component-card { overflow: hidden; border: 1px solid var(--vscode-sideBarSectionHeader-border); border-radius: 3px; background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, var(--vscode-editor-background)); }
+.component-card[open] { box-shadow: 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow) 35%, transparent); }
+.component-header { min-height: 34px; display: grid; grid-template-columns: 12px 20px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 4px 5px 4px 7px; color: var(--vscode-foreground); background: var(--vscode-sideBarSectionHeader-background); cursor: pointer; list-style: none; }
+.component-header::-webkit-details-marker { display: none; }
+.component-disclosure { color: var(--vscode-icon-foreground); font-size: 10px; transform: rotate(-90deg); transition: transform 90ms ease; }
+.component-card[open] .component-disclosure { transform: rotate(0deg); }
+.component-icon { width: 18px; height: 18px; }
+.component-name { min-width: 0; overflow: hidden; font-size: .96em; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.component-actions { display: flex; align-items: center; }
+.component-action { width: 23px; height: 23px; padding: 3px; border-radius: 2px; font-size: 14px; }
+.component-action:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.component-body { padding: 6px 8px 9px; border-top: 1px solid color-mix(in srgb, var(--vscode-sideBarSectionHeader-border) 65%, transparent); }
+.component-description { margin: 0 0 7px; color: var(--vscode-descriptionForeground); font-size: .9em; line-height: 1.35; }
+.component-warning { margin: 0 0 7px; color: var(--vscode-problemsWarningIcon-foreground); font-size: .9em; }
+.property { display: grid; grid-template-columns: minmax(78px, 38%) minmax(0, 1fr); gap: 7px; align-items: start; min-height: 30px; padding: 3px 0; }
+.property.modified { margin: 0 -4px; padding-right: 4px; padding-left: 5px; border-left: 2px solid var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)); background: color-mix(in srgb, var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)) 7%, transparent); }
 .property:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.property-label { min-width: 0; color: var(--vscode-foreground); }
-.property-value { min-width: 0; text-align: right; overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); user-select: text; }
-.property-input { width: 100%; min-width: 0; border: 1px solid var(--vscode-input-border); padding: 2px 5px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+.property-label { min-width: 0; padding-top: 4px; color: var(--vscode-foreground); line-height: 1.25; }
+.property-value { min-width: 0; color: var(--vscode-descriptionForeground); text-align: right; overflow-wrap: anywhere; user-select: text; }
+.property-input { width: 100%; padding: 2px 5px; }
 .property-input.validation-error { border-color: var(--vscode-inputValidation-errorBorder); outline-color: var(--vscode-inputValidation-errorBorder); }
-.property-validation { margin-top: 2px; color: var(--vscode-inputValidation-errorForeground); font-size: 0.85em; line-height: 1.2; text-align: left; }
+.property-validation { margin-top: 2px; color: var(--vscode-inputValidation-errorForeground); font-size: .85em; line-height: 1.2; text-align: left; }
 .property-validation[hidden] { display: none; }
-.property-checkbox { accent-color: var(--vscode-checkbox-selectBackground); }
-.property.block { display: block; }
-.property.block .property-value { margin-top: 4px; text-align: left; white-space: pre-wrap; font-family: var(--vscode-editor-font-family); }
-.property-disclosure { width: 100%; display: grid; grid-template-columns: auto minmax(72px, 42%) minmax(0, 1fr); gap: 4px; align-items: center; border: 0; padding: 0; color: var(--vscode-foreground); background: transparent; text-align: left; cursor: pointer; }
-.property-disclosure:hover { background: var(--vscode-list-hoverBackground); }
-.property-disclosure:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.property-disclosure-icon { width: 1em; color: var(--vscode-icon-foreground); text-align: center; }
-.property-disclosure-summary { min-width: 0; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); text-align: right; overflow-wrap: anywhere; user-select: text; }
-.property-components { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-.property-component { min-width: 0; max-width: 100%; display: inline-flex; flex: 0 1 auto; gap: 4px; align-items: center; }
-.property-component-label { color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: 0.9em; font-weight: 400; }
-.property-component-value { min-width: 48px; width: max-content; max-width: 24ch; box-sizing: border-box; padding: 2px 5px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); text-align: right; overflow-wrap: anywhere; }
+.property-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 4px; }
+.property-component { min-width: 0; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: center; }
+.property-component-label { color: var(--vscode-descriptionForeground); font-size: .82em; text-align: left; }
+.property-component-value { width: 100%; padding: 2px 4px; color: var(--vscode-input-foreground); text-align: right; }
+.resource-control { display: flex; min-width: 0; }
+.resource-field { min-width: 0; flex: 1; overflow: hidden; padding: 3px 6px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.resource-action { width: 24px; height: 24px; margin-left: 3px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
 .badges { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.badge { padding: 1px 4px; border-radius: 2px; font-size: 0.8em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
+.badge { padding: 1px 4px; border-radius: 2px; font-size: .8em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
 .badge.problem { color: var(--vscode-inputValidation-errorForeground); background: var(--vscode-inputValidation-errorBackground); }
+.add-component { width: 100%; height: 28px; margin-top: 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.add-component:disabled { color: var(--vscode-disabledForeground); }
+@media (max-width: 300px) {
+	.entity-primary { grid-template-columns: 24px auto minmax(48px, 1fr); }
+	.entity-static { grid-column: 3; }
+	.property { grid-template-columns: 1fr; gap: 2px; }
+	.property-label { padding-top: 0; }
+}
 `;
 
 const clientScript = `
 const vscode = acquireVsCodeApi();
 const app = document.getElementById('app');
 if (bootstrap.status !== 'ready') {
-	app.className = 'message';
-	app.textContent = bootstrap.status === 'loading' ? bootstrap.strings.loading
-		: bootstrap.status === 'rejected' ? bootstrap.strings.rejected : bootstrap.strings.empty;
+	app.innerHTML = '<section class="message-shell"><div class="message-content"><div class="message-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 3 27 9.3v13.4L16 29 5 22.7V9.3L16 3Z M5.5 9.6 16 16l10.5-6.4M16 16v13"></path></svg></div><h2 class="message-title"></h2><p class="message-detail"></p></div></section>';
+	const title = app.querySelector('.message-title');
+	const detail = app.querySelector('.message-detail');
+	if (bootstrap.status === 'empty') {
+		title.textContent = bootstrap.strings.empty;
+		detail.textContent = bootstrap.strings.emptyDetail;
+	} else {
+		title.textContent = bootstrap.status === 'loading' ? bootstrap.strings.loading : bootstrap.strings.rejected;
+		detail.textContent = '';
+	}
 } else {
 	const snapshot = bootstrap.snapshot;
-	app.innerHTML = '<section class="shell"><header class="header"><div class="header-row"><div class="title"></div></div><div class="subtitle"></div><div class="filter-row"><input class="search-input" type="search" aria-controls="inspector-search-results"><div class="filter-options"><button class="filter-button" type="button" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M1.5 3h13L9.5 8.6V13l-3 1V8.6L1.5 3z"></path></svg></button><div class="filter-menu" role="menu" hidden><div class="filter-menu-empty" role="menuitem" aria-disabled="true"></div></div></div></div></header><nav class="navigator-scroll"></nav><div id="inspector-search-results" class="search-results" aria-live="polite" hidden></div><div class="divider" role="separator" aria-orientation="horizontal" tabindex="0"></div><section class="property-scroll"></section></section>';
-	const shell = app.querySelector('.shell');
-	const title = app.querySelector('.title');
-	const subtitle = app.querySelector('.subtitle');
-	const searchInput = app.querySelector('.search-input');
-	const searchResults = app.querySelector('.search-results');
-	const filterOptions = app.querySelector('.filter-options');
-	const filterButton = app.querySelector('.filter-button');
-	const filterMenu = app.querySelector('.filter-menu');
-	const filterMenuEmpty = app.querySelector('.filter-menu-empty');
-	const navigator = app.querySelector('.navigator-scroll');
-	const properties = app.querySelector('.property-scroll');
-	const divider = app.querySelector('.divider');
-	title.textContent = snapshot.title;
-	subtitle.textContent = snapshot.target.kind.replaceAll('-', ' ') + (snapshot.editable ? '' : ' · ' + bootstrap.strings.readOnly);
-	searchInput.setAttribute('placeholder', bootstrap.strings.filterPlaceholder);
-	searchInput.setAttribute('aria-label', bootstrap.strings.filterPlaceholder);
-	filterButton.setAttribute('aria-label', bootstrap.strings.filterOptions);
-	filterButton.setAttribute('title', bootstrap.strings.filterOptions);
-	filterMenuEmpty.textContent = bootstrap.strings.noFilterOptions;
+	app.innerHTML = '<section class="inspector-shell"><header class="inspector-toolbar"><div class="inspector-title"></div><span class="inspector-readonly" hidden></span><button class="inspector-menu" type="button" disabled aria-label="">\u22ef</button></header><div class="inspector-scroll"><section class="entity-card"><div class="entity-primary"><span class="entity-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 2.5 8 4.6v9.8l-8 4.6-8-4.6V7.1l8-4.6Z M4.4 7.3 12 12l7.6-4.7M12 12v9.5"></path></svg></span><span class="entity-enabled"></span><input class="entity-name" type="text" readonly><label class="check-label entity-static deferred-control"><input class="deferred-checkbox" type="checkbox" disabled><span></span></label></div><div class="entity-metadata"><label class="metadata-label tag-label"></label><select class="deferred-select tag-select" disabled><option></option></select><label class="metadata-label layer-label"></label><select class="deferred-select layer-select" disabled><option></option></select></div></section><section class="component-stack"></section><button class="add-component" type="button" disabled></button></div></section>';
+	const toolbarTitle = app.querySelector('.inspector-title');
+	const readonlyStatus = app.querySelector('.inspector-readonly');
+	const menu = app.querySelector('.inspector-menu');
+	const enabledControl = app.querySelector('.entity-enabled');
+	const nameInput = app.querySelector('.entity-name');
+	const staticLabel = app.querySelector('.entity-static span');
+	const tagLabel = app.querySelector('.tag-label');
+	const tagOption = app.querySelector('.tag-select option');
+	const layerLabel = app.querySelector('.layer-label');
+	const layerOption = app.querySelector('.layer-select option');
+	const componentStack = app.querySelector('.component-stack');
+	const addComponent = app.querySelector('.add-component');
+	toolbarTitle.textContent = bootstrap.strings.inspector;
+	readonlyStatus.textContent = bootstrap.strings.readOnly;
+	readonlyStatus.hidden = snapshot.editable;
+	menu.setAttribute('aria-label', bootstrap.strings.componentActions);
+	menu.setAttribute('title', bootstrap.strings.deferred);
+	nameInput.value = snapshot.title;
+	nameInput.setAttribute('aria-label', bootstrap.strings.entityName);
+	nameInput.setAttribute('title', bootstrap.strings.deferred);
+	staticLabel.textContent = bootstrap.strings.static;
+	app.querySelector('.entity-static').setAttribute('title', bootstrap.strings.deferred);
+	tagLabel.textContent = bootstrap.strings.tag;
+	tagOption.textContent = bootstrap.strings.untagged;
+	app.querySelector('.tag-select').setAttribute('title', bootstrap.strings.deferred);
+	layerLabel.textContent = bootstrap.strings.layer;
+	layerOption.textContent = bootstrap.strings.defaultLayer;
+	app.querySelector('.layer-select').setAttribute('title', bootstrap.strings.deferred);
+	addComponent.textContent = bootstrap.strings.addComponent;
+	addComponent.setAttribute('title', bootstrap.strings.deferred);
 	const savedState = vscode.getState();
-	searchInput.value = typeof savedState?.query === 'string' ? savedState.query : '';
-	const collapsedProperties = new Set(Array.isArray(savedState?.collapsedProperties)
-		? savedState.collapsedProperties.filter(value => typeof value === 'string') : []);
+	const collapsedGroups = new Set(Array.isArray(savedState?.collapsedGroups)
+		? savedState.collapsedGroups.filter(value => typeof value === 'string') : []);
 	let selectedGroupId = bootstrap.selectedGroupId;
 	let validationSequence = 0;
 	const numericEditors = new Set();
 	const pendingNumericEditors = new Set();
 
 	function savePresentationState() {
-		vscode.setState({ query: searchInput.value, collapsedProperties: Array.from(collapsedProperties) });
+		vscode.setState({ collapsedGroups: Array.from(collapsedGroups) });
 	}
 
-	function collapseKey(groupId, propertyId) {
+	function collapseKey(groupId) {
 		const occurrence = snapshot.target.occurrence;
 		return JSON.stringify([
 			snapshot.target.kind, snapshot.target.source, snapshot.target.identity,
 			occurrence?.definitionAssetId ?? null, occurrence?.entityPath ?? null,
-			groupId, propertyId
+			groupId
 		]);
 	}
 
-	function selectGroup(groupId, propertyId, notify = true) {
+	function selectGroup(groupId, notify = true) {
 		if (!snapshot.groups.some(group => group.identity === groupId)) { return; }
 		selectedGroupId = groupId;
-		for (const button of navigator.querySelectorAll('.group')) {
-			button.classList.toggle('active', button.dataset.groupId === groupId);
-		}
-		renderProperties(propertyId);
 		if (notify) { vscode.postMessage({ type: 'selectGroup', groupId }); }
 	}
 
-	for (const group of snapshot.groups) {
-		const button = document.createElement('button');
-		button.type = 'button';
-		button.className = 'group';
-		button.dataset.groupId = group.identity;
-		const label = document.createElement('span');
-		label.className = 'group-label';
-		label.textContent = group.label;
-		button.append(label);
-		if (group.metadataStatus === 'unavailable') {
-			const warning = document.createElement('span');
-			warning.className = 'warning'; warning.textContent = '⚠';
-			warning.title = bootstrap.strings.metadataUnavailable; button.append(warning);
-		}
-		button.addEventListener('click', () => selectGroup(group.identity));
-		navigator.append(button);
+	const entityGroup = snapshot.groups.find(group => group.kind === 'entity' || group.kind === 'placement');
+	const enabledProperty = entityGroup?.properties.find(property => property.identity === 'enabled');
+	if (entityGroup !== undefined && enabledProperty !== undefined && enabledProperty.propertyEditor.kind === 'boolean') {
+		renderPropertyEditor(enabledControl, enabledProperty.propertyEditor, entityGroup.identity, enabledProperty.identity);
+	} else {
+		const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'property-checkbox'; checkbox.disabled = true;
+		enabledControl.append(checkbox);
+	}
+	enabledControl.setAttribute('title', bootstrap.strings.enabled);
+
+	for (const group of snapshot.groups.filter(candidate => candidate.kind === 'component')) {
+		componentStack.append(renderComponent(group));
 	}
 
-	function renderProperties(propertyId) {
-		for (const editor of numericEditors) { editor.dispose(); }
-		numericEditors.clear();
-		pendingNumericEditors.clear();
-		properties.replaceChildren();
-		const group = snapshot.groups.find(candidate => candidate.identity === selectedGroupId);
-		if (!group) { return; }
-		const heading = document.createElement('h2'); heading.className = 'property-heading'; heading.textContent = group.label;
-		properties.append(heading);
-		if (group.description) { const description = document.createElement('p'); description.className = 'group-description'; description.textContent = group.description; properties.append(description); }
-		for (const property of group.properties) {
-			const row = document.createElement('div'); row.className = 'property'; row.tabIndex = -1; row.dataset.propertyId = property.identity;
-			if (property.state.modified) { row.classList.add('modified'); row.title = bootstrap.strings.modified; }
-			row.dataset.editorKind = property.propertyEditor.kind;
-			if (isBlockEditor(property.propertyEditor)) { row.classList.add('block'); }
-			const value = document.createElement('div'); value.className = 'property-value'; renderPropertyEditor(value, property.propertyEditor, group.identity, property.identity);
-			if (property.propertyEditor.collapsible === true) {
-				renderCompoundProperty(row, value, group.identity, property);
-			} else {
-				const label = document.createElement('div'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
-				row.append(label, value);
-			}
-			const badges = propertyBadges(property);
-			if (badges.length) { const box = document.createElement('div'); box.className = 'badges'; for (const badge of badges) { const item = document.createElement('span'); item.className = 'badge' + (badge.problem ? ' problem' : ''); item.textContent = badge.text; box.append(item); } row.append(box); }
-			properties.append(row);
+	function renderComponent(group) {
+		const card = document.createElement('details'); card.className = 'component-card'; card.dataset.groupId = group.identity;
+		const key = collapseKey(group.identity); card.open = !collapsedGroups.has(key);
+		const header = document.createElement('summary'); header.className = 'component-header';
+		const disclosure = document.createElement('span'); disclosure.className = 'component-disclosure'; disclosure.setAttribute('aria-hidden', 'true'); disclosure.textContent = '▾';
+		const icon = document.createElement('span'); icon.className = 'component-icon'; icon.setAttribute('aria-hidden', 'true'); icon.innerHTML = componentIcon(group);
+		const label = document.createElement('span'); label.className = 'component-name'; label.textContent = group.label;
+		const actions = document.createElement('span'); actions.className = 'component-actions';
+		for (const action of [[bootstrap.strings.componentHelp, '?'], [bootstrap.strings.componentSettings, '☷'], [bootstrap.strings.componentActions, '⋯']]) {
+			const button = document.createElement('button'); button.type = 'button'; button.className = 'component-action'; button.disabled = true;
+			button.setAttribute('aria-label', action[0]); button.setAttribute('title', bootstrap.strings.deferred); button.textContent = action[1]; actions.append(button);
 		}
-		if (propertyId) { const row = Array.from(properties.querySelectorAll('.property')).find(candidate => candidate.dataset.propertyId === propertyId); if (row) { row.scrollIntoView({ block: 'center' }); row.focus(); } }
+		header.append(disclosure, icon, label, actions); card.append(header);
+		const body = document.createElement('div'); body.className = 'component-body';
+		if (group.description) { const description = document.createElement('p'); description.className = 'component-description'; description.textContent = group.description; body.append(description); }
+		if (group.metadataStatus === 'unavailable') { const warning = document.createElement('p'); warning.className = 'component-warning'; warning.textContent = bootstrap.strings.metadataUnavailable; body.append(warning); }
+		for (const property of group.properties) { body.append(renderProperty(group.identity, property)); }
+		card.append(body);
+		header.addEventListener('click', event => {
+			if (event.target.closest('button') !== null) { event.preventDefault(); return; }
+			selectGroup(group.identity);
+		});
+		card.addEventListener('toggle', () => {
+			if (card.open) { collapsedGroups.delete(key); } else { collapsedGroups.add(key); }
+			savePresentationState();
+		});
+		return card;
 	}
 
-	function renderCompoundProperty(row, value, groupId, property) {
-		const key = collapseKey(groupId, property.identity);
-		const disclosure = document.createElement('button'); disclosure.type = 'button'; disclosure.className = 'property-disclosure';
-		const icon = document.createElement('span'); icon.className = 'property-disclosure-icon'; icon.setAttribute('aria-hidden', 'true');
-		const label = document.createElement('span'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
-		const summary = document.createElement('span'); summary.className = 'property-disclosure-summary'; summary.textContent = property.propertyEditor.summary;
-		disclosure.append(icon, label, summary); row.append(disclosure, value);
-		function setExpanded(expanded, persist) {
-			disclosure.setAttribute('aria-expanded', String(expanded));
-			icon.textContent = expanded ? '▾' : '▸';
-			summary.hidden = expanded;
-			value.hidden = !expanded;
-			if (persist) {
-				if (expanded) { collapsedProperties.delete(key); } else { collapsedProperties.add(key); }
-				savePresentationState();
-			}
-		}
-		setExpanded(!collapsedProperties.has(key), false);
-		disclosure.addEventListener('click', () => setExpanded(disclosure.getAttribute('aria-expanded') !== 'true', true));
+	function renderProperty(groupId, property) {
+		const row = document.createElement('div'); row.className = 'property'; row.tabIndex = -1; row.dataset.propertyId = property.identity; row.dataset.editorKind = property.propertyEditor.kind;
+		if (property.state.modified) { row.classList.add('modified'); row.title = bootstrap.strings.modified; }
+		const label = document.createElement('div'); label.className = 'property-label'; label.textContent = property.label; if (property.description) { label.title = property.description; }
+		const value = document.createElement('div'); value.className = 'property-value'; renderPropertyEditor(value, property.propertyEditor, groupId, property.identity);
+		row.append(label, value);
+		const badges = propertyBadges(property);
+		if (badges.length) { const box = document.createElement('div'); box.className = 'badges'; for (const badge of badges) { const item = document.createElement('span'); item.className = 'badge' + (badge.problem ? ' problem' : ''); item.textContent = badge.text; box.append(item); } row.append(box); }
+		return row;
 	}
 
 	function propertyBadges(property) {
@@ -486,17 +511,11 @@ if (bootstrap.status !== 'ready') {
 		return badges;
 	}
 
-	function isBlockEditor(editor) {
-		return editor.collapsible === true
-			|| editor.kind === 'collectionSummary' || editor.kind === 'objectSummary';
-	}
-
 	function renderPropertyEditor(container, editor, groupId, propertyId) {
 		switch (editor.kind) {
 			case 'boolean': {
-				if (!editor.editable) { container.textContent = editor.value === null ? '—' : editor.value ? bootstrap.strings.trueValue : bootstrap.strings.falseValue; return; }
-				const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'property-checkbox'; input.checked = editor.value === true;
-				input.addEventListener('change', () => vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: 'boolean', value: input.checked } }));
+				const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'property-checkbox'; input.checked = editor.value === true; input.disabled = !editor.editable;
+				if (editor.editable) { input.addEventListener('change', () => vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: 'boolean', value: input.checked } })); }
 				container.append(input); return;
 			}
 			case 'decimal':
@@ -574,7 +593,7 @@ if (bootstrap.status !== 'ready') {
 			case 'eulerRotation':
 			case 'quaternion':
 			case 'linearColor': renderComponents(container, editor); return;
-			case 'reference': container.textContent = semanticLabel(editor.label, editor.resolution); return;
+			case 'reference': renderResource(container, semanticLabel(editor.label, editor.resolution)); return;
 			case 'entityTarget': container.textContent = semanticLabel(editor.label, editor.resolution); return;
 			case 'componentTarget': {
 				const label = editor.entityLabel === null || editor.componentLabel === null
@@ -585,6 +604,14 @@ if (bootstrap.status !== 'ready') {
 			case 'objectSummary': container.textContent = editor.count === null ? '—' : bootstrap.strings.fields.replace('{count}', String(editor.count)); return;
 			case 'fallback': container.textContent = editor.value === 'null' ? 'null' : '—'; return;
 		}
+	}
+
+	function renderResource(container, label) {
+		const control = document.createElement('div'); control.className = 'resource-control';
+		const field = document.createElement('div'); field.className = 'resource-field'; field.textContent = label; field.title = label;
+		const action = document.createElement('button'); action.type = 'button'; action.className = 'resource-action'; action.disabled = true; action.textContent = '◎';
+		action.setAttribute('aria-label', bootstrap.strings.chooseResource); action.setAttribute('title', bootstrap.strings.deferred);
+		control.append(field, action); container.append(control);
 	}
 
 	function renderComponents(container, editor) {
@@ -603,36 +630,21 @@ if (bootstrap.status !== 'ready') {
 		return label === null ? '—' : label + (resolution === 'broken' ? ' · ' + bootstrap.strings.broken : '');
 	}
 
-	function updateSearch() {
-		searchResults.replaceChildren();
-		const query = searchInput.value.trim().toLocaleLowerCase();
-		savePresentationState();
-		navigator.hidden = query.length > 0;
-		searchResults.hidden = query.length === 0;
-		if (!query) { return; }
-		const results = bootstrap.searchIndex.filter(result => result.label.toLocaleLowerCase().includes(query));
-		if (!results.length) { const empty = document.createElement('div'); empty.className = 'message'; empty.textContent = bootstrap.strings.noResults; searchResults.append(empty); return; }
-		for (const result of results) {
-			const button = document.createElement('button'); button.type = 'button'; button.className = 'search-result';
-			const primary = document.createElement('span'); primary.className = 'search-primary'; primary.textContent = result.kind === 'property' ? result.groupLabel : result.label; button.append(primary);
-			if (result.kind === 'property') { const context = document.createElement('span'); context.className = 'search-context'; context.textContent = result.label; button.append(context); }
-			button.addEventListener('click', () => selectGroup(result.groupId, result.propertyId));
-			searchResults.append(button);
-		}
+	function componentIcon(group) {
+		const key = ((group.componentType?.id ?? '') + ' ' + group.label).toLocaleLowerCase();
+		if (key.includes('transform')) { return '<svg viewBox="0 0 20 20"><path d="M10 2v16M2 10h16M10 2 8 4m2-2 2 2M18 10l-2-2m2 2-2 2"></path></svg>'; }
+		if (key.includes('mesh') || key.includes('renderer')) { return '<svg viewBox="0 0 20 20"><path d="m10 2 7 4v8l-7 4-7-4V6l7-4Zm-7 4 7 4 7-4m-7 4v8"></path></svg>'; }
+		if (key.includes('collider') || key.includes('collision')) { return '<svg viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"></rect><path d="M6 3v14M14 3v14M3 6h14M3 14h14"></path></svg>'; }
+		if (key.includes('light')) { return '<svg viewBox="0 0 20 20"><circle cx="10" cy="8" r="4"></circle><path d="M8 13h4m-3 3h2M10 1v2M3.6 3.6 5 5m10-1.4L13.6 5M2 9h2m12 0h2"></path></svg>'; }
+		if (key.includes('script')) { return '<svg viewBox="0 0 20 20"><path d="M6 2h6l4 4v12H6V2Zm6 0v4h4M9 10h4m-4 3h4"></path></svg>'; }
+		return '<svg viewBox="0 0 20 20"><path d="m10 2 7 4v8l-7 4-7-4V6l7-4Zm-7 4 7 4 7-4m-7 4v8"></path></svg>';
 	}
-	searchInput.addEventListener('input', updateSearch);
-	searchInput.addEventListener('keydown', event => { if (event.key === 'Escape' && searchInput.value) { searchInput.value = ''; updateSearch(); } });
-	filterButton.addEventListener('click', () => { const open = filterMenu.hidden; filterMenu.hidden = !open; filterButton.setAttribute('aria-expanded', String(open)); });
-	document.addEventListener('click', event => { if (!filterOptions.contains(event.target)) { filterMenu.hidden = true; filterButton.setAttribute('aria-expanded', 'false'); } });
-	document.addEventListener('keydown', event => { if (event.key === 'Escape' && !filterMenu.hidden) { filterMenu.hidden = true; filterButton.setAttribute('aria-expanded', 'false'); filterButton.focus(); } });
 
-	let dragging = false;
-	divider.addEventListener('pointerdown', event => { dragging = true; divider.classList.add('dragging'); divider.setPointerCapture(event.pointerId); });
-	divider.addEventListener('pointermove', event => { if (!dragging) { return; } const bounds = shell.getBoundingClientRect(); const headerHeight = app.querySelector('.header').getBoundingClientRect().height; const available = bounds.height - headerHeight - 5; const size = Math.max(80, Math.min(available - 100, event.clientY - bounds.top - headerHeight)); shell.style.setProperty('--navigator-size', size + 'px'); });
-	divider.addEventListener('pointerup', event => { dragging = false; divider.classList.remove('dragging'); divider.releasePointerCapture(event.pointerId); });
 	window.addEventListener('message', event => {
 		if (event.data?.type === 'focusGroup' && typeof event.data.groupId === 'string' && event.data.groupId !== selectedGroupId) {
-			selectGroup(event.data.groupId, undefined, false);
+			selectGroup(event.data.groupId, false);
+			const card = Array.from(componentStack.querySelectorAll('.component-card')).find(candidate => candidate.dataset.groupId === event.data.groupId);
+			if (card) { card.open = true; card.scrollIntoView({ block: 'nearest' }); }
 			return;
 		}
 		if (event.data?.type === 'prepareForDocumentClose' && Number.isSafeInteger(event.data.requestId)) {
@@ -647,7 +659,9 @@ if (bootstrap.status !== 'ready') {
 			vscode.postMessage({ type: 'prepareForDocumentCloseResult', requestId: event.data.requestId, accepted });
 		}
 	});
-	selectGroup(selectedGroupId, undefined, false);
-	updateSearch();
+	if (selectedGroupId !== entityGroup?.identity) {
+		const selectedCard = Array.from(componentStack.querySelectorAll('.component-card')).find(candidate => candidate.dataset.groupId === selectedGroupId);
+		if (selectedCard) { selectedCard.open = true; }
+	}
 }
 `;

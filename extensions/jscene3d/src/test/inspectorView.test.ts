@@ -5,7 +5,6 @@
 
 import * as assert from 'assert';
 import { inspectorHtml, isInspectorMessage, revealInspector } from '../inspector/inspectorView';
-import { inspectorSearchIndex, inspectorSearchResults } from '../inspector/inspectorViewModel';
 import {
 	InspectorEditorSemanticsDto,
 	InspectorPropertyDto,
@@ -23,29 +22,7 @@ suite('JScene3D Inspector view', () => {
 		assert.deepStrictEqual(commands, ['jscene3d.inspector.focus']);
 	});
 
-	test('searches group and property labels locally in authoritative order', () => {
-		const results = inspectorSearchResults(snapshot(), 'move');
-
-		assert.deepStrictEqual(results, [
-			{ kind: 'group', groupId: 'movement', propertyId: null, label: 'Movement', groupLabel: 'Movement' },
-			{ kind: 'property', groupId: 'movement', propertyId: 'speed', label: 'Move Speed', groupLabel: 'Movement' }
-		]);
-	});
-
-	test('retains stable owning-group and property identities for cross-component navigation', () => {
-		assert.deepStrictEqual(inspectorSearchResults(snapshot(), 'weapon'), [{
-			kind: 'group', groupId: 'weapon-presentation', propertyId: null,
-			label: 'Doom Weapon Presentation', groupLabel: 'Doom Weapon Presentation'
-		}]);
-		assert.deepStrictEqual(inspectorSearchResults(snapshot(), 'duration'), [{
-			kind: 'property', groupId: 'weapon-presentation', propertyId: 'frame-duration',
-			label: 'Frame Duration', groupLabel: 'Doom Weapon Presentation'
-		}]);
-		assert.ok(inspectorSearchIndex(snapshot()).some(result => result.groupId === 'weapon-presentation'
-			&& result.propertyId === 'frame-duration'));
-	});
-
-	test('renders a restrictive CSP and the bounded two-pane Inspector shell', () => {
+	test('renders a restrictive CSP and one vertically scrolling component Inspector', () => {
 		const inspector = snapshot();
 		const html = inspectorHtml('vscode-webview://test', {
 			status: 'ready',
@@ -62,13 +39,16 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /default-src 'none'/);
 		assert.match(html, /style-src 'nonce-[^']+'/);
 		assert.match(html, /script-src 'nonce-[^']+'/);
-		assert.match(html, /navigator-scroll/);
-		assert.match(html, /property-scroll/);
-		assert.match(html, /role=\\?"separator/);
+		assert.match(html, /class="inspector-shell"/);
+		assert.match(html, /class="inspector-scroll"/);
+		assert.match(html, /class="entity-card"/);
+		assert.match(html, /document\.createElement\('details'\); card\.className = 'component-card'/);
+		assert.match(html, /overflow-y: auto/);
+		assert.doesNotMatch(html, /navigator-scroll|property-scroll|role=\\?"separator/);
 		assert.doesNotMatch(html, /onclick=/);
 	});
 
-	test('renders a localized visible search field and distinct accessible filter action', () => {
+	test('renders localized entity chrome and explicit deferred authoring controls', () => {
 		const inspector = snapshot();
 		const html = inspectorHtml('vscode-webview://test', {
 			status: 'ready',
@@ -82,17 +62,31 @@ suite('JScene3D Inspector view', () => {
 			selectedGroupId: 'entity'
 		}, 'en', message => `Localized: ${message}`);
 
-		assert.match(html, /class="search-input" type="search"/);
-		assert.match(html, /class="filter-button"/);
-		assert.match(html, /aria-controls="inspector-search-results"/);
-		assert.match(html, /aria-haspopup="menu"/);
-		assert.match(html, /Localized: Filter components and properties…/);
-		assert.match(html, /Localized: Filter options/);
+		assert.match(html, /class="entity-icon"/);
+		assert.match(html, /class="entity-name" type="text" readonly/);
+		assert.match(html, /class="deferred-checkbox" type="checkbox" disabled/);
+		assert.match(html, /class="deferred-select tag-select" disabled/);
+		assert.match(html, /class="deferred-select layer-select" disabled/);
+		assert.match(html, /class="add-component" type="button" disabled/);
+		assert.match(html, /Localized: Static/);
+		assert.match(html, /Localized: Tag/);
+		assert.match(html, /Localized: Layer/);
+		assert.match(html, /Localized: Add Component/);
+		assert.match(html, /Localized: Not available yet/);
 		assert.match(html, /vscode\.getState\(\)/);
-		assert.match(html, /vscode\.setState\(\{ query: searchInput\.value, collapsedProperties: Array\.from\(collapsedProperties\) \}\)/);
-		assert.match(html, /selectGroup\(result\.groupId, result\.propertyId\)/);
-		assert.doesNotMatch(html, /icon-button|search-popover|⌕/);
+		assert.match(html, /vscode\.setState\(\{ collapsedGroups: Array\.from\(collapsedGroups\) \}\)/);
+		assert.match(html, /snapshot\.groups\.filter\(candidate => candidate\.kind === 'component'\)/);
+		assert.doesNotMatch(html, /search-input|filter-button/);
 		assert.doesNotMatch(html, /inspector\/read/);
+	});
+
+	test('renders a polished no-selection state that mentions both selection surfaces', () => {
+		const html = inspectorHtml('vscode-webview://test', { status: 'empty' }, 'en', translate);
+
+		assert.match(html, /class="message-shell"/);
+		assert.match(html, /"empty":"No entity selected"/);
+		assert.match(html, /Select an entity in the Hierarchy or Scene View to inspect its components\./);
+		assert.match(html, /class="message-icon"/);
 	});
 
 	test('renders exact text-backed scalar editors and posts typed candidates', () => {
@@ -220,7 +214,7 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /Read-only/);
 	});
 
-	test('renders collapsible semantic properties with compact exact components', () => {
+	test('renders typed semantic controls inside collapsible component cards', () => {
 		const base = snapshot();
 		const reference: InspectorPropertyDto = {
 			...base.groups[1].properties[0],
@@ -265,24 +259,19 @@ suite('JScene3D Inspector view', () => {
 		assert.ok(html.includes('"kind":"linearColor","collapsible":true,"unit":null,"components":[{"label":"R","decimal":"1"},{"label":"G","decimal":"0.5"},{"label":"B","decimal":"2"}],"summary":"R 1, G 0.5, B 2"'));
 		assert.ok(html.includes('"propertyEditor":{"kind":"collectionSummary","count":3}'));
 		assert.ok(html.includes('"propertyEditor":{"kind":"reference","label":"Player mesh","resolution":"resolved","revealUri":"file:///project/assets/player.glb"}'));
-		assert.match(html, /\.property-components \{[^}]*display: flex[^}]*flex-wrap: wrap[^}]*\}/);
-		assert.match(html, /\.property-component \{[^}]*display: inline-flex[^}]*flex: 0 1 auto[^}]*\}/);
-		assert.match(html, /\.property-component-value \{[^}]*min-width: 48px[^}]*width: max-content[^}]*max-width: 24ch[^}]*\}/);
-		assert.match(html, /\.property-component-label \{[^}]*color: var\(--vscode-descriptionForeground\)[^}]*font-weight: 400[^}]*\}/);
-		assert.match(html, /\.property-component-value \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
+		assert.match(html, /\.property-components \{[^}]*display: grid[^}]*grid-template-columns: repeat\(auto-fit, minmax\(54px, 1fr\)\)[^}]*\}/);
+		assert.match(html, /\.property-component \{[^}]*display: grid[^}]*grid-template-columns: 13px minmax\(0, 1fr\)[^}]*\}/);
+		assert.match(html, /\.property-component-value \{[^}]*width: 100%[^}]*text-align: right[^}]*\}/);
+		assert.match(html, /\.entity-name, \.property-input, \.deferred-select, \.resource-field, \.property-component-value \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
 		assert.match(html, /label\.className = 'property-component-label'; label\.textContent = component\.label/);
 		assert.match(html, /value\.className = 'property-component-value';\s*value\.textContent = component\.decimal/);
 		assert.match(html, /item\.append\(label, value\)/);
 		assert.match(html, /component\.decimal \+ \(editor\.unit === 'degrees' \? '°' : ''\)/);
 		assert.doesNotMatch(html, /value\.textContent = component\.label/);
-		assert.doesNotMatch(html, /join\('  ·  '\)/);
-		assert.match(html, /property\.propertyEditor\.collapsible === true/);
-		assert.match(html, /document\.createElement\('button'\); disclosure\.type = 'button'/);
-		assert.match(html, /disclosure\.setAttribute\('aria-expanded', String\(expanded\)\)/);
-		assert.match(html, /summary\.hidden = expanded;\s*value\.hidden = !expanded/);
-		assert.match(html, /setExpanded\(!collapsedProperties\.has\(key\), false\)/);
-		assert.match(html, /snapshot\.target\.identity[\s\S]*groupId, propertyId/);
-		assert.match(html, /collapsedProperties: Array\.from\(collapsedProperties\)/);
+		assert.match(html, /card\.open = !collapsedGroups\.has\(key\)/);
+		assert.match(html, /card\.addEventListener\('toggle'/);
+		assert.match(html, /componentIcon\(group\)/);
+		assert.match(html, /renderResource\(container, semanticLabel\(editor\.label, editor\.resolution\)\)/);
 	});
 
 	test('accepts only the closed Inspector webview message shapes', () => {
@@ -344,7 +333,20 @@ function snapshot(): InspectorSnapshotDto {
 		revision: 0, target, title: 'Player', definitionOrigin: 'authored', provenance: 'local', editable: true,
 		groups: [{
 			identity: 'entity', kind: 'entity', label: 'Entity', description: null,
-			componentId: null, componentType: null, metadataStatus: 'available', editable: true, properties: []
+			componentId: null, componentType: null, metadataStatus: 'available', editable: true,
+			properties: [{
+				identity: 'enabled', label: 'Enabled', description: null, valueKind: 'boolean', required: true,
+				constraints: {
+					elementKind: null, exactElementCount: null, acceptedReferenceKinds: [],
+					editor: { semantic: 'default', minimum: null, maximum: null }
+				},
+				state: {
+					authoredValue: { kind: 'boolean', value: true }, defaultValue: null,
+					effectiveValue: { kind: 'boolean', value: true }, origin: 'authored', validity: 'valid',
+					editable: true, modified: false
+				},
+				mutationTarget: { kind: 'entity-enabled', occurrence, entityId: 'entity-a' }
+			}]
 		}, {
 			identity: 'movement', kind: 'component', label: 'Movement', description: null,
 			componentId: 'movement', componentType: { id: 'example/movement', version: 1 },

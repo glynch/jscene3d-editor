@@ -41,7 +41,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const sceneViews = registerSceneViewFeature(service, definitionState, output);
 	const definitions = registerDefinitionFeature(service, projectState, definitionState, sceneViews, output);
 	const inspector = registerInspectorFeature(service, definitionState, definitions, output);
-	const hierarchy = registerHierarchyFeature(definitionState, inspector, output);
+	const hierarchy = registerHierarchyFeature(definitionState, output);
 	const runtimeViews = registerRuntimeViewportFeature(service, projectState, output);
 	const projectViewports = {
 		closeProjectViewports: async (): Promise<void> => {

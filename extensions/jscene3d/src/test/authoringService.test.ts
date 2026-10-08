@@ -29,7 +29,10 @@ suite('JScene3D authoring service lifecycle', () => {
 		const process = new TestAuthoringProcess();
 		process.exitAfterShutdown = true;
 		const service = new AuthoringService(
-			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'fr-CA' }),
+			() => ({
+				javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [],
+				clientLanguage: 'fr-CA', contractIdentity: 'jscene3d-editor-development', buildIdentity: 'test-build'
+			}),
 			new SingleProcessLauncher(process),
 			new TestLogger(),
 			timeouts
@@ -69,7 +72,10 @@ suite('JScene3D authoring service lifecycle', () => {
 		process.exitOnSignal.add('SIGTERM');
 		const launcher = new SingleProcessLauncher(process);
 		const service = new AuthoringService(
-			() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'fr-CA' }),
+			() => ({
+				javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [],
+				clientLanguage: 'fr-CA', contractIdentity: 'jscene3d-editor-development', buildIdentity: 'test-build'
+			}),
 			launcher,
 			new TestLogger(),
 			timeouts
@@ -287,11 +293,14 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 			throw new Error('Expected a numeric request ID');
 		}
 		switch (message.method) {
-			case 'initialize':
-				this.initializationLanguages.push(requiredString(jsonObject(message.params).clientLanguage));
+			case 'initialize': {
+				const initialization = jsonObject(message.params);
+				this.initializationLanguages.push(requiredString(initialization.clientLanguage));
 				if (this.respondToInitialize) {
 					this.respond(id, {
-						protocolVersion: { major: 2, minor: 2 },
+						protocolVersion: { major: 1, minor: 0 },
+						contractIdentity: requiredString(initialization.contractIdentity),
+						buildIdentity: requiredString(initialization.buildIdentity),
 						processKind: 'authoring',
 						serviceVersion: 'test',
 						engineVersion: 'test',
@@ -306,6 +315,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 					this.initializedResolve?.();
 				}
 				break;
+			}
 			case 'project/open':
 				if (this.respondToOpen) {
 					if (this.openErrorCode !== undefined) {
@@ -432,7 +442,10 @@ class TestLogger {
 
 function createService(process: TestAuthoringProcess, logger = new TestLogger()): AuthoringService {
 	return new AuthoringService(
-		() => ({ javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [], clientLanguage: 'en' }),
+		() => ({
+			javaExecutable: 'java', modulePath: 'test-module-path', installedExtensionMetadata: [],
+			clientLanguage: 'en', contractIdentity: 'jscene3d-editor-development', buildIdentity: 'test-build'
+		}),
 		new SingleProcessLauncher(process),
 		logger,
 		timeouts

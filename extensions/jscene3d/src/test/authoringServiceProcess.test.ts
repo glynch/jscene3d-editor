@@ -19,7 +19,9 @@ suite('JScene3D authoring service process', () => {
 			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
 			modulePath: modulePath ?? '',
 			installedExtensionMetadata: [],
-			clientLanguage: 'fr'
+			clientLanguage: 'fr',
+			contractIdentity: process.env.JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY ?? 'jscene3d-editor-development',
+			buildIdentity: process.env.JSCENE3D_DEVELOPMENT_BUILD_IDENTITY ?? 'unverified-source-build'
 		}), new NodeAuthoringProcessLauncher(), logger);
 		try {
 			const validDescriptor = fixture('valid', 'small-authoring-project.j3d');
@@ -85,7 +87,9 @@ suite('JScene3D authoring service process', () => {
 			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
 			modulePath: modulePath ?? '',
 			installedExtensionMetadata: [installedExtensionFixture()],
-			clientLanguage: 'en'
+			clientLanguage: 'en',
+			contractIdentity: process.env.JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY ?? 'jscene3d-editor-development',
+			buildIdentity: process.env.JSCENE3D_DEVELOPMENT_BUILD_IDENTITY ?? 'unverified-source-build'
 		}), new NodeAuthoringProcessLauncher(), new TestLogger());
 		try {
 			const opened = await service.openProject(fixture('installed', 'installed-project.j3d'));

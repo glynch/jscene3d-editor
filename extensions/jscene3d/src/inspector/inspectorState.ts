@@ -31,7 +31,7 @@ export type InspectorStateSnapshot =
 		readonly inspector: InspectorSnapshotDto; readonly selectedGroupId: string;
 	};
 
-/** Owns Inspector reads and focused-group state while Hierarchy remains selection authority. */
+/** Owns Inspector reads and focused-group state while authored-definition state owns selection. */
 export class InspectorState {
 	private readonly listeners = new Set<() => void>();
 	private readonly definitionSubscription: { dispose(): void };

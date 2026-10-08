@@ -12,21 +12,18 @@ canonical_electron_executable="$development_projects_root/jscene3d-electron/src/
 readonly canonical_electron_executable
 # shellcheck source=scripts/jscene3d/development-editor-identity.sh
 source "$script_dir/development-editor-identity.sh"
+# shellcheck source=scripts/jscene3d/development-runtimes.sh
+source "$script_dir/development-runtimes.sh"
 authoring_runtime_version_file="$script_dir/authoring-runtime.version"
 readonly authoring_runtime_version_file
 renderer_runtime_version_file="$script_dir/renderer-runtime.version"
 readonly renderer_runtime_version_file
-runtime_group_path="io/github/glynch"
-readonly runtime_group_path
-runtime_artifact="jscene3d-editor-authoring-runtime"
-readonly runtime_artifact
 renderer_runtime_artifact="jscene3d-editor-renderer-runtime"
 readonly renderer_runtime_artifact
 
 fresh_profile=false
 created_fresh_profile=false
 check_only=false
-use_authoring_environment=false
 profile=""
 launch_arguments=()
 
@@ -42,27 +39,19 @@ Options:
   --fresh-profile       Create a new isolated profile under the system temporary directory.
   --profile <directory> Create or reuse a specific isolated profile, including for hot-exit tests.
   --check               Validate and print the launch configuration without opening the editor.
-  --use-authoring-environment
-                        Use the authoring module-path and metadata environment overrides.
   -h, --help            Show this help.
 
 Environment overrides:
-  JSCENE3D_MAVEN_LOCAL_REPOSITORY
-  JSCENE3D_AUTHORING_SERVICE_MODULE_PATH (with --use-authoring-environment)
-  JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH (with --use-authoring-environment)
   JSCENE3D_JAVA_EXECUTABLE
   JSCENE3D_ELECTRON_EXECUTABLE
-  JSCENE3D_RENDERER_RUNTIME_ARCHIVE
-  JSCENE3D_RENDERER_RUNTIME_DIRECTORY
   JSCENE3D_RENDERER_JAVA_EXECUTABLE
   JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH
 
-By default, the launcher resolves the versioned JScene3D authoring runtime from
-the default local repository at $HOME/.m2/repository. It resolves the renderer
-runtime independently from its installed runtime ZIP. Native viewport
-development requires a local downstream binary selected with
-JSCENE3D_ELECTRON_EXECUTABLE. This script does not compile sources, invoke Maven,
-or run tests.
+The launcher uses the sibling threejs-java checkout as the sole development
+runtime authority. It reuses source-identity-matched target archives and runs a
+focused Maven verify automatically only when they are missing or stale. Native
+viewport development requires the local downstream binary selected with
+JSCENE3D_ELECTRON_EXECUTABLE.
 EOF
 }
 
@@ -84,10 +73,6 @@ while (($# > 0)); do
 			;;
 		--check)
 			check_only=true
-			shift
-			;;
-		--use-authoring-environment)
-			use_authoring_environment=true
 			shift
 			;;
 		-h | --help)
@@ -136,97 +121,71 @@ renderer_runtime_version="$(tr -d '\r\n' <"$renderer_runtime_version_file")"
 readonly renderer_runtime_version
 [[ "$renderer_runtime_version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] \
 	|| fail "invalid renderer runtime version in $renderer_runtime_version_file"
+[[ "$authoring_runtime_version" == "$renderer_runtime_version" ]] \
+	|| fail "authoring and renderer runtime versions must match: authoring=$authoring_runtime_version renderer=$renderer_runtime_version"
 
-maven_repository="${JSCENE3D_MAVEN_LOCAL_REPOSITORY:-}"
-if [[ -z "$maven_repository" ]]; then
-	[[ -n "${HOME:-}" ]] \
-		|| fail "HOME is not set; set JSCENE3D_MAVEN_LOCAL_REPOSITORY to the local repository containing the installed JScene3D runtimes."
-	maven_repository="$HOME/.m2/repository"
+java_repository="$development_projects_root/threejs-java"
+readonly java_repository
+[[ -x "$java_repository/mvnw" ]] \
+	|| fail "the sibling JScene3D Java checkout is missing or incomplete: $java_repository"
+development_build_identity="$(jscene3d_development_source_identity "$java_repository")" \
+	|| fail "could not identify the JScene3D Java development sources."
+readonly development_build_identity
+jscene3d_prepare_development_runtimes \
+	"$java_repository" "$authoring_runtime_version" "$development_build_identity" \
+	|| fail "could not prepare verified JScene3D Java development runtimes."
+
+if [[ -n "${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}" || -n "${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}" ]]; then
+	echo "Ignoring inherited authoring runtime overrides; the verified Java target archive is authoritative." >&2
 fi
-[[ -d "$maven_repository" ]] || fail "Maven local repository does not exist: $maven_repository"
-maven_repository="$(cd "$maven_repository" && pwd -P)"
 
-module_path_source=""
+runtime_archive="$JSCENE3D_PREPARED_AUTHORING_RUNTIME_ARCHIVE"
+module_path_source="$runtime_archive"
+metadata_path_source="$runtime_archive"
 module_path=""
-metadata_path_source=""
 extension_metadata_path=""
-runtime_archive=""
+command -v unzip >/dev/null 2>&1 || fail "unzip is required to read the verified authoring runtime."
+command -v shasum >/dev/null 2>&1 || fail "shasum is required to identify the verified authoring runtime."
 
-if [[ "$use_authoring_environment" == true ]]; then
-	module_path="${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}"
-	extension_metadata_path="${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}"
-	[[ -n "$module_path" && -n "$extension_metadata_path" ]] \
-		|| fail "--use-authoring-environment requires both JSCENE3D_AUTHORING_SERVICE_MODULE_PATH and JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH."
-	module_path_source="JSCENE3D_AUTHORING_SERVICE_MODULE_PATH"
-	metadata_path_source="JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH"
-elif [[ -n "${JSCENE3D_AUTHORING_SERVICE_MODULE_PATH:-}" || -n "${JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH:-}" ]]; then
-	echo "Ignoring inherited authoring runtime overrides; pass --use-authoring-environment to use them explicitly." >&2
-fi
-
-if [[ -z "$module_path" || -z "$extension_metadata_path" ]]; then
-	runtime_archive="$maven_repository/$runtime_group_path/$runtime_artifact/$authoring_runtime_version/$runtime_artifact-$authoring_runtime_version-runtime.zip"
-	if [[ ! -f "$runtime_archive" ]]; then
-		fail "installed authoring runtime $runtime_artifact:$authoring_runtime_version is missing at $runtime_archive. From the JScene3D Java repository, run: ./mvnw install -pl $runtime_artifact -am"
+runtime_digest="$(shasum -a 256 "$runtime_archive" | awk '{print $1}')"
+readonly runtime_digest
+runtime_parent="$profile/jscene3d-authoring-runtime"
+runtime_directory="$runtime_parent/$authoring_runtime_version-$runtime_digest"
+mkdir -p "$runtime_parent"
+if [[ ! -f "$runtime_directory/.complete" ]]; then
+	runtime_staging="$(mktemp -d "$runtime_parent/.extract.XXXXXX")"
+	if ! unzip -q "$runtime_archive" -d "$runtime_staging"; then
+		rm -rf -- "$runtime_staging"
+		fail "could not extract verified authoring runtime: $runtime_archive"
 	fi
-	command -v unzip >/dev/null 2>&1 || fail "unzip is required to read the installed authoring runtime."
-	command -v shasum >/dev/null 2>&1 || fail "shasum is required to identify the installed authoring runtime."
-
-	runtime_digest="$(shasum -a 256 "$runtime_archive" | awk '{print $1}')"
-	readonly runtime_digest
-	runtime_parent="$profile/jscene3d-authoring-runtime"
-	runtime_directory="$runtime_parent/$authoring_runtime_version-$runtime_digest"
-	mkdir -p "$runtime_parent"
-	if [[ ! -f "$runtime_directory/.complete" ]]; then
-		runtime_staging="$(mktemp -d "$runtime_parent/.extract.XXXXXX")"
-		if ! unzip -q "$runtime_archive" -d "$runtime_staging"; then
-			rm -rf -- "$runtime_staging"
-			fail "could not extract installed authoring runtime: $runtime_archive"
-		fi
-		[[ -d "$runtime_staging/lib" ]] || fail "installed authoring runtime has no lib directory: $runtime_archive"
-		[[ -d "$runtime_staging/metadata" ]] || fail "installed authoring runtime has no metadata directory: $runtime_archive"
-		touch "$runtime_staging/.complete"
-		if [[ -d "$runtime_directory" ]]; then
-			rm -rf -- "$runtime_staging"
-		else
-			mv "$runtime_staging" "$runtime_directory"
-		fi
-	fi
-
-	shopt -s nullglob
-	runtime_module_jars=("$runtime_directory/lib/"*.jar)
-	runtime_metadata_jars=("$runtime_directory/metadata/"*.jar)
-	shopt -u nullglob
-	((${#runtime_module_jars[@]} > 0)) \
-		|| fail "installed authoring runtime contains no module-path JARs: $runtime_archive"
-	((${#runtime_metadata_jars[@]} > 0)) \
-		|| fail "installed authoring runtime contains no extension metadata JARs: $runtime_archive"
-
-	if [[ -z "$module_path" ]]; then
-		module_path="$(IFS=:; echo "${runtime_module_jars[*]}")"
-		module_path_source="$runtime_archive"
-	fi
-	if [[ -z "$extension_metadata_path" ]]; then
-		extension_metadata_path="$runtime_directory/metadata"
-		metadata_path_source="$runtime_archive"
-	fi
-fi
-
-renderer_runtime_archive="${JSCENE3D_RENDERER_RUNTIME_ARCHIVE:-}"
-renderer_runtime_directory="${JSCENE3D_RENDERER_RUNTIME_DIRECTORY:-}"
-renderer_runtime_source="JSCENE3D_RENDERER_RUNTIME_DIRECTORY"
-if [[ -n "$renderer_runtime_archive" && -n "$renderer_runtime_directory" ]]; then
-	fail "use either JSCENE3D_RENDERER_RUNTIME_ARCHIVE or JSCENE3D_RENDERER_RUNTIME_DIRECTORY, not both."
-fi
-if [[ -z "$renderer_runtime_directory" ]]; then
-	if [[ -z "$renderer_runtime_archive" ]]; then
-		renderer_runtime_archive="$maven_repository/$runtime_group_path/$renderer_runtime_artifact/$renderer_runtime_version/$renderer_runtime_artifact-$renderer_runtime_version-runtime.zip"
-		renderer_runtime_source="$renderer_runtime_archive"
+	[[ -d "$runtime_staging/lib" ]] || fail "verified authoring runtime has no lib directory: $runtime_archive"
+	[[ -d "$runtime_staging/metadata" ]] || fail "verified authoring runtime has no metadata directory: $runtime_archive"
+	touch "$runtime_staging/.complete"
+	if [[ -d "$runtime_directory" ]]; then
+		rm -rf -- "$runtime_staging"
 	else
-		[[ "$renderer_runtime_archive" = /* ]] || fail "JSCENE3D_RENDERER_RUNTIME_ARCHIVE must be an absolute path."
-		renderer_runtime_source="JSCENE3D_RENDERER_RUNTIME_ARCHIVE"
+		mv "$runtime_staging" "$runtime_directory"
 	fi
+fi
+
+shopt -s nullglob
+runtime_module_jars=("$runtime_directory/lib/"*.jar)
+runtime_metadata_jars=("$runtime_directory/metadata/"*.jar)
+shopt -u nullglob
+((${#runtime_module_jars[@]} > 0)) \
+	|| fail "verified authoring runtime contains no module-path JARs: $runtime_archive"
+((${#runtime_metadata_jars[@]} > 0)) \
+	|| fail "verified authoring runtime contains no extension metadata JARs: $runtime_archive"
+
+module_path="$(IFS=:; echo "${runtime_module_jars[*]}")"
+extension_metadata_path="$runtime_directory/metadata"
+
+renderer_runtime_archive="$JSCENE3D_PREPARED_RENDERER_RUNTIME_ARCHIVE"
+renderer_runtime_directory=""
+renderer_runtime_source="$renderer_runtime_archive"
+if [[ -z "$renderer_runtime_directory" ]]; then
 	[[ -f "$renderer_runtime_archive" ]] \
-		|| fail "renderer runtime $renderer_runtime_artifact:$renderer_runtime_version is missing at $renderer_runtime_archive. Install the packaged runtime or set JSCENE3D_RENDERER_RUNTIME_ARCHIVE."
+		|| fail "verified renderer runtime $renderer_runtime_artifact:$renderer_runtime_version is missing at $renderer_runtime_archive."
 	command -v unzip >/dev/null 2>&1 || fail "unzip is required to read the renderer runtime."
 	command -v shasum >/dev/null 2>&1 || fail "shasum is required to identify the renderer runtime."
 	renderer_runtime_digest="$(shasum -a 256 "$renderer_runtime_archive" | awk '{print $1}')"
@@ -248,8 +207,6 @@ if [[ -z "$renderer_runtime_directory" ]]; then
 			mv "$renderer_runtime_staging" "$renderer_runtime_directory"
 		fi
 	fi
-else
-	[[ "$renderer_runtime_directory" = /* ]] || fail "JSCENE3D_RENDERER_RUNTIME_DIRECTORY must be an absolute path."
 fi
 
 [[ -d "$renderer_runtime_directory/lib" ]] || fail "renderer runtime lib directory does not exist: $renderer_runtime_directory/lib"
@@ -297,6 +254,8 @@ done
 
 readonly extension_entrypoint="$repository_root/extensions/jscene3d/out/extension.js"
 [[ -f "$extension_entrypoint" ]] || fail "compiled JScene3D extension not found: $extension_entrypoint"
+jscene3d_validate_code_oss_outputs "$repository_root" \
+	|| fail "the compiled Code OSS/JScene3D source output is not current."
 
 if [[ "$OSTYPE" == darwin* ]]; then
 	[[ -n "${JSCENE3D_ELECTRON_EXECUTABLE:-}" ]] \
@@ -309,11 +268,17 @@ if [[ "$OSTYPE" == darwin* ]]; then
 		|| fail "$identity_diagnostic"
 	application_bundle="$(jscene3d_macos_app_bundle_for_executable "$source_binary")"
 	readonly application_bundle
+	framework_binary="$application_bundle/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework"
+	electron_repository="$development_projects_root/jscene3d-electron/src/electron"
+	jscene3d_validate_electron_output "$electron_repository" "$framework_binary" \
+		|| fail "the JScene3D Electron development build is not current."
 fi
 
 echo "JScene3D source launch configuration"
 echo "  Source repository: $repository_root"
 echo "  Authoring runtime version: $authoring_runtime_version"
+echo "  Development contract: $JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY"
+echo "  Development build:    $development_build_identity"
 if [[ -n "$runtime_archive" ]]; then
 	echo "  Runtime archive:   $runtime_archive"
 fi
@@ -339,7 +304,6 @@ restart_command="$(jscene3d_development_editor_restart_command \
 	"$source_binary" \
 	"$repository_root/scripts/jscene3d/launch-source-editor.sh" \
 	"$profile" \
-	"$use_authoring_environment" \
 	"${launch_arguments[@]}")"
 readonly restart_command
 echo "  Restart command:    $restart_command"
@@ -359,6 +323,8 @@ exec env -u ELECTRON_RUN_AS_NODE \
 	JSCENE3D_JAVA_EXECUTABLE="$java_executable" \
 	JSCENE3D_RENDERER_RUNTIME_DIRECTORY="$renderer_runtime_directory" \
 	JSCENE3D_RENDERER_JAVA_EXECUTABLE="$renderer_java_executable" \
+	JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY="$JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY" \
+	JSCENE3D_DEVELOPMENT_BUILD_IDENTITY="$development_build_identity" \
 	JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH="$project_runtime_artifact_path" \
 	VSCODE_SKIP_PRELAUNCH=1 \
 	"$repository_root/scripts/code.sh" \

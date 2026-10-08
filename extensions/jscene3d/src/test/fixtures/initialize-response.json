@@ -3,7 +3,9 @@
 	"id": 1,
 	"connectionGeneration": "connection-1",
 	"result": {
-		"protocolVersion": { "major": 2, "minor": 2 },
+		"protocolVersion": { "major": 1, "minor": 0 },
+		"contractIdentity": "jscene3d-editor-development",
+		"buildIdentity": "test-build",
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",

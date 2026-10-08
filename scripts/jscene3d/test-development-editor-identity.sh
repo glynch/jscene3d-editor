@@ -126,11 +126,29 @@ expect_reject "missing native renderer API" "$missing_api_bundle/Contents/MacOS/
 
 expect_reject "missing executable" "$fixture_root/missing/Electron.app/Contents/MacOS/Electron" "missing or not executable"
 
+source_file="$fixture_root/source.ts"
+output_file="$fixture_root/output.js"
+printf 'source\n' >"$source_file"
+printf 'output\n' >"$output_file"
+touch -t 202601010000 "$source_file"
+touch -t 202601010001 "$output_file"
+jscene3d_require_current_output "$source_file" "$output_file" 'compile command'
+passed=$((passed + 1))
+touch -t 202601010002 "$source_file"
+if diagnostic="$(jscene3d_require_current_output "$source_file" "$output_file" 'compile command' 2>&1)"; then
+	echo 'FAIL: a stale compiled development output was accepted' >&2
+	exit 1
+fi
+if [[ "$diagnostic" != *'stale JScene3D development output'* || "$diagnostic" != *'compile command'* ]]; then
+	echo "FAIL: stale compiled-output diagnostic was unclear: $diagnostic" >&2
+	exit 1
+fi
+passed=$((passed + 1))
+
 restart_command="$(jscene3d_development_editor_restart_command \
 	"$accepted_bundle/Contents/MacOS/Electron" \
 	"/repository/scripts/jscene3d/launch-source-editor.sh" \
 	"$fixture_root/profile with spaces" \
-	false \
 	--use-mock-keychain)"
 if [[ "$restart_command" != *"JSCENE3D_ELECTRON_EXECUTABLE="* \
 	|| "$restart_command" != *"/repository/scripts/jscene3d/launch-source-editor.sh"* \

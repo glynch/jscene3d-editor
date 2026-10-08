@@ -49,6 +49,8 @@ export interface AuthoringLaunchConfiguration {
 	readonly installedExtensionMetadata: readonly string[];
 	readonly runtimeArtifacts?: readonly string[];
 	readonly clientLanguage: string;
+	readonly contractIdentity: string;
+	readonly buildIdentity: string;
 }
 
 /** Child-process surface owned by the authoring-service supervisor. */
@@ -374,7 +376,10 @@ export class AuthoringService implements Disposable {
 			const client = new AuthoringProtocolClient(new JsonRpcClient(transport));
 			this.client = client;
 			this.clientFailureSubscription = client.onDidFail(this.acceptConnectionFailure);
-			const initialization = await client.initialize(configuration.clientLanguage);
+			const initialization = await client.initialize(
+				configuration.clientLanguage,
+				configuration.contractIdentity,
+				configuration.buildIdentity);
 			this.validateInitialization(initialization);
 			this.initialized = true;
 			if (!this.disposed) {

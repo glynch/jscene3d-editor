@@ -152,11 +152,19 @@ export class JScene3DViewportController extends Disposable {
 	private async createLaunchRequest(launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DRendererLaunchRequest> {
 		const javaExecutable = process.env.JSCENE3D_RENDERER_JAVA_EXECUTABLE;
 		const runtimeDirectory = process.env.JSCENE3D_RENDERER_RUNTIME_DIRECTORY;
+		const contractIdentity = process.env.JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY;
+		const buildIdentity = process.env.JSCENE3D_DEVELOPMENT_BUILD_IDENTITY;
 		if (!javaExecutable || !isAbsolute(javaExecutable) || !(await this.isFile(javaExecutable))) {
 			throw new Error('JSCENE3D_RENDERER_JAVA_EXECUTABLE must identify an absolute Java executable');
 		}
 		if (!runtimeDirectory || !isAbsolute(runtimeDirectory) || !(await this.isDirectory(runtimeDirectory))) {
 			throw new Error('JSCENE3D_RENDERER_RUNTIME_DIRECTORY must identify an extracted renderer runtime');
+		}
+		if (!contractIdentity || contractIdentity.trim() !== contractIdentity) {
+			throw new Error('JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY must identify the verified Java contract');
+		}
+		if (!buildIdentity || buildIdentity.trim() !== buildIdentity) {
+			throw new Error('JSCENE3D_DEVELOPMENT_BUILD_IDENTITY must identify the verified Java runtime build');
 		}
 		const libraryDirectory = join(runtimeDirectory, 'lib');
 		const nativeLibraryDirectory = join(runtimeDirectory, 'native');
@@ -193,7 +201,9 @@ export class JScene3DViewportController extends Disposable {
 			classPath,
 			mainClass: 'io.github.glynch.jscene3d.editor.renderer.process.EditorRendererMain',
 			rendererArguments: [
-				'--protocol-version=1.2',
+				'--protocol-version=1.0',
+				`--contract-identity=${contractIdentity}`,
+				`--build-identity=${buildIdentity}`,
 				...(launch.kind === 'scene' ? ['--scene-view'] : []),
 				`--project-root=${launch.projectRoot}`,
 				`--published-content-root=${launch.publishedContentRoot}`,

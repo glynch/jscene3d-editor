@@ -8,6 +8,7 @@ import { DefinitionMutationOutcome } from '../definition/authoredDefinitionLifec
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { DefinitionMutationDto, InspectorMutationTargetDto } from '../protocol/authoringProtocol';
 import { InspectorReader, InspectorState } from './inspectorState';
+import { InspectorSelectionReveal } from './inspectorSelectionReveal';
 import { inspectorViewId, InspectorViewProvider, revealInspector } from './inspectorView';
 
 /** Definition mutation boundary consumed by Inspector registration. */
@@ -19,7 +20,7 @@ export interface InspectorDefinitionEditor {
 	): Promise<DefinitionMutationOutcome>;
 }
 
-/** Inspector capabilities consumed by Project close and Hierarchy selection. */
+/** Inspector capabilities consumed by Project close and supporting editor features. */
 export interface RegisteredInspectorFeature extends vscode.Disposable {
 	prepareForDocumentClose(): Promise<boolean>;
 	reveal(): Promise<void>;
@@ -39,6 +40,7 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 	private readonly state: InspectorState;
 	private readonly provider: InspectorViewProvider;
 	private readonly registration: vscode.Disposable;
+	private readonly selectionReveal: InspectorSelectionReveal;
 	private disposed = false;
 
 	constructor(
@@ -71,6 +73,12 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 			}
 		);
 		this.registration = vscode.window.registerWebviewViewProvider(inspectorViewId, this.provider);
+		this.selectionReveal = new InspectorSelectionReveal(
+			definitions,
+			() => this.provider.visible,
+			() => revealInspector(command => vscode.commands.executeCommand(command)),
+			error => this.logger.appendLine(`Failed to reveal JScene3D Inspector: ${errorMessage(error)}`)
+		);
 	}
 
 	prepareForDocumentClose(): Promise<boolean> {
@@ -90,6 +98,7 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 			return;
 		}
 		this.disposed = true;
+		this.selectionReveal.dispose();
 		this.registration.dispose();
 		this.provider.dispose();
 		this.state.dispose();

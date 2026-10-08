@@ -10,6 +10,8 @@ import { AuthoringLaunchConfiguration } from './authoringService';
 /** Resolves the isolated authoring-service launch configuration from environment and settings. */
 export function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
 	const configuration = vscode.workspace.getConfiguration('jscene3d.authoring');
+	const contractIdentity = requiredEnvironmentIdentity('JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY');
+	const buildIdentity = requiredEnvironmentIdentity('JSCENE3D_DEVELOPMENT_BUILD_IDENTITY');
 	return {
 		javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE?.trim()
 			|| configuration.get<string>('javaExecutable', 'java'),
@@ -19,8 +21,19 @@ export function authoringLaunchConfiguration(): AuthoringLaunchConfiguration {
 		runtimeArtifacts: configuredPathList(
 			process.env.JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH,
 			configuration.get<readonly string[]>('runtimeArtifacts', [])),
-		clientLanguage: vscode.env.language
+		clientLanguage: vscode.env.language,
+		contractIdentity,
+		buildIdentity
 	};
+}
+
+/** Requires a launch-time identity established by the source launcher. */
+function requiredEnvironmentIdentity(name: string): string {
+	const value = process.env[name];
+	if (value === undefined || value.length === 0 || value.trim() !== value) {
+		throw new Error(`${name} must be supplied by the JScene3D source launcher`);
+	}
+	return value;
 }
 
 /** Resolves ordered descriptor-only extension artifacts independently of the JPMS module path. */

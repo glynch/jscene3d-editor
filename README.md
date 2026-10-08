@@ -123,8 +123,8 @@ the repositories.
 - Editable authored-document behavior is being integrated and manually
   validated.
 - Project creation is not implemented.
-- The source launcher expects the versioned JScene3D authoring runtime to be
-  installed in the local Maven repository; it does not build Java artifacts.
+- The source launcher prepares source-identity-matched Java development
+  runtimes automatically; it never resolves them from the local Maven repository.
 - There is no packaged standalone JScene3D Editor release.
 
 ## Building and running from source
@@ -144,23 +144,15 @@ These commands install the Code OSS dependencies, compile the workbench and
 built-in JScene3D extension, and download and prepare the source Electron
 application under `.build/electron`.
 
-The editor consumes a separately produced JScene3D Java authoring runtime. For
-the current `0.1.0-SNAPSHOT` development version, install that runtime from a
-checkout of the separate [JScene3D repository](https://github.com/glynch/jscene3d)
-with:
+The editor consumes verified JScene3D Java authoring and renderer runtimes from
+the sibling `threejs-java` source checkout. The source launcher computes a
+source identity, reuses matching runtime ZIPs under each runtime module's
+`target/` directory, and runs a focused Maven `verify` automatically only when
+those artifacts are missing or stale. Installing snapshot runtimes into
+`~/.m2` is neither required nor used by the development launcher.
 
-```bash
-./mvnw install -pl jscene3d-editor-authoring-runtime -am
-```
-
-This producer step installs
-`jscene3d-editor-authoring-runtime-<version>-runtime.zip` in the local artifact
-repository. The editor launcher consumes that installed archive; it does not
-invoke Maven. The Java source checkout does not need to be adjacent to this
-repository, or remain present after the artifact has been installed.
-
-Once the source application, compiled extension, suitable JDK, and installed
-authoring runtime are available, verify the complete launch configuration
+Once the source application, compiled extension, and suitable JDK are available,
+verify the complete launch configuration
 without opening the GUI:
 
 ```bash
@@ -193,34 +185,20 @@ descriptors. A process or application looking for the legacy `jscene3d.json`
 workflow is the wrong product: stop that acceptance run and diagnose product
 identity rather than rebuilding the current Java authoring runtime.
 
-The [source launcher](scripts/jscene3d/launch-source-editor.sh) resolves the
-explicit runtime version in `scripts/jscene3d/authoring-runtime.version` from
-the following location:
+The [source launcher](scripts/jscene3d/launch-source-editor.sh) is the authority
+for development runtime preparation. It validates protocol `1.0`, the stable
+development contract identity, and one source-derived build identity shared by
+both runtime archives before launching. This environment variable provides the
+remaining supported Java executable override:
 
 ```text
-default: $HOME/.m2/repository
-override: JSCENE3D_MAVEN_LOCAL_REPOSITORY
-```
-
-This is an artifact-storage convention and does not make Maven a launcher
-dependency. These environment variables provide advanced overrides:
-
-```text
-JSCENE3D_MAVEN_LOCAL_REPOSITORY
-JSCENE3D_AUTHORING_SERVICE_MODULE_PATH
-JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH
 JSCENE3D_JAVA_EXECUTABLE
 ```
 
-The current snapshot runtime must be installed locally. A future published
-runtime artifact can remove the need for developers to build the Java
-repository themselves; it is not currently available from Maven Central.
-
 Native viewport development additionally requires the packaged
 `jscene3d-editor-renderer-runtime` ZIP and the JScene3D Electron downstream.
-The launcher resolves their installed defaults independently, or accepts
-`JSCENE3D_RENDERER_RUNTIME_ARCHIVE`, `JSCENE3D_RENDERER_RUNTIME_DIRECTORY`,
-and `JSCENE3D_RENDERER_JAVA_EXECUTABLE` overrides. Select the downstream
+The launcher uses the renderer ZIP from the same verified Java source build and
+accepts `JSCENE3D_RENDERER_JAVA_EXECUTABLE` as the renderer-Java override. Select the downstream
 executable explicitly with `JSCENE3D_ELECTRON_EXECUTABLE`; the standard source
 Electron under `.build/electron` does not contain the native renderer API. The
 launcher requires the exact sibling-workspace executable shown above and

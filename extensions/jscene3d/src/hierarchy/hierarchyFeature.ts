@@ -8,23 +8,14 @@ import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 import { HierarchyViewProvider } from './hierarchyView';
 import { hierarchyViewId } from './hierarchyViewModel';
 
-/** Inspector reveal operation triggered by a semantic Hierarchy selection. */
-export interface HierarchyInspector {
-	reveal(): Promise<void>;
-}
-
 /** Registers the native Hierarchy tree, restoration, and semantic selection behavior. */
 export function registerHierarchyFeature(
 	definitions: AuthoredDefinitionState,
-	inspector: HierarchyInspector,
 	logger: { appendLine(message: string): void }
 ): vscode.Disposable {
 	const provider = new HierarchyViewProvider(
 		definitions,
-		selected => {
-			definitions.select(selected);
-			void inspector.reveal();
-		},
+		selected => definitions.select(selected),
 		() => definitions.clearSelection(),
 		() => void vscode.window.showInformationMessage(vscode.l10n.t('Add Entity is not available yet.'))
 	);
