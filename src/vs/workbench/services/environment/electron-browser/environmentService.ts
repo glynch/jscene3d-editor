@@ -58,15 +58,17 @@ export interface INativeWorkbenchEnvironmentService extends IBrowserWorkbenchEnv
 	readonly filesToWait?: IPathsToWaitFor;
 }
 
-/** Maps optional product layout defaults to the existing workbench construction input. */
-export function getNativeWorkbenchConstructionOptions(productConfiguration: Pick<IProductConfiguration, 'defaultLayout'>): IWorkbenchConstructionOptions | undefined {
+/** Maps optional product layout and configuration defaults to the existing workbench construction input. */
+export function getNativeWorkbenchConstructionOptions(productConfiguration: Pick<IProductConfiguration, 'defaultLayout' | 'configurationDefaults'>): IWorkbenchConstructionOptions | undefined {
 	const defaultLayout = productConfiguration.defaultLayout;
-	if (!defaultLayout) {
+	const configurationDefaults = productConfiguration.configurationDefaults;
+	if (!defaultLayout && !configurationDefaults) {
 		return undefined;
 	}
 
 	return {
-		defaultLayout: {
+		...(configurationDefaults ? { configurationDefaults } : {}),
+		...(defaultLayout ? { defaultLayout: {
 			views: defaultLayout.views?.map(view => ({ id: view.id })),
 			...(defaultLayout.editors ? {
 				editors: defaultLayout.editors.map(editor => ({
@@ -76,7 +78,7 @@ export function getNativeWorkbenchConstructionOptions(productConfiguration: Pick
 					...(editor.openOnlyIfExists !== undefined ? { openOnlyIfExists: editor.openOnlyIfExists } : {})
 				}))
 			} : {})
-		}
+		} } : {})
 	};
 }
 

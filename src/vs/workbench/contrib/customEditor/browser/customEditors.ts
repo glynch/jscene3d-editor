@@ -23,6 +23,7 @@ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uri
 import { DEFAULT_EDITOR_ASSOCIATION, EditorExtensions, GroupIdentifier, IEditorFactoryRegistry, IResourceDiffEditorInput } from '../../../common/editor.js';
 import { DiffEditorInput } from '../../../common/editor/diffEditorInput.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
+import { SideBySideEditorInput } from '../../../common/editor/sideBySideEditorInput.js';
 import { ActiveCustomEditorDiffCanToggleLayoutContext, ActiveCustomEditorTextDiffContext } from '../../../common/contextkeys.js';
 import { CONTEXT_ACTIVE_CUSTOM_EDITOR_ID, CONTEXT_FOCUSED_CUSTOM_EDITOR_IS_EDITABLE, CustomEditorCapabilities, CustomEditorDiffEditorLayout, CustomEditorInfo, CustomEditorInfoCollection, ICustomEditorModelManager, ICustomEditorService } from '../common/customEditor.js';
 import { CustomEditorModelManager } from '../common/customEditorModelManager.js';
@@ -159,6 +160,9 @@ export class CustomEditorService extends Disposable implements ICustomEditorServ
 		}
 		if (activeEditor instanceof DiffEditorInput && activeEditor.modified instanceof CustomEditorSideBySideDiffInput) {
 			return activeEditor.modified;
+		}
+		if (activeEditor instanceof SideBySideEditorInput && activeEditor.primary instanceof CustomEditorInput) {
+			return activeEditor.primary;
 		}
 		return undefined;
 	}
@@ -377,7 +381,8 @@ export class CustomEditorService extends Disposable implements ICustomEditorServ
 			return diffInfo.viewType;
 		}
 
-		return input instanceof CustomEditorInput && input.resource ? input.viewType : '';
+		const customEditor = this.getNestedCustomEditorInput(input);
+		return customEditor?.resource ? customEditor.viewType : '';
 	}
 
 	private getActiveCustomEditorDiffCanToggleLayout(group: IEditorGroup): boolean {
@@ -393,12 +398,22 @@ export class CustomEditorService extends Disposable implements ICustomEditorServ
 
 	private getCustomEditorIsEditable(group: IEditorGroup): boolean {
 		const activeEditorPane = group.activeEditorPane;
-		const resource = activeEditorPane?.input?.resource;
+		const customEditor = this.getNestedCustomEditorInput(activeEditorPane?.input);
+		const resource = customEditor?.resource;
 		if (!resource) {
 			return false;
 		}
 
-		return activeEditorPane?.input instanceof CustomEditorInput;
+		return customEditor !== undefined;
+	}
+
+	private getNestedCustomEditorInput(input: EditorInput | undefined): CustomEditorInput | undefined {
+		if (input instanceof CustomEditorInput) {
+			return input;
+		}
+		return input instanceof SideBySideEditorInput && input.primary instanceof CustomEditorInput
+			? input.primary
+			: undefined;
 	}
 
 	private handleDeletedFile(resource: URI): void {

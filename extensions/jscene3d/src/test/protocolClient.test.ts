@@ -171,7 +171,42 @@ suite('JScene3D authoring protocol client', () => {
 				expectedDefinitionRevision: 4,
 				operation: 'set',
 				target: { ...target, componentId: 'component-a', propertyId: 'speed' },
-				value: { kind: 'number', value: null, literal: '0.00000000000000000001' }
+				value: { kind: 'number', value: null, literal: '0.00000000000000000001', literals: null }
+			}
+		});
+	});
+
+	test('transports exact numeric-array literals without binary conversion', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const target = {
+			kind: 'component-property' as const,
+			occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] },
+			entityId: 'entity-a', componentId: 'transform-a', propertyId: 'position'
+		};
+		const mutation = client.mutateDefinition(1, 'world-a', 4, target, {
+			operation: 'set', value: {
+				kind: 'number-array', literals: ['9.25', '-2', '3.0000000000000000001']
+			}
+		});
+		const result = {
+			definition: 'world-a', outcome: 'accepted', revision: 5,
+			dirty: true, canUndo: true, canRedo: false, diagnostics: []
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await mutation, result);
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'definition/mutate', params: {
+				expectedProjectGeneration: 1,
+				assetId: 'world-a',
+				expectedDefinitionRevision: 4,
+				operation: 'set',
+				target: { ...target, componentId: 'transform-a', propertyId: 'position' },
+				value: {
+					kind: 'number-array', value: null, literal: null,
+					literals: ['9.25', '-2', '3.0000000000000000001']
+				}
 			}
 		});
 	});

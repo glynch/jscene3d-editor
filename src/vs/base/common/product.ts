@@ -133,6 +133,8 @@ export interface IProductConfiguration {
 	readonly embedderIdentifier?: string;
 	readonly agentsTelemetryAppName?: string;
 	readonly defaultLayout?: IProductDefaultLayout;
+	/** Product-owned configuration defaults supplied to the workbench. */
+	readonly configurationDefaults?: Record<string, unknown>;
 
 	readonly urlProtocol: string;
 	readonly dataFolderName: string; // location for extensions (e.g. ~/.vscode-insiders)

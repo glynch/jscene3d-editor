@@ -8,6 +8,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 suite('JScene3D workbench product integration', () => {
+	test('keeps native Scene composites in the custom-editor undo and redo lifecycle', () => {
+		const source = fs.readFileSync(
+			path.join(__dirname, '..', '..', '..', '..', 'src', 'vs', 'workbench', 'contrib', 'customEditor', 'browser', 'customEditors.ts'),
+			'utf8'
+		);
+
+		assert.match(source,
+			/activeEditor instanceof SideBySideEditorInput && activeEditor\.primary instanceof CustomEditorInput/);
+		assert.match(source, /return activeEditor\.primary/);
+		assert.match(source, /getNestedCustomEditorInput\(activeEditorPane\?\.input\)/);
+	});
+
 	test('uses a persistent Hierarchy document while filtering', () => {
 		const source = fs.readFileSync(
 			path.resolve(__dirname, '..', '..', 'src', 'hierarchy', 'hierarchyView.ts'),

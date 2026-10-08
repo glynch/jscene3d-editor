@@ -67,10 +67,12 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 				this.completeClosePreparations(false);
 			}
 		});
-		this.render(true);
+		const snapshot = this.state.snapshot;
+		this.lastInspector = snapshot.status === 'ready' ? snapshot.inspector : undefined;
+		view.webview.html = inspectorHtml(view.webview.cspSource, snapshot, this.language, this.translate);
 	}
 
-	/** Commits valid pending scalar input or rejects the lifecycle action while local input is invalid. */
+	/** Commits valid pending numeric input or rejects the lifecycle action while local input is invalid. */
 	prepareForDocumentClose(): Promise<boolean> {
 		const view = this.view;
 		if (view === undefined) {
@@ -139,10 +141,13 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 			this.render(true);
 			return;
 		}
+		const inspectorBeforeMutation = this.lastInspector;
 		try {
 			await this.mutations?.mutate(property.mutationTarget, message.candidate, `Edit ${property.label}`);
 		} finally {
-			this.render(true);
+			if (this.lastInspector === inspectorBeforeMutation) {
+				this.render(true);
+			}
 		}
 	}
 
@@ -157,7 +162,7 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider, vscode
 			return;
 		}
 		this.lastInspector = snapshot.status === 'ready' ? snapshot.inspector : undefined;
-		view.webview.html = inspectorHtml(view.webview.cspSource, snapshot, this.language, this.translate);
+		void view.webview.postMessage({ type: 'render', bootstrap: webviewBootstrap(snapshot, this.translate) });
 	}
 
 	private completeClosePreparations(accepted: boolean): void {
@@ -198,6 +203,11 @@ function isMutationCandidate(value: unknown): value is DefinitionMutationValueDt
 	if (candidate.kind === 'boolean') {
 		return typeof candidate.value === 'boolean'
 			&& Object.keys(candidate).every(key => key === 'kind' || key === 'value');
+	}
+	if (candidate.kind === 'number-array') {
+		return Array.isArray(candidate.literals)
+			&& candidate.literals.every(literal => typeof literal === 'string')
+			&& Object.keys(candidate).every(key => key === 'kind' || key === 'literals');
 	}
 	return (candidate.kind === 'integer' || candidate.kind === 'number' || candidate.kind === 'text')
 		&& typeof candidate.literal === 'string'
@@ -274,7 +284,7 @@ function webviewBootstrap(state: InspectorStateSnapshot, translate: InspectorTra
 			: { status: state.status, strings };
 }
 
-/** Adds built-in read-only presentation models without changing the authoritative snapshot. */
+/** Adds built-in presentation models without changing the authoritative snapshot. */
 function inspectorPresentationSnapshot(snapshot: InspectorSnapshotDto): object {
 	return {
 		...snapshot,
@@ -299,17 +309,17 @@ function escapeAttribute(value: string): string {
 const styles = `
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
-html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; }
-body { overflow: hidden; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font: var(--vscode-font-size) var(--vscode-font-family); }
+html, body, #app { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+body { color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font: var(--vscode-font-size) var(--vscode-font-family); }
 button, input, select { font: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-.message-shell { height: 100%; display: grid; place-items: center; padding: 28px; text-align: center; }
+.message-shell { position: fixed; inset: 0; display: grid; place-items: center; padding: 28px; text-align: center; }
 .message-content { max-width: 260px; color: var(--vscode-descriptionForeground); }
 .message-icon { width: 42px; height: 42px; margin: 0 auto 12px; color: var(--vscode-disabledForeground); }
 .message-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.25; }
 .message-title { margin: 0 0 6px; color: var(--vscode-foreground); font-size: 1.05em; font-weight: 600; }
 .message-detail { margin: 0; line-height: 1.45; }
-.inspector-shell { height: 100%; min-height: 0; display: grid; grid-template-rows: 35px minmax(0, 1fr); }
+.inspector-shell { position: fixed; inset: 0; min-height: 0; display: grid; grid-template-rows: 35px minmax(0, 1fr); overflow: hidden; }
 .inspector-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); background: var(--vscode-sideBarSectionHeader-background); }
 .inspector-title { min-width: 0; flex: 1; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .inspector-readonly { color: var(--vscode-descriptionForeground); font-size: .86em; }
@@ -322,7 +332,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .entity-icon, .component-icon { display: grid; place-items: center; color: var(--vscode-icon-foreground); }
 .entity-icon { width: 22px; height: 22px; }
 .entity-icon svg, .component-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
-.entity-name, .property-input, .deferred-select, .resource-field, .property-component-value { min-width: 0; height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+.entity-name, .property-input, .deferred-select, .resource-field, .property-component-value, .property-component-input { min-width: 0; height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
 .entity-name { width: 100%; padding: 2px 6px; font-weight: 600; }
 .entity-name[readonly] { color: var(--vscode-foreground); }
 .check-label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -351,13 +361,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .property-label { min-width: 0; padding-top: 3px; color: var(--vscode-foreground); line-height: 1.25; overflow-wrap: anywhere; }
 .property-value { min-width: 0; color: var(--vscode-descriptionForeground); text-align: right; overflow-wrap: anywhere; user-select: text; }
 .property-input { width: 100%; padding: 2px 5px; }
-.property-input.validation-error { border-color: var(--vscode-inputValidation-errorBorder); outline-color: var(--vscode-inputValidation-errorBorder); }
+.property-input.validation-error, .property-component-input.validation-error { border-color: var(--vscode-inputValidation-errorBorder); outline-color: var(--vscode-inputValidation-errorBorder); }
 .property-validation { margin-top: 2px; color: var(--vscode-inputValidation-errorForeground); font-size: .85em; line-height: 1.2; text-align: left; }
 .property-validation[hidden] { display: none; }
 .property-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(38px, 1fr)); gap: 3px; }
 .property-component { min-width: 0; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: center; }
 .property-component-label { color: var(--vscode-descriptionForeground); font-size: .82em; text-align: left; }
 .property-component-value { width: 100%; padding: 2px 4px; color: var(--vscode-input-foreground); text-align: right; }
+.property-component-input { width: 100%; padding: 2px 4px; text-align: right; }
+.property-component .property-validation { grid-column: 1 / -1; }
 .resource-control { display: flex; min-width: 0; }
 .resource-field { min-width: 0; flex: 1; overflow: hidden; padding: 3px 6px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .resource-action { width: 24px; height: 24px; margin-left: 3px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; }
@@ -380,6 +392,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 const clientScript = `
 const vscode = acquireVsCodeApi();
 const app = document.getElementById('app');
+let acceptHostMessage = () => {};
+function renderInspector(bootstrap) {
 if (bootstrap.status !== 'ready') {
 	app.innerHTML = '<section class="message-shell"><div class="message-content"><div class="message-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 3 27 9.3v13.4L16 29 5 22.7V9.3L16 3Z M5.5 9.6 16 16l10.5-6.4M16 16v13"></path></svg></div><h2 class="message-title"></h2><p class="message-detail"></p></div></section>';
 	const title = app.querySelector('.message-title');
@@ -388,9 +402,14 @@ if (bootstrap.status !== 'ready') {
 		title.textContent = bootstrap.strings.empty;
 		detail.textContent = bootstrap.strings.emptyDetail;
 	} else {
-		title.textContent = bootstrap.status === 'loading' ? bootstrap.strings.loading : bootstrap.strings.rejected;
+		 title.textContent = bootstrap.status === 'loading' ? bootstrap.strings.loading : bootstrap.strings.rejected;
 		detail.textContent = '';
 	}
+	acceptHostMessage = message => {
+		if (message?.type === 'prepareForDocumentClose' && Number.isSafeInteger(message.requestId)) {
+			vscode.postMessage({ type: 'prepareForDocumentCloseResult', requestId: message.requestId, accepted: true });
+		}
+	};
 } else {
 	const snapshot = bootstrap.snapshot;
 	app.innerHTML = '<section class="inspector-shell"><header class="inspector-toolbar"><div class="inspector-title"></div><span class="inspector-readonly" hidden></span><button class="inspector-menu" type="button" disabled aria-label="">\u22ef</button></header><div class="inspector-scroll"><section class="entity-card"><div class="entity-primary"><span class="entity-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 2.5 8 4.6v9.8l-8 4.6-8-4.6V7.1l8-4.6Z M4.4 7.3 12 12l7.6-4.7M12 12v9.5"></path></svg></span><span class="entity-enabled"></span><input class="entity-name" type="text" readonly><label class="check-label entity-static deferred-control"><input class="deferred-checkbox" type="checkbox" disabled><span></span></label></div><div class="entity-metadata"><label class="metadata-label tag-label"></label><select class="deferred-select tag-select" disabled><option></option></select><label class="metadata-label layer-label"></label><select class="deferred-select layer-select" disabled><option></option></select></div></section><section class="component-stack"></section><button class="add-component" type="button" disabled></button></div></section>';
@@ -429,7 +448,6 @@ if (bootstrap.status !== 'ready') {
 		? savedState.collapsedGroups.filter(value => typeof value === 'string') : []);
 	let selectedGroupId = bootstrap.selectedGroupId;
 	let validationSequence = 0;
-	const numericEditors = new Set();
 	const pendingNumericEditors = new Set();
 
 	function savePresentationState() {
@@ -524,63 +542,12 @@ if (bootstrap.status !== 'ready') {
 				if (!editor.editable) { container.textContent = editor.decimal ?? '—'; return; }
 				const input = document.createElement('input'); input.type = 'text'; input.className = 'property-input'; input.value = editor.decimal ?? '';
 				input.inputMode = editor.kind === 'integer' ? 'numeric' : 'decimal';
-				const complete = new RegExp(editor.completePattern); const intermediate = new RegExp(editor.intermediatePattern);
 				const validation = document.createElement('div'); validation.className = 'property-validation'; validation.hidden = true;
-				validation.id = 'property-validation-' + ++validationSequence;
-				input.setAttribute('aria-describedby', validation.id);
-				input.setAttribute('aria-invalid', 'false');
-				let committedValue = input.value;
-				let commitTimer;
-				function status() {
-					return complete.test(input.value) ? 'complete' : intermediate.test(input.value) ? 'intermediate' : 'invalid';
-				}
-				function showValidation(show) {
-					input.classList.toggle('validation-error', show);
-					input.setAttribute('aria-invalid', String(show));
-					validation.textContent = show ? (editor.kind === 'integer' ? bootstrap.strings.invalidInteger : bootstrap.strings.invalidNumber) : '';
-					validation.hidden = !show;
-				}
-				function commitNumericInput(reportInvalid) {
-					clearTimeout(commitTimer);
-					const currentStatus = status();
-					if (currentStatus !== 'complete') {
-						showValidation(reportInvalid || currentStatus === 'invalid');
-						pendingNumericEditors.add(controller);
-						return false;
-					}
-					showValidation(false);
-					if (input.value === committedValue) {
-						pendingNumericEditors.delete(controller);
-						return true;
-					}
-					committedValue = input.value;
-					pendingNumericEditors.delete(controller);
-					vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: { kind: editor.kind === 'integer' ? 'integer' : 'number', literal: input.value } });
-					return true;
-				}
-				const controller = {
-					commit: () => commitNumericInput(true),
-					focus: () => input.focus(),
-					dispose: () => clearTimeout(commitTimer)
-				};
-				numericEditors.add(controller);
-				input.addEventListener('input', () => {
-					clearTimeout(commitTimer);
-					const currentStatus = status();
-					showValidation(currentStatus === 'invalid');
-					if (input.value === committedValue) {
-						pendingNumericEditors.delete(controller);
-						return;
-					}
-					pendingNumericEditors.add(controller);
-					if (currentStatus === 'complete') {
-						commitTimer = setTimeout(() => commitNumericInput(false), 250);
-					}
-				});
-				input.addEventListener('change', () => commitNumericInput(true));
-				input.addEventListener('keydown', event => {
-					if (event.key === 'Enter') { commitNumericInput(true); }
-				});
+				registerNumericEditor(
+					[{ input, validation }], editor.completePattern, editor.intermediatePattern,
+					() => ({ kind: editor.kind === 'integer' ? 'integer' : 'number', literal: input.value }),
+					groupId, propertyId, editor.kind === 'integer' ? bootstrap.strings.invalidInteger : bootstrap.strings.invalidNumber
+				);
 				container.append(input, validation); return;
 			}
 			case 'text': {
@@ -593,7 +560,7 @@ if (bootstrap.status !== 'ready') {
 			case 'vector3':
 			case 'eulerRotation':
 			case 'quaternion':
-			case 'linearColor': renderComponents(container, editor); return;
+			case 'linearColor': renderComponents(container, editor, groupId, propertyId); return;
 			case 'reference': renderResource(container, semanticLabel(editor.label, editor.resolution), editor.locator, editor.revealUri); return;
 			case 'entityTarget': container.textContent = semanticLabel(editor.label, editor.resolution); return;
 			case 'componentTarget': {
@@ -615,16 +582,71 @@ if (bootstrap.status !== 'ready') {
 		control.append(field, action); container.append(control);
 	}
 
-	function renderComponents(container, editor) {
+	function renderComponents(container, editor, groupId, propertyId) {
 		const components = document.createElement('div'); components.className = 'property-components';
+		const numericInputs = [];
 		for (const component of editor.components) {
 			const item = document.createElement('div'); item.className = 'property-component';
 			const label = document.createElement('span'); label.className = 'property-component-label'; label.textContent = component.label;
-			const value = document.createElement('span'); value.className = 'property-component-value';
-			value.textContent = component.decimal === null ? '—' : component.decimal + (editor.unit === 'degrees' ? '°' : '');
-			item.append(label, value); components.append(item);
+			if (!editor.editable) {
+				const value = document.createElement('span'); value.className = 'property-component-value';
+				value.textContent = component.decimal === null ? '—' : component.decimal + (editor.unit === 'degrees' ? '°' : '');
+				item.append(label, value); components.append(item); continue;
+			}
+			const input = document.createElement('input'); input.type = 'text'; input.inputMode = 'decimal'; input.className = 'property-component-input'; input.value = component.decimal ?? '';
+			const validation = document.createElement('div'); validation.className = 'property-validation'; validation.hidden = true;
+			item.append(label, input);
+			item.append(validation); components.append(item); numericInputs.push({ input, validation });
+		}
+		if (editor.editable) {
+			registerNumericEditor(
+				numericInputs, editor.completePattern, editor.intermediatePattern,
+				() => ({ kind: 'number-array', literals: numericInputs.map(component => component.input.value) }),
+				groupId, propertyId, bootstrap.strings.invalidNumber
+			);
 		}
 		container.append(components);
+	}
+
+	function registerNumericEditor(fields, completePattern, intermediatePattern, candidate, groupId, propertyId, invalidMessage) {
+		const complete = new RegExp(completePattern); const intermediate = new RegExp(intermediatePattern);
+		let committedValue = JSON.stringify(fields.map(field => field.input.value));
+		for (const field of fields) {
+			field.validation.id = 'property-validation-' + ++validationSequence;
+			field.input.setAttribute('aria-describedby', field.validation.id);
+			field.input.setAttribute('aria-invalid', 'false');
+		}
+		function status(field) {
+			return complete.test(field.input.value) ? 'complete' : intermediate.test(field.input.value) ? 'intermediate' : 'invalid';
+		}
+		function showValidation(field, show) {
+			field.input.classList.toggle('validation-error', show);
+			field.input.setAttribute('aria-invalid', String(show));
+			field.validation.textContent = show ? invalidMessage : '';
+			field.validation.hidden = !show;
+		}
+		const controller = {
+			commit: () => {
+				const invalid = fields.find(field => status(field) !== 'complete');
+				for (const field of fields) { showValidation(field, status(field) !== 'complete'); }
+				if (invalid !== undefined) { pendingNumericEditors.add(controller); return false; }
+				const currentValue = JSON.stringify(fields.map(field => field.input.value));
+				if (currentValue === committedValue) { pendingNumericEditors.delete(controller); return true; }
+				committedValue = currentValue; pendingNumericEditors.delete(controller);
+				vscode.postMessage({ type: 'editProperty', groupId, propertyId, candidate: candidate() });
+				return true;
+			},
+			focus: () => (fields.find(field => status(field) !== 'complete') ?? fields[0]).input.focus()
+		};
+		for (const field of fields) {
+			field.input.addEventListener('input', () => {
+				showValidation(field, status(field) === 'invalid');
+				const changed = JSON.stringify(fields.map(candidate => candidate.input.value)) !== committedValue;
+				if (changed) { pendingNumericEditors.add(controller); } else { pendingNumericEditors.delete(controller); }
+			});
+			field.input.addEventListener('change', () => controller.commit());
+			field.input.addEventListener('keydown', event => { if (event.key === 'Enter') { controller.commit(); } });
+		}
 	}
 
 	function semanticLabel(label, resolution) {
@@ -641,14 +663,14 @@ if (bootstrap.status !== 'ready') {
 		return '<svg viewBox="0 0 20 20"><path d="m10 2 7 4v8l-7 4-7-4V6l7-4Zm-7 4 7 4 7-4m-7 4v8"></path></svg>';
 	}
 
-	window.addEventListener('message', event => {
-		if (event.data?.type === 'focusGroup' && typeof event.data.groupId === 'string' && event.data.groupId !== selectedGroupId) {
-			selectGroup(event.data.groupId, false);
-			const card = Array.from(componentStack.querySelectorAll('.component-card')).find(candidate => candidate.dataset.groupId === event.data.groupId);
+	acceptHostMessage = message => {
+		if (message?.type === 'focusGroup' && typeof message.groupId === 'string' && message.groupId !== selectedGroupId) {
+			selectGroup(message.groupId, false);
+			const card = Array.from(componentStack.querySelectorAll('.component-card')).find(candidate => candidate.dataset.groupId === message.groupId);
 			if (card) { card.open = true; card.scrollIntoView({ block: 'nearest' }); }
 			return;
 		}
-		if (event.data?.type === 'prepareForDocumentClose' && Number.isSafeInteger(event.data.requestId)) {
+		if (message?.type === 'prepareForDocumentClose' && Number.isSafeInteger(message.requestId)) {
 			let accepted = true;
 			for (const editor of Array.from(pendingNumericEditors)) {
 				if (!editor.commit()) {
@@ -657,12 +679,21 @@ if (bootstrap.status !== 'ready') {
 					break;
 				}
 			}
-			vscode.postMessage({ type: 'prepareForDocumentCloseResult', requestId: event.data.requestId, accepted });
+			vscode.postMessage({ type: 'prepareForDocumentCloseResult', requestId: message.requestId, accepted });
 		}
-	});
+	};
 	if (selectedGroupId !== entityGroup?.identity) {
 		const selectedCard = Array.from(componentStack.querySelectorAll('.component-card')).find(candidate => candidate.dataset.groupId === selectedGroupId);
 		if (selectedCard) { selectedCard.open = true; }
 	}
 }
+}
+window.addEventListener('message', event => {
+	if (event.data?.type === 'render' && typeof event.data.bootstrap === 'object' && event.data.bootstrap !== null) {
+		renderInspector(event.data.bootstrap);
+		return;
+	}
+	acceptHostMessage(event.data);
+});
+renderInspector(bootstrap);
 `;

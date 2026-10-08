@@ -48,11 +48,14 @@ const numberIntermediatePattern = '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\
 interface ReadonlyComponentPropertyEditorModel {
 	readonly collapsible: true;
 	readonly components: readonly ReadonlyPropertyEditorComponent[];
+	readonly editable: boolean;
+	readonly completePattern: string;
+	readonly intermediatePattern: string;
 	readonly summary: string;
 	readonly unit: 'degrees' | null;
 }
 
-/** Closed presentation vocabulary used by the built-in Inspector. */
+/** Closed immutable presentation vocabulary used by the built-in Inspector. */
 export type ReadonlyPropertyEditorModel =
 	| { readonly kind: 'boolean'; readonly value: boolean | null; readonly editable: boolean }
 	| ({ readonly kind: 'decimal' } & ReadonlyNumericPropertyEditorModel)
@@ -85,7 +88,7 @@ export type ReadonlyPropertyEditorModel =
 	| { readonly kind: 'objectSummary'; readonly count: number | null }
 	| { readonly kind: 'fallback'; readonly value: 'unset' | 'null' | 'unsupported' };
 
-/** Resolves one validated Inspector property to the built-in read-only presentation model. */
+/** Resolves one validated Inspector property to the built-in presentation model. */
 export function resolvePropertyEditor(property: InspectorPropertyDto): ReadonlyPropertyEditorModel {
 	const value = property.state.effectiveValue;
 	const semantic = property.constraints.editor.semantic;
@@ -95,15 +98,15 @@ export function resolvePropertyEditor(property: InspectorPropertyDto): ReadonlyP
 	}
 	switch (semantic) {
 		case 'vector2':
-			return componentEditor('vector2', ['X', 'Y'], null, value);
+			return componentEditor('vector2', ['X', 'Y'], null, property, value);
 		case 'vector3':
-			return componentEditor('vector3', ['X', 'Y', 'Z'], null, value);
+			return componentEditor('vector3', ['X', 'Y', 'Z'], null, property, value);
 		case 'euler-rotation':
-			return componentEditor('eulerRotation', ['X', 'Y', 'Z'], 'degrees', value);
+			return componentEditor('eulerRotation', ['X', 'Y', 'Z'], 'degrees', property, value);
 		case 'quaternion':
-			return componentEditor('quaternion', ['X', 'Y', 'Z', 'W'], null, value);
+			return componentEditor('quaternion', ['X', 'Y', 'Z', 'W'], null, property, value);
 		case 'color-linear':
-			return componentEditor('linearColor', ['R', 'G', 'B'], null, value);
+			return componentEditor('linearColor', ['R', 'G', 'B'], null, property, value);
 		case 'integer':
 		case 'default':
 			return structuralEditor(property, value);
@@ -115,6 +118,11 @@ export function acceptsPropertyEditorCandidate(
 	property: InspectorPropertyDto,
 	candidate: DefinitionMutationValueDto
 ): boolean {
+	if (candidate.kind === 'number-array') {
+		return isFixedNumericArrayEditor(property)
+			&& candidate.literals.length === property.constraints.exactElementCount
+			&& candidate.literals.every(literal => numericInputStatus('number', literal) === 'complete');
+	}
 	const editor = scalarPropertyEditor(property.valueKind, property.constraints.editor.semantic);
 	if (editor?.kind !== candidate.kind) {
 		return false;
@@ -221,12 +229,14 @@ function componentEditor(
 	kind: 'vector2' | 'vector3' | 'eulerRotation' | 'quaternion' | 'linearColor',
 	labels: readonly ReadonlyPropertyEditorComponent['label'][],
 	unit: 'degrees' | null,
+	property: InspectorPropertyDto,
 	value: InspectorValueDto | null
 ): ReadonlyPropertyEditorModel {
 	if (value === null) {
 		const components = labels.map(label => ({ label, decimal: null }));
 		return {
-			kind, collapsible: true, unit, components,
+			kind, collapsible: true, unit, components, editable: editable(property),
+			completePattern: numberCompletePattern, intermediatePattern: numberIntermediatePattern,
 			summary: componentSummary(components, unit, kind === 'linearColor')
 		};
 	}
@@ -242,9 +252,18 @@ function componentEditor(
 		components.push({ label: labels[index], decimal: component.decimal });
 	}
 	return {
-		kind, collapsible: true, unit, components,
+		kind, collapsible: true, unit, components, editable: editable(property),
+		completePattern: numberCompletePattern, intermediatePattern: numberIntermediatePattern,
 		summary: componentSummary(components, unit, kind === 'linearColor')
 	};
+}
+
+function isFixedNumericArrayEditor(property: InspectorPropertyDto): boolean {
+	return property.valueKind === 'array'
+		&& property.constraints.elementKind === 'number'
+		&& property.constraints.exactElementCount !== null
+		&& ['vector2', 'vector3', 'euler-rotation', 'quaternion', 'color-linear']
+			.includes(property.constraints.editor.semantic);
 }
 
 function componentSummary(

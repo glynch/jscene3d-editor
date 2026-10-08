@@ -80,6 +80,18 @@ suite('JScene3D Inspector property editor resolver', () => {
 		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('vector3', ['1', '2', '3']), {
 			kind: 'text', literal: 'unsupported'
 		}), false);
+		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('vector3', ['1', '2', '3']), {
+			kind: 'number-array', literals: ['9.25', '-2', '3.0000000000000000001']
+		}), true);
+		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('vector3', ['1', '2', '3']), {
+			kind: 'number-array', literals: ['9.25', '-2']
+		}), false);
+		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('vector3', ['1', '2', '3']), {
+			kind: 'number-array', literals: ['9.25', 'invalid', '3']
+		}), false);
+		assert.strictEqual(acceptsPropertyEditorCandidate(arrayProperty('default', ['1', '2', '3']), {
+			kind: 'number-array', literals: ['9.25', '-2', '3']
+		}), false);
 	});
 
 	test('rejects syntactically impossible exact numeric candidates before mutation', () => {
@@ -117,32 +129,58 @@ suite('JScene3D Inspector property editor resolver', () => {
 
 	test('resolves every specialized numeric-array semantic before structural array summary', () => {
 		assert.deepStrictEqual(resolvePropertyEditor(arrayProperty('vector2', ['1.25', '-4'])), {
-			kind: 'vector2', collapsible: true, summary: '1.25, -4', unit: null,
+			kind: 'vector2', collapsible: true, summary: '1.25, -4', unit: null, editable: false,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
 			components: [{ label: 'X', decimal: '1.25' }, { label: 'Y', decimal: '-4' }]
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(arrayProperty('vector3', ['-6', '0.875', '6'])), {
-			kind: 'vector3', collapsible: true, summary: '-6, 0.875, 6', unit: null,
+			kind: 'vector3', collapsible: true, summary: '-6, 0.875, 6', unit: null, editable: false,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
 			components: [
 				{ label: 'X', decimal: '-6' }, { label: 'Y', decimal: '0.875' }, { label: 'Z', decimal: '6' }
 			]
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(arrayProperty('euler-rotation', ['0', '90', '-2.5'])), {
-			kind: 'eulerRotation', collapsible: true, summary: '0°, 90°, -2.5°', unit: 'degrees',
+			kind: 'eulerRotation', collapsible: true, summary: '0°, 90°, -2.5°', unit: 'degrees', editable: false,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
 			components: [
 				{ label: 'X', decimal: '0' }, { label: 'Y', decimal: '90' }, { label: 'Z', decimal: '-2.5' }
 			]
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(arrayProperty('quaternion', ['0', '0', '0', '1'])), {
-			kind: 'quaternion', collapsible: true, summary: '0, 0, 0, 1', unit: null,
+			kind: 'quaternion', collapsible: true, summary: '0, 0, 0, 1', unit: null, editable: false,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
 			components: [
 				{ label: 'X', decimal: '0' }, { label: 'Y', decimal: '0' },
 				{ label: 'Z', decimal: '0' }, { label: 'W', decimal: '1' }
 			]
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(arrayProperty('color-linear', ['1', '0.5', '2'])), {
-			kind: 'linearColor', collapsible: true, summary: 'R 1, G 0.5, B 2', unit: null,
+			kind: 'linearColor', collapsible: true, summary: 'R 1, G 0.5, B 2', unit: null, editable: false,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
 			components: [
 				{ label: 'R', decimal: '1' }, { label: 'G', decimal: '0.5' }, { label: 'B', decimal: '2' }
+			]
+		});
+	});
+
+	test('enables fixed numeric-array controls only for authoritative local mutation targets', () => {
+		const readonly = arrayProperty('vector3', ['1', '2', '3']);
+		const editable: InspectorPropertyDto = {
+			...readonly,
+			state: { ...readonly.state, editable: true },
+			mutationTarget: {
+				kind: 'component-property', occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] },
+				entityId: 'entity-a', componentId: 'component-a', propertyId: 'position'
+			}
+		};
+
+		assert.strictEqual(resolvePropertyEditor(readonly).kind, 'vector3');
+		assert.deepStrictEqual(resolvePropertyEditor(editable), {
+			kind: 'vector3', collapsible: true, summary: '1, 2, 3', unit: null, editable: true,
+			completePattern: numberPattern, intermediatePattern: numberIntermediatePattern,
+			components: [
+				{ label: 'X', decimal: '1' }, { label: 'Y', decimal: '2' }, { label: 'Z', decimal: '3' }
 			]
 		});
 	});
@@ -231,3 +269,6 @@ function arrayProperty(
 function numericArray(decimals: readonly string[]): InspectorValueDto {
 	return { kind: 'array', values: decimals.map(decimal => ({ kind: 'number', decimal })) };
 }
+
+const numberPattern = '^[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?$';
+const numberIntermediatePattern = '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)[eE][+-]?)$';

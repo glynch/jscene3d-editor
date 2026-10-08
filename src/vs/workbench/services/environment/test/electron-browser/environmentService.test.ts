@@ -14,6 +14,9 @@ suite('NativeWorkbenchEnvironmentService', () => {
 
 	test('maps the JScene3D product welcome editor into native workbench construction options', () => {
 		assert.deepStrictEqual(getNativeWorkbenchConstructionOptions(product), {
+			configurationDefaults: {
+				'files.hotExit': 'off'
+			},
 			defaultLayout: {
 				views: [{ id: 'jscene3d.project' }],
 				editors: [{
@@ -32,7 +35,8 @@ suite('NativeWorkbenchEnvironmentService', () => {
 
 	test('maps a generic product default view to non-forced workbench construction options', () => {
 		assert.deepStrictEqual(getNativeWorkbenchConstructionOptions({
-			defaultLayout: { views: [{ id: 'example.primaryView' }] }
+			defaultLayout: { views: [{ id: 'example.primaryView' }] },
+			configurationDefaults: undefined
 		}), {
 			defaultLayout: {
 				views: [{ id: 'example.primaryView' }]
@@ -41,6 +45,10 @@ suite('NativeWorkbenchEnvironmentService', () => {
 	});
 
 	test('preserves existing behavior when the product has no default layout', () => {
-		assert.strictEqual(getNativeWorkbenchConstructionOptions({ ...TestProductService, defaultLayout: undefined }), undefined);
+		assert.strictEqual(getNativeWorkbenchConstructionOptions({
+			...TestProductService,
+			defaultLayout: undefined,
+			configurationDefaults: undefined
+		}), undefined);
 	});
 });

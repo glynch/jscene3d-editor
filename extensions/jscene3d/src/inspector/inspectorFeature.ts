@@ -59,9 +59,10 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 					try {
 						const outcome = await editor.acceptInspectorMutation(
 							target, { operation: 'set', value: candidate }, label);
-						if (outcome.status === 'rejected' && outcome.diagnostics.length === 0) {
+						if (outcome.status === 'rejected') {
+							const reason = outcome.diagnostics[0]?.message ?? outcome.outcome;
 							await vscode.window.showErrorMessage(vscode.l10n.t(
-								'JScene3D rejected the edit: {0}', outcome.outcome));
+								'JScene3D rejected {0}: {1}', label, reason));
 						}
 					} catch (error) {
 						const message = errorMessage(error);

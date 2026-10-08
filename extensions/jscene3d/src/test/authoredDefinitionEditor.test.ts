@@ -26,9 +26,9 @@ suite('JScene3D authored definition editor', () => {
 			'utf8'
 		);
 
-		assert.match(source, /implements vscode\.CustomEditorProvider<AuthoredDefinitionDocument>/);
+		assert.match(source, /class AuthoredDefinitionViewProvider implements vscode\.CustomEditorProvider<AuthoredDefinitionDocument>/);
 		assert.match(source, /EventEmitter<vscode\.CustomDocumentEditEvent<AuthoredDefinitionDocument>>/);
-		assert.match(source, /changeEmitter\.fire\(\{/);
+		assert.match(source, /provider\.fireEdit\(\{/);
 		assert.match(source, /undo: outcome\.edit\.undo/);
 		assert.match(source, /redo: outcome\.edit\.redo/);
 		assert.match(source, /saveCustomDocument/);
@@ -42,6 +42,26 @@ suite('JScene3D authored definition editor', () => {
 		assert.match(source, /await this\.waitForPendingMutations\(\)/);
 		assert.match(source, /tab\.isDirty/);
 		assert.doesNotMatch(source, /tabs\.length === 0 \|\| vscode\.window\.tabGroups\.close/);
+	});
+
+	test('routes native edit events through a provider dedicated to the document view type', () => {
+		const editorSource = fs.readFileSync(
+			path.join(__dirname, '..', '..', 'src', 'definition', 'authoredDefinitionEditor.ts'),
+			'utf8'
+		);
+		const featureSource = fs.readFileSync(
+			path.join(__dirname, '..', '..', 'src', 'definition', 'definitionFeature.ts'),
+			'utf8'
+		);
+
+		assert.match(editorSource, /readonly viewType: string/);
+		assert.match(editorSource, /this\.viewProviders\.get\(document\.viewType\)/);
+		assert.match(featureSource,
+			/registerCustomEditorProvider\(\s*authoredDefinitionViewType, this\.editorProvider\.providerFor\(authoredDefinitionViewType\)/);
+		assert.match(featureSource,
+			/registerCustomEditorProvider\(\s*sceneDefinitionViewType, this\.editorProvider\.providerFor\(sceneDefinitionViewType\)/);
+		assert.doesNotMatch(featureSource,
+			/registerCustomEditorProvider\([^,]+, this\.editorProvider, options\)/);
 	});
 
 	test('reopens the persisted project before registering restored custom editors', () => {

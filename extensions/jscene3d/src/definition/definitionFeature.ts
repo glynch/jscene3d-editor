@@ -150,8 +150,10 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 		this.editorProviderRegistered = true;
 		const options = { supportsMultipleEditorsPerDocument: true };
 		this.disposables.push(
-			vscode.window.registerCustomEditorProvider(authoredDefinitionViewType, this.editorProvider, options),
-			vscode.window.registerCustomEditorProvider(sceneDefinitionViewType, this.editorProvider, options)
+			vscode.window.registerCustomEditorProvider(
+				authoredDefinitionViewType, this.editorProvider.providerFor(authoredDefinitionViewType), options),
+			vscode.window.registerCustomEditorProvider(
+				sceneDefinitionViewType, this.editorProvider.providerFor(sceneDefinitionViewType), options)
 		);
 	}
 

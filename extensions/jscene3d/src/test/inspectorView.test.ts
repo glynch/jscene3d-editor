@@ -43,7 +43,12 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /class="inspector-scroll"/);
 		assert.match(html, /class="entity-card"/);
 		assert.match(html, /document\.createElement\('details'\); card\.className = 'component-card'/);
-		assert.match(html, /overflow-y: auto/);
+		assert.match(html, /html, body, #app \{[^}]*height: 100%[^}]*overflow: hidden/);
+		assert.match(html, /\.inspector-shell \{[^}]*position: fixed[^}]*inset: 0[^}]*overflow: hidden/);
+		assert.match(html, /\.inspector-scroll \{[^}]*overflow-y: auto/);
+		assert.match(html, /function renderInspector\(bootstrap\)/);
+		assert.match(html, /event\.data\?\.type === 'render'/);
+		assert.match(html, /renderInspector\(event\.data\.bootstrap\)/);
 		assert.doesNotMatch(html, /navigator-scroll|property-scroll|role=\\?"separator/);
 		assert.doesNotMatch(html, /onclick=/);
 	});
@@ -111,10 +116,11 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /"propertyEditor":\{"kind":"decimal","decimal":"4\.0","editable":true/);
 		assert.match(html, /input\.type = 'text'/);
 		assert.match(html, /input\.inputMode = editor\.kind === 'integer' \? 'numeric' : 'decimal'/);
-		assert.match(html, /candidate: \{ kind: editor\.kind === 'integer' \? 'integer' : 'number', literal: input\.value \}/);
+		assert.match(html, /\(\) => \(\{ kind: editor\.kind === 'integer' \? 'integer' : 'number', literal: input\.value \}\)/);
 		assert.match(html, /className = 'property-validation'/);
 		assert.match(html, /aria-invalid/);
 		assert.match(html, /prepareForDocumentClose/);
+		assert.doesNotMatch(html, /setTimeout\(\(\) => commitNumericInput/);
 		assert.doesNotMatch(html, /reportValidity|setCustomValidity|property-input:invalid/);
 		assert.doesNotMatch(html, /parseFloat|parseInt|Number\(/);
 	});
@@ -252,17 +258,17 @@ suite('JScene3D Inspector view', () => {
 		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
 
 		assert.match(html, /"propertyEditor":\{"kind":"decimal","decimal":"4\.0","editable":false,"minimum":null,"maximum":null/);
-		assert.ok(html.includes('"kind":"vector2","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"1.25"},{"label":"Y","decimal":"-4"}],"summary":"1.25, -4"'));
-		assert.ok(html.includes('"kind":"vector3","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"-6"},{"label":"Y","decimal":"0.875"},{"label":"Z","decimal":"6"}],"summary":"-6, 0.875, 6"'));
-		assert.ok(html.includes('"kind":"eulerRotation","collapsible":true,"unit":"degrees","components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"90"},{"label":"Z","decimal":"-2.5"}],"summary":"0°, 90°, -2.5°"'));
-		assert.ok(html.includes('"kind":"quaternion","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"0"},{"label":"Z","decimal":"0"},{"label":"W","decimal":"1"}],"summary":"0, 0, 0, 1"'));
-		assert.ok(html.includes('"kind":"linearColor","collapsible":true,"unit":null,"components":[{"label":"R","decimal":"1"},{"label":"G","decimal":"0.5"},{"label":"B","decimal":"2"}],"summary":"R 1, G 0.5, B 2"'));
+		assert.match(html, /"kind":"vector2"[^\n]+"summary":"1\.25, -4"/);
+		assert.match(html, /"kind":"vector3"[^\n]+"summary":"-6, 0\.875, 6"/);
+		assert.match(html, /"kind":"eulerRotation"[^\n]+"summary":"0°, 90°, -2\.5°"/);
+		assert.match(html, /"kind":"quaternion"[^\n]+"summary":"0, 0, 0, 1"/);
+		assert.match(html, /"kind":"linearColor"[^\n]+"summary":"R 1, G 0\.5, B 2"/);
 		assert.ok(html.includes('"propertyEditor":{"kind":"collectionSummary","count":3}'));
 		assert.ok(html.includes('"propertyEditor":{"kind":"reference","label":"Player mesh","locator":"mesh","resolution":"resolved","revealUri":"file:///project/assets/player.glb"}'));
 		assert.match(html, /\.property-components \{[^}]*display: grid[^}]*grid-template-columns: repeat\(auto-fit, minmax\(38px, 1fr\)\)[^}]*\}/);
 		assert.match(html, /\.property-component \{[^}]*display: grid[^}]*grid-template-columns: 13px minmax\(0, 1fr\)[^}]*\}/);
 		assert.match(html, /\.property-component-value \{[^}]*width: 100%[^}]*text-align: right[^}]*\}/);
-		assert.match(html, /\.entity-name, \.property-input, \.deferred-select, \.resource-field, \.property-component-value \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
+		assert.match(html, /\.entity-name, \.property-input, \.deferred-select, \.resource-field, \.property-component-value, \.property-component-input \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
 		assert.match(html, /label\.className = 'property-component-label'; label\.textContent = component\.label/);
 		assert.match(html, /value\.className = 'property-component-value';\s*value\.textContent = component\.decimal/);
 		assert.match(html, /item\.append\(label, value\)/);
@@ -273,6 +279,32 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /componentIcon\(group\)/);
 		assert.match(html, /renderResource\(container, semanticLabel\(editor\.label, editor\.resolution\), editor\.locator, editor\.revealUri\)/);
 		assert.match(html, /field\.title = \[label, locator, revealUri\]\.filter\(Boolean\)\.join\('\\n'\)/);
+	});
+
+	test('renders editable fixed numeric arrays as one validated authoritative mutation', () => {
+		const base = snapshot();
+		const position = semanticArrayProperty('position', 'Position', 'vector3', ['1', '2', '3']);
+		const editablePosition: InspectorPropertyDto = {
+			...position,
+			state: { ...position.state, editable: true },
+			mutationTarget: {
+				kind: 'component-property', occurrence: base.target.occurrence!,
+				entityId: 'entity-a', componentId: 'movement', propertyId: 'position'
+			}
+		};
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], { ...base.groups[1], properties: [editablePosition] }]
+		};
+
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.match(html, /"kind":"vector3"[^\n]+"editable":true/);
+		assert.match(html, /input\.className = 'property-component-input'/);
+		assert.match(html, /kind: 'number-array', literals: numericInputs\.map\(component => component\.input\.value\)/);
+		assert.match(html, /registerNumericEditor\(/);
+		assert.match(html, /field\.input\.addEventListener\('change', \(\) => controller\.commit\(\)\)/);
+		assert.match(html, /pendingNumericEditors\.add\(controller\)/);
 	});
 
 	test('uses compact mockup-aligned cards without rendering descriptor prose', () => {
@@ -307,6 +339,14 @@ suite('JScene3D Inspector view', () => {
 		assert.strictEqual(isInspectorMessage({
 			type: 'editProperty', groupId: 'movement', propertyId: 'speed',
 			candidate: { kind: 'number', literal: 1 }
+		}), false);
+		assert.strictEqual(isInspectorMessage({
+			type: 'editProperty', groupId: 'movement', propertyId: 'position',
+			candidate: { kind: 'number-array', literals: ['1', '2', '3'] }
+		}), true);
+		assert.strictEqual(isInspectorMessage({
+			type: 'editProperty', groupId: 'movement', propertyId: 'position',
+			candidate: { kind: 'number-array', literals: ['1', 2, '3'] }
 		}), false);
 		assert.strictEqual(isInspectorMessage({
 			type: 'prepareForDocumentCloseResult', requestId: 1, accepted: true

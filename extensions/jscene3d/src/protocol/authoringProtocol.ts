@@ -404,10 +404,11 @@ export type InspectorMutationTargetDto =
 		readonly componentId: string; readonly propertyId: string;
 	};
 
-/** Exact scalar candidate accepted by the first editable Inspector slice. */
+/** Exact typed candidate accepted by the editable Inspector. */
 export type DefinitionMutationValueDto =
 	| { readonly kind: 'boolean'; readonly value: boolean }
-	| { readonly kind: 'integer' | 'number' | 'text'; readonly literal: string };
+	| { readonly kind: 'integer' | 'number' | 'text'; readonly literal: string }
+	| { readonly kind: 'number-array'; readonly literals: readonly string[] };
 
 /** Permanent authored mutation vocabulary. */
 export type DefinitionMutationDto =
@@ -1300,11 +1301,18 @@ function occurrenceJson(occurrence: HierarchyOccurrenceDto): JsonObject {
 	return { definitionAssetId: occurrence.definitionAssetId, entityPath: [...occurrence.entityPath] };
 }
 
-/** Serializes one exact first-slice scalar candidate. */
+/** Serializes one exact typed candidate without converting decimal text to binary numbers. */
 function mutationValueJson(value: DefinitionMutationValueDto): JsonObject {
-	return value.kind === 'boolean'
-		? { kind: value.kind, value: value.value, literal: null }
-		: { kind: value.kind, value: null, literal: value.literal };
+	switch (value.kind) {
+		case 'boolean':
+			return { kind: value.kind, value: value.value, literal: null, literals: null };
+		case 'number-array':
+			return { kind: value.kind, value: null, literal: null, literals: [...value.literals] };
+		case 'integer':
+		case 'number':
+		case 'text':
+			return { kind: value.kind, value: null, literal: value.literal, literals: null };
+	}
 }
 
 function definitionOperationParams(projectGeneration: number, assetId: string, revision: number): JsonObject {

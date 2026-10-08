@@ -23,6 +23,7 @@ const restrictiveContentSecurityPolicy = '<meta http-equiv="Content-Security-Pol
 export class AuthoredDefinitionDocument implements vscode.CustomDocument {
 	constructor(
 		readonly uri: vscode.Uri,
+		readonly viewType: string,
 		readonly definition: AuthoredDefinitionResource | undefined,
 		private readonly release: () => void = () => undefined
 	) { }
@@ -33,11 +34,10 @@ export class AuthoredDefinitionDocument implements vscode.CustomDocument {
 }
 
 /** Bridges Java working-copy operations into the native VS Code custom-document lifecycle. */
-export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProvider<AuthoredDefinitionDocument>, vscode.Disposable {
-	private readonly changeEmitter = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<AuthoredDefinitionDocument>>();
+export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
+	private readonly viewProviders = new Map<string, AuthoredDefinitionViewProvider>();
 	private readonly documents = new Map<string, AuthoredDefinitionDocument>();
 	private readonly pendingMutations = new Set<Promise<DefinitionMutationOutcome>>();
-	readonly onDidChangeCustomDocument = this.changeEmitter.event;
 
 	constructor(
 		private readonly state: AuthoredDefinitionState,
@@ -46,7 +46,20 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 		private readonly sceneViews?: DefinitionSceneViewLifecycle
 	) { }
 
+	providerFor(viewType: string): vscode.CustomEditorProvider<AuthoredDefinitionDocument> {
+		if (!isDefinitionViewType(viewType)) {
+			throw new Error(`Unsupported JScene3D authored-definition view type: ${viewType}`);
+		}
+		let provider = this.viewProviders.get(viewType);
+		if (provider === undefined) {
+			provider = new AuthoredDefinitionViewProvider(viewType, this);
+			this.viewProviders.set(viewType, provider);
+		}
+		return provider;
+	}
+
 	async openCustomDocument(
+		viewType: string,
 		uri: vscode.Uri,
 		openContext: vscode.CustomDocumentOpenContext,
 		_token: vscode.CancellationToken
@@ -63,7 +76,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 				await this.lifecycle.reopen(resource, project.generation, identity.assetId);
 			}
 		}
-		const document = new AuthoredDefinitionDocument(uri, this.state.resolve(resource), () => {
+		const document = new AuthoredDefinitionDocument(uri, viewType, this.state.resolve(resource), () => {
 			this.documents.delete(resource);
 			void this.sceneViews?.close(resource);
 			this.state.unregister(resource);
@@ -140,7 +153,11 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 			throw new Error('Accepted Inspector mutation has no open custom document');
 		}
 		const nativeDirty = this.waitForNativeDirty(document);
-		this.changeEmitter.fire({
+		const provider = this.viewProviders.get(document.viewType);
+		if (provider === undefined) {
+			throw new Error(`No native custom-editor provider is registered for ${document.viewType}`);
+		}
+		provider.fireEdit({
 			document,
 			label: outcome.edit.label,
 			undo: outcome.edit.undo,
@@ -164,7 +181,10 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 
 	dispose(): void {
 		this.documents.clear();
-		this.changeEmitter.dispose();
+		for (const provider of this.viewProviders.values()) {
+			provider.dispose();
+		}
+		this.viewProviders.clear();
 	}
 
 	async saveCustomDocument(document: AuthoredDefinitionDocument): Promise<void> {
@@ -235,6 +255,56 @@ export class AuthoredDefinitionEditorProvider implements vscode.CustomEditorProv
 			const timeout = setTimeout(() => complete(new Error(
 				'VS Code did not register the accepted authored-definition edit as dirty')), 2000);
 		});
+	}
+}
+
+/** Owns the native edit stream for exactly one custom-editor view type. */
+class AuthoredDefinitionViewProvider implements vscode.CustomEditorProvider<AuthoredDefinitionDocument>, vscode.Disposable {
+	private readonly changeEmitter = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<AuthoredDefinitionDocument>>();
+	readonly onDidChangeCustomDocument = this.changeEmitter.event;
+
+	constructor(
+		private readonly viewType: string,
+		private readonly owner: AuthoredDefinitionEditorProvider
+	) { }
+
+	openCustomDocument(
+		uri: vscode.Uri,
+		openContext: vscode.CustomDocumentOpenContext,
+		token: vscode.CancellationToken
+	): Promise<AuthoredDefinitionDocument> {
+		return this.owner.openCustomDocument(this.viewType, uri, openContext, token);
+	}
+
+	resolveCustomEditor(document: AuthoredDefinitionDocument, webviewPanel: vscode.WebviewPanel): void {
+		this.owner.resolveCustomEditor(document, webviewPanel);
+	}
+
+	saveCustomDocument(document: AuthoredDefinitionDocument): Promise<void> {
+		return this.owner.saveCustomDocument(document);
+	}
+
+	saveCustomDocumentAs(): Promise<void> {
+		return this.owner.saveCustomDocumentAs();
+	}
+
+	revertCustomDocument(document: AuthoredDefinitionDocument): Promise<void> {
+		return this.owner.revertCustomDocument(document);
+	}
+
+	backupCustomDocument(
+		document: AuthoredDefinitionDocument,
+		context: vscode.CustomDocumentBackupContext
+	): Promise<vscode.CustomDocumentBackup> {
+		return this.owner.backupCustomDocument(document, context);
+	}
+
+	fireEdit(event: vscode.CustomDocumentEditEvent<AuthoredDefinitionDocument>): void {
+		this.changeEmitter.fire(event);
+	}
+
+	dispose(): void {
+		this.changeEmitter.dispose();
 	}
 }
 
