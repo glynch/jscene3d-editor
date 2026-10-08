@@ -152,7 +152,7 @@ suite('JScene3D Inspector property editor resolver', () => {
 			kind: 'reference', referenceKind: 'asset', locator: 'mesh', label: 'Player mesh',
 			resolution: 'resolved', revealUri: 'file:///project/assets/player.glb'
 		})), {
-			kind: 'reference', label: 'Player mesh', resolution: 'resolved',
+			kind: 'reference', label: 'Player mesh', locator: 'mesh', resolution: 'resolved',
 			revealUri: 'file:///project/assets/player.glb'
 		});
 		assert.deepStrictEqual(resolvePropertyEditor(property('entity-target', {

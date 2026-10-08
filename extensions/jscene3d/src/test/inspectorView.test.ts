@@ -258,8 +258,8 @@ suite('JScene3D Inspector view', () => {
 		assert.ok(html.includes('"kind":"quaternion","collapsible":true,"unit":null,"components":[{"label":"X","decimal":"0"},{"label":"Y","decimal":"0"},{"label":"Z","decimal":"0"},{"label":"W","decimal":"1"}],"summary":"0, 0, 0, 1"'));
 		assert.ok(html.includes('"kind":"linearColor","collapsible":true,"unit":null,"components":[{"label":"R","decimal":"1"},{"label":"G","decimal":"0.5"},{"label":"B","decimal":"2"}],"summary":"R 1, G 0.5, B 2"'));
 		assert.ok(html.includes('"propertyEditor":{"kind":"collectionSummary","count":3}'));
-		assert.ok(html.includes('"propertyEditor":{"kind":"reference","label":"Player mesh","resolution":"resolved","revealUri":"file:///project/assets/player.glb"}'));
-		assert.match(html, /\.property-components \{[^}]*display: grid[^}]*grid-template-columns: repeat\(auto-fit, minmax\(54px, 1fr\)\)[^}]*\}/);
+		assert.ok(html.includes('"propertyEditor":{"kind":"reference","label":"Player mesh","locator":"mesh","resolution":"resolved","revealUri":"file:///project/assets/player.glb"}'));
+		assert.match(html, /\.property-components \{[^}]*display: grid[^}]*grid-template-columns: repeat\(auto-fit, minmax\(38px, 1fr\)\)[^}]*\}/);
 		assert.match(html, /\.property-component \{[^}]*display: grid[^}]*grid-template-columns: 13px minmax\(0, 1fr\)[^}]*\}/);
 		assert.match(html, /\.property-component-value \{[^}]*width: 100%[^}]*text-align: right[^}]*\}/);
 		assert.match(html, /\.entity-name, \.property-input, \.deferred-select, \.resource-field, \.property-component-value \{[^}]*border: 1px solid var\(--vscode-input-border, transparent\)[^}]*background: var\(--vscode-input-background\)[^}]*\}/);
@@ -271,7 +271,29 @@ suite('JScene3D Inspector view', () => {
 		assert.match(html, /card\.open = !collapsedGroups\.has\(key\)/);
 		assert.match(html, /card\.addEventListener\('toggle'/);
 		assert.match(html, /componentIcon\(group\)/);
-		assert.match(html, /renderResource\(container, semanticLabel\(editor\.label, editor\.resolution\)\)/);
+		assert.match(html, /renderResource\(container, semanticLabel\(editor\.label, editor\.resolution\), editor\.locator, editor\.revealUri\)/);
+		assert.match(html, /field\.title = \[label, locator, revealUri\]\.filter\(Boolean\)\.join\('\\n'\)/);
+	});
+
+	test('uses compact mockup-aligned cards without rendering descriptor prose', () => {
+		const base = snapshot();
+		const inspector: InspectorSnapshotDto = {
+			...base,
+			groups: [base.groups[0], {
+				...base.groups[1],
+				label: 'Mesh Renderer 3D',
+				description: 'Shared mesh and material presentation'
+			}]
+		};
+
+		const html = inspectorHtml('vscode-webview://test', readyState(inspector, 'movement'), 'en', translate);
+
+		assert.match(html, /label\.textContent = group\.label; label\.title = group\.description \?\? group\.label/);
+		assert.doesNotMatch(html, /className = 'component-description'/);
+		assert.doesNotMatch(html, /description\.textContent = group\.description/);
+		assert.match(html, /\.component-name \{[^}]*white-space: normal[^}]*overflow-wrap: anywhere[^}]*\}/);
+		assert.match(html, /\.component-stack \{[^}]*gap: 4px[^}]*\}/);
+		assert.match(html, /\.property \{[^}]*grid-template-columns: clamp\(72px, 34%, 108px\) minmax\(0, 1fr\)[^}]*\}/);
 	});
 
 	test('accepts only the closed Inspector webview message shapes', () => {

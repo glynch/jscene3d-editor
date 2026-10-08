@@ -66,6 +66,7 @@ export type ReadonlyPropertyEditorModel =
 	| {
 		readonly kind: 'reference';
 		readonly label: string | null;
+		readonly locator: string | null;
 		readonly resolution: 'resolved' | 'broken' | null;
 		readonly revealUri: string | null;
 	}
@@ -168,10 +169,10 @@ function structuralEditor(
 		case 'reference':
 			return value?.kind === 'reference'
 				? {
-					kind: 'reference', label: value.label, resolution: value.resolution,
+					kind: 'reference', label: value.label, locator: value.locator, resolution: value.resolution,
 					revealUri: value.revealUri
 				}
-				: { kind: 'reference', label: null, resolution: null, revealUri: null };
+				: { kind: 'reference', label: null, locator: null, resolution: null, revealUri: null };
 		case 'entity-target':
 			return value?.kind === 'entity-target'
 				? { kind: 'entityTarget', label: value.label, resolution: value.resolution }

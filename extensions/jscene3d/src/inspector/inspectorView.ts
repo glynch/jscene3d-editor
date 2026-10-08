@@ -316,46 +316,45 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .inspector-menu, .component-action, .resource-action { display: grid; place-items: center; border: 0; color: var(--vscode-icon-foreground); background: transparent; }
 .inspector-menu { width: 24px; height: 24px; font-size: 18px; }
 .inspector-menu:disabled, .component-action:disabled, .resource-action:disabled { opacity: .62; }
-.inspector-scroll { min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 10px 10px 18px; }
-.entity-card { padding: 2px 2px 12px; }
-.entity-primary { display: grid; grid-template-columns: 26px auto minmax(70px, 1fr) auto; gap: 7px; align-items: center; }
+.inspector-scroll { min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 7px 7px 14px; }
+.entity-card { padding: 1px 1px 8px; }
+.entity-primary { display: grid; grid-template-columns: 24px 16px minmax(70px, 1fr) auto; gap: 5px; align-items: center; }
 .entity-icon, .component-icon { display: grid; place-items: center; color: var(--vscode-icon-foreground); }
-.entity-icon { width: 24px; height: 24px; }
+.entity-icon { width: 22px; height: 22px; }
 .entity-icon svg, .component-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
 .entity-name, .property-input, .deferred-select, .resource-field, .property-component-value { min-width: 0; height: 24px; border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
 .entity-name { width: 100%; padding: 2px 6px; font-weight: 600; }
 .entity-name[readonly] { color: var(--vscode-foreground); }
 .check-label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .property-checkbox, .deferred-checkbox { width: 15px; height: 15px; margin: 0; accent-color: var(--vscode-checkbox-selectBackground); }
-.deferred-control { color: var(--vscode-disabledForeground); }
-.entity-metadata { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 6px 8px; align-items: center; margin-top: 10px; }
+.deferred-control { color: var(--vscode-disabledForeground); opacity: .78; }
+.entity-metadata { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 5px; align-items: center; margin-top: 7px; }
 .metadata-label { color: var(--vscode-descriptionForeground); }
 .deferred-select { width: 100%; padding: 1px 24px 1px 6px; color: var(--vscode-disabledForeground); }
-.component-stack { display: grid; gap: 8px; }
+.component-stack { display: grid; gap: 4px; }
 .component-card { overflow: hidden; border: 1px solid var(--vscode-sideBarSectionHeader-border); border-radius: 3px; background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, var(--vscode-editor-background)); }
 .component-card[open] { box-shadow: 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow) 35%, transparent); }
-.component-header { min-height: 34px; display: grid; grid-template-columns: 12px 20px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 4px 5px 4px 7px; color: var(--vscode-foreground); background: var(--vscode-sideBarSectionHeader-background); cursor: pointer; list-style: none; }
+.component-header { min-height: 30px; display: grid; grid-template-columns: 10px 18px minmax(0, 1fr) auto; gap: 5px; align-items: center; padding: 3px 3px 3px 6px; color: var(--vscode-foreground); background: var(--vscode-sideBarSectionHeader-background); cursor: pointer; list-style: none; }
 .component-header::-webkit-details-marker { display: none; }
 .component-disclosure { color: var(--vscode-icon-foreground); font-size: 10px; transform: rotate(-90deg); transition: transform 90ms ease; }
 .component-card[open] .component-disclosure { transform: rotate(0deg); }
-.component-icon { width: 18px; height: 18px; }
-.component-name { min-width: 0; overflow: hidden; font-size: .96em; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.component-icon { width: 16px; height: 16px; }
+.component-name { min-width: 0; font-size: .96em; font-weight: 600; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
 .component-actions { display: flex; align-items: center; }
-.component-action { width: 23px; height: 23px; padding: 3px; border-radius: 2px; font-size: 14px; }
+.component-action { width: 20px; height: 20px; padding: 2px; border-radius: 2px; font-size: 13px; }
 .component-action:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
-.component-body { padding: 6px 8px 9px; border-top: 1px solid color-mix(in srgb, var(--vscode-sideBarSectionHeader-border) 65%, transparent); }
-.component-description { margin: 0 0 7px; color: var(--vscode-descriptionForeground); font-size: .9em; line-height: 1.35; }
-.component-warning { margin: 0 0 7px; color: var(--vscode-problemsWarningIcon-foreground); font-size: .9em; }
-.property { display: grid; grid-template-columns: minmax(78px, 38%) minmax(0, 1fr); gap: 7px; align-items: start; min-height: 30px; padding: 3px 0; }
+.component-body { padding: 4px 7px 6px; border-top: 1px solid color-mix(in srgb, var(--vscode-sideBarSectionHeader-border) 65%, transparent); }
+.component-warning { margin: 0 0 5px; color: var(--vscode-problemsWarningIcon-foreground); font-size: .9em; }
+.property { display: grid; grid-template-columns: clamp(72px, 34%, 108px) minmax(0, 1fr); gap: 6px; align-items: start; min-height: 27px; padding: 2px 0; }
 .property.modified { margin: 0 -4px; padding-right: 4px; padding-left: 5px; border-left: 2px solid var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)); background: color-mix(in srgb, var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder)) 7%, transparent); }
 .property:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-.property-label { min-width: 0; padding-top: 4px; color: var(--vscode-foreground); line-height: 1.25; }
+.property-label { min-width: 0; padding-top: 3px; color: var(--vscode-foreground); line-height: 1.25; overflow-wrap: anywhere; }
 .property-value { min-width: 0; color: var(--vscode-descriptionForeground); text-align: right; overflow-wrap: anywhere; user-select: text; }
 .property-input { width: 100%; padding: 2px 5px; }
 .property-input.validation-error { border-color: var(--vscode-inputValidation-errorBorder); outline-color: var(--vscode-inputValidation-errorBorder); }
 .property-validation { margin-top: 2px; color: var(--vscode-inputValidation-errorForeground); font-size: .85em; line-height: 1.2; text-align: left; }
 .property-validation[hidden] { display: none; }
-.property-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 4px; }
+.property-components { display: grid; grid-template-columns: repeat(auto-fit, minmax(38px, 1fr)); gap: 3px; }
 .property-component { min-width: 0; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: center; }
 .property-component-label { color: var(--vscode-descriptionForeground); font-size: .82em; text-align: left; }
 .property-component-value { width: 100%; padding: 2px 4px; color: var(--vscode-input-foreground); text-align: right; }
@@ -365,11 +364,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .badges { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .badge { padding: 1px 4px; border-radius: 2px; font-size: .8em; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
 .badge.problem { color: var(--vscode-inputValidation-errorForeground); background: var(--vscode-inputValidation-errorBackground); }
-.add-component { width: 100%; height: 28px; margin-top: 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.add-component { width: 100%; height: 28px; margin-top: 7px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
 .add-component:disabled { color: var(--vscode-disabledForeground); }
-@media (max-width: 300px) {
-	.entity-primary { grid-template-columns: 24px auto minmax(48px, 1fr); }
+@media (max-width: 280px) {
+	.entity-primary { grid-template-columns: 22px 16px minmax(48px, 1fr); }
 	.entity-static { grid-column: 3; }
+	.entity-metadata { grid-template-columns: 34px minmax(0, 1fr); }
+}
+@media (max-width: 220px) {
 	.property { grid-template-columns: 1fr; gap: 2px; }
 	.property-label { padding-top: 0; }
 }
@@ -469,7 +471,7 @@ if (bootstrap.status !== 'ready') {
 		const header = document.createElement('summary'); header.className = 'component-header';
 		const disclosure = document.createElement('span'); disclosure.className = 'component-disclosure'; disclosure.setAttribute('aria-hidden', 'true'); disclosure.textContent = '▾';
 		const icon = document.createElement('span'); icon.className = 'component-icon'; icon.setAttribute('aria-hidden', 'true'); icon.innerHTML = componentIcon(group);
-		const label = document.createElement('span'); label.className = 'component-name'; label.textContent = group.label;
+		const label = document.createElement('span'); label.className = 'component-name'; label.textContent = group.label; label.title = group.description ?? group.label;
 		const actions = document.createElement('span'); actions.className = 'component-actions';
 		for (const action of [[bootstrap.strings.componentHelp, '?'], [bootstrap.strings.componentSettings, '☷'], [bootstrap.strings.componentActions, '⋯']]) {
 			const button = document.createElement('button'); button.type = 'button'; button.className = 'component-action'; button.disabled = true;
@@ -477,7 +479,6 @@ if (bootstrap.status !== 'ready') {
 		}
 		header.append(disclosure, icon, label, actions); card.append(header);
 		const body = document.createElement('div'); body.className = 'component-body';
-		if (group.description) { const description = document.createElement('p'); description.className = 'component-description'; description.textContent = group.description; body.append(description); }
 		if (group.metadataStatus === 'unavailable') { const warning = document.createElement('p'); warning.className = 'component-warning'; warning.textContent = bootstrap.strings.metadataUnavailable; body.append(warning); }
 		for (const property of group.properties) { body.append(renderProperty(group.identity, property)); }
 		card.append(body);
@@ -593,7 +594,7 @@ if (bootstrap.status !== 'ready') {
 			case 'eulerRotation':
 			case 'quaternion':
 			case 'linearColor': renderComponents(container, editor); return;
-			case 'reference': renderResource(container, semanticLabel(editor.label, editor.resolution)); return;
+			case 'reference': renderResource(container, semanticLabel(editor.label, editor.resolution), editor.locator, editor.revealUri); return;
 			case 'entityTarget': container.textContent = semanticLabel(editor.label, editor.resolution); return;
 			case 'componentTarget': {
 				const label = editor.entityLabel === null || editor.componentLabel === null
@@ -606,9 +607,9 @@ if (bootstrap.status !== 'ready') {
 		}
 	}
 
-	function renderResource(container, label) {
+	function renderResource(container, label, locator, revealUri) {
 		const control = document.createElement('div'); control.className = 'resource-control';
-		const field = document.createElement('div'); field.className = 'resource-field'; field.textContent = label; field.title = label;
+		const field = document.createElement('div'); field.className = 'resource-field'; field.textContent = label; field.title = [label, locator, revealUri].filter(Boolean).join('\\n');
 		const action = document.createElement('button'); action.type = 'button'; action.className = 'resource-action'; action.disabled = true; action.textContent = '◎';
 		action.setAttribute('aria-label', bootstrap.strings.chooseResource); action.setAttribute('title', bootstrap.strings.deferred);
 		control.append(field, action); container.append(control);
