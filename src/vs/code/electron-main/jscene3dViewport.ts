@@ -7,7 +7,7 @@ import { app, sharedTexture } from 'electron';
 import { Disposable, IDisposable } from '../../base/common/lifecycle.js';
 import { isAbsolute, join } from '../../base/common/path.js';
 import { Promises, SymlinkSupport } from '../../base/node/pfs.js';
-import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneViewNavigation, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, sceneViewNavigationCommand, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { ICodeWindow } from '../../platform/window/electron-main/window.js';
@@ -62,6 +62,7 @@ export class JScene3DViewportController extends Disposable {
 	private readonly sceneViewUpdateListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot) => this.updateSceneView(event, paneId, session, snapshot);
 	private readonly sceneViewSelectListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null) => this.selectSceneView(event, paneId, session, revision, occurrence);
 	private readonly sceneViewPickListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number) => this.pickSceneView(event, paneId, session, revision, horizontal, vertical);
+	private readonly sceneViewNavigationListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity, navigation: IJScene3DSceneViewNavigation) => this.navigateSceneView(event, paneId, session, navigation);
 	private readonly beforeQuitListener = () => { void this.stopAll('application shutdown'); };
 
 	constructor(
@@ -78,6 +79,7 @@ export class JScene3DViewportController extends Disposable {
 		validatedIpcMain.on('vscode:jscene3dViewport:updateSceneView', this.sceneViewUpdateListener);
 		validatedIpcMain.on('vscode:jscene3dViewport:selectSceneView', this.sceneViewSelectListener);
 		validatedIpcMain.on('vscode:jscene3dViewport:pickSceneView', this.sceneViewPickListener);
+		validatedIpcMain.on('vscode:jscene3dViewport:navigateSceneView', this.sceneViewNavigationListener);
 		app.on('before-quit', this.beforeQuitListener);
 	}
 
@@ -365,6 +367,15 @@ export class JScene3DViewportController extends Disposable {
 		this.renderer.sendRendererMessage(session.sessionId, `SCENE_PICK ${requestId} ${revision} ${horizontal} ${vertical}`);
 	}
 
+	private navigateSceneView(event: Electron.IpcMainEvent, paneId: string, identity: IJScene3DViewportSessionIdentity, navigation: IJScene3DSceneViewNavigation): void {
+		const session = this.fromPane(event, paneId, identity);
+		if (!session || session.launch.kind !== 'scene' || !session.rendererReady || !isSceneViewNavigation(navigation)) {
+			return;
+		}
+		const command = sceneViewNavigationCommand(navigation);
+		this.renderer.sendRendererMessage(session.sessionId, command);
+	}
+
 	private onSceneSelection(session: IJScene3DMainSession, requestId: number, revision: number, encoded: string): void {
 		if (!this.isActive(session) || session.launch.kind !== 'scene'
 			|| requestId !== session.selectionRequest || revision !== session.currentSnapshotRevision || encoded === 'STALE') {
@@ -560,6 +571,7 @@ export class JScene3DViewportController extends Disposable {
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:updateSceneView', this.sceneViewUpdateListener);
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:selectSceneView', this.sceneViewSelectListener);
 		validatedIpcMain.removeListener('vscode:jscene3dViewport:pickSceneView', this.sceneViewPickListener);
+		validatedIpcMain.removeListener('vscode:jscene3dViewport:navigateSceneView', this.sceneViewNavigationListener);
 		app.removeListener('before-quit', this.beforeQuitListener);
 		void this.stopAll('viewport controller disposed');
 		super.dispose();

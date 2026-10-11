@@ -6,6 +6,9 @@
 	"command.closeProject": "Close Project",
 	"command.runProject": "Run Project",
 	"command.gettingStarted": "Getting Started",
+	"command.sceneView.focusSelected": "Focus Selected",
+	"command.sceneView.frameAll": "Frame All",
+	"command.sceneView.resetNavigationSettings": "Reset Scene View Navigation Settings",
 	"viewsContainer.jscene3d": "JScene3D",
 	"viewsContainer.inspector": "JScene3D Inspector",
 	"view.project": "JScene3D Project",
@@ -17,5 +20,16 @@
 	"configuration.authoring.javaExecutable": "Java executable used to launch the development authoring service. The JSCENE3D_JAVA_EXECUTABLE environment variable takes precedence.",
 	"configuration.authoring.modulePath": "Development JPMS module path containing the JScene3D authoring service and its dependencies. The JSCENE3D_AUTHORING_SERVICE_MODULE_PATH environment variable takes precedence. Production service discovery is not yet implemented.",
 	"configuration.authoring.installedExtensionMetadata": "Ordered paths to installed descriptor-only extension metadata artifacts or directories. The path-list value in JSCENE3D_AUTHORING_EXTENSION_METADATA_PATH takes precedence. These paths are separate from the Java module path and are never used to execute runtime extension providers.",
-	"configuration.authoring.runtimeArtifacts": "Ordered absolute JAR paths made available only to isolated project viewport renderer processes. The path-list value in JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH takes precedence."
+	"configuration.authoring.runtimeArtifacts": "Ordered absolute JAR paths made available only to isolated project viewport renderer processes. The path-list value in JSCENE3D_PROJECT_RUNTIME_ARTIFACT_PATH takes precedence.",
+	"configuration.sceneView.navigation.altDragOrbitEnabled": "Enable Option/Alt + primary-button drag to orbit the Scene View editor camera.",
+	"configuration.sceneView.navigation.shiftAltDragPanEnabled": "Enable Shift + Option/Alt + primary-button drag to pan the Scene View editor camera.",
+	"configuration.sceneView.navigation.middleButtonPanEnabled": "Enable middle-button drag to pan the Scene View editor camera.",
+	"configuration.sceneView.navigation.scrollZoomEnabled": "Enable mouse-wheel and two-finger scrolling to zoom the Scene View editor camera.",
+	"configuration.sceneView.navigation.pinchZoomEnabled": "Enable trackpad pinch gestures to zoom the Scene View editor camera.",
+	"configuration.sceneView.navigation.altRightDragZoomEnabled": "Enable Option/Alt + secondary-button vertical drag to zoom the Scene View editor camera.",
+	"configuration.sceneView.navigation.orbitSensitivity": "Scene View orbit sensitivity.",
+	"configuration.sceneView.navigation.panSensitivity": "Scene View pan sensitivity.",
+	"configuration.sceneView.navigation.zoomSensitivity": "Scene View zoom sensitivity.",
+	"configuration.sceneView.navigation.invertOrbit": "Invert Scene View orbit direction.",
+	"configuration.sceneView.navigation.invertZoom": "Invert Scene View zoom direction."
 }

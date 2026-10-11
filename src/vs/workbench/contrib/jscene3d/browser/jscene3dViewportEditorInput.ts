@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { IJScene3DSceneSelectionChange, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneSelectionChange, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { EditorInputCapabilities } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
@@ -132,6 +132,20 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		const session = this.model.sessionIdentity;
 		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
 			this.bridge?.pickSceneView(this.paneId, session, this.launch.snapshot.revision, horizontal, vertical);
+		}
+	}
+
+	navigate(presentation: IJScene3DViewportPresentation, navigation: IJScene3DSceneViewNavigation): void {
+		const session = this.model.sessionIdentity;
+		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
+			this.bridge?.navigateSceneView(this.paneId, session, navigation);
+		}
+	}
+
+	navigateActive(navigation: IJScene3DSceneViewNavigation): void {
+		const session = this.model.sessionIdentity;
+		if (this.presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
+			this.bridge?.navigateSceneView(this.paneId, session, navigation);
 		}
 	}
 

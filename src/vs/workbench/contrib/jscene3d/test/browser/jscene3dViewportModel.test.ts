@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { JScene3DViewportModel, JScene3DViewportStopGate, physicalViewportSize, synchronizeCanvasBackingStore } from '../../browser/jscene3dViewportModel.js';
+import { isJScene3DViewportPresentationVisible, JScene3DViewportModel, JScene3DViewportStopGate, physicalViewportSize, synchronizeCanvasBackingStore } from '../../browser/jscene3dViewportModel.js';
 
 suite('JScene3DViewportModel', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -16,6 +16,12 @@ suite('JScene3DViewportModel', () => {
 		assert.deepStrictEqual(physicalViewportSize(20000, 20000, 2), { width: 16384, height: 16384 });
 		assert.strictEqual(physicalViewportSize(0, 100, 2), undefined);
 		assert.strictEqual(physicalViewportSize(100, 100, 0), undefined);
+	});
+
+	test('pauses presentation while a modal editor covers a visible viewport', () => {
+		assert.strictEqual(isJScene3DViewportPresentationVisible(true, false), true);
+		assert.strictEqual(isJScene3DViewportPresentationVisible(true, true), false);
+		assert.strictEqual(isJScene3DViewportPresentationVisible(false, false), false);
 	});
 
 	test('synchronizes the canvas backing store independently of renderer resize deduplication', () => {

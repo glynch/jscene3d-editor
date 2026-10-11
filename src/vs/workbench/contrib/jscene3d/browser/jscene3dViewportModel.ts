@@ -10,6 +10,11 @@ export interface IJScene3DViewportSize {
 	readonly height: number;
 }
 
+/** Returns whether a viewport may present frames without being covered by a modal editor. */
+export function isJScene3DViewportPresentationVisible(editorVisible: boolean, modalEditorVisible: boolean): boolean {
+	return editorVisible && !modalEditorVisible;
+}
+
 /** Fullscreen-quad coordinates for presenting a top-left-origin external texture. */
 export const jscene3dViewportTextureCoordinates = [
 	[0, 0], [1, 0], [0, 1],

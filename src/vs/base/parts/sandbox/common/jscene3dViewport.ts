@@ -27,6 +27,13 @@ export interface IJScene3DViewportSelection extends IJScene3DViewportSessionIden
 	readonly occurrence: IJScene3DSceneViewOccurrence | null;
 }
 
+/** Validated Scene View editor-camera operation sent to its retained native session. */
+export type IJScene3DSceneViewNavigation =
+	| { readonly kind: 'orbit' | 'pan'; readonly horizontal: number; readonly vertical: number; readonly viewportWidth: number; readonly viewportHeight: number }
+	| { readonly kind: 'zoom'; readonly amount: number }
+	| { readonly kind: 'gizmoClick'; readonly horizontal: number; readonly vertical: number; readonly viewportWidth: number; readonly viewportHeight: number }
+	| { readonly kind: 'focusSelected' | 'frameAll' | 'toggleProjection' };
+
 /** Selection payload forwarded from an active Scene View to the built-in extension. */
 export interface IJScene3DSceneSelectionChange {
 	readonly viewportId: string;
@@ -150,6 +157,7 @@ export interface IJScene3DViewportBridge {
 	updateSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot): void;
 	selectSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null): void;
 	pickSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number): void;
+	navigateSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, navigation: IJScene3DSceneViewNavigation): void;
 	resize(paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number): void;
 	pause(paneId: string, session: IJScene3DViewportSessionIdentity): void;
 	resume(paneId: string, session: IJScene3DViewportSessionIdentity): void;
@@ -174,6 +182,53 @@ export function isViewportPaneId(value: unknown): value is string {
 
 export function isViewportDimension(value: unknown): value is number {
 	return Number.isInteger(value) && (value as number) > 0 && (value as number) <= 16384;
+}
+
+/** Returns whether a value is a bounded Scene View editor-camera operation. */
+export function isSceneViewNavigation(value: unknown): value is IJScene3DSceneViewNavigation {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DSceneViewNavigation> & Record<string, unknown>;
+	switch (candidate.kind) {
+		case 'orbit':
+		case 'pan':
+		case 'gizmoClick':
+			return finite(candidate.horizontal) && finite(candidate.vertical)
+				&& isViewportDimension(candidate.viewportWidth) && isViewportDimension(candidate.viewportHeight);
+		case 'zoom':
+			return finite(candidate.amount);
+		case 'focusSelected':
+		case 'frameAll':
+		case 'toggleProjection':
+			return true;
+		default:
+			return false;
+	}
+}
+
+/** Serializes a validated editor-camera operation into the renderer's protocol-1.0 vocabulary. */
+export function sceneViewNavigationCommand(navigation: IJScene3DSceneViewNavigation): string {
+	switch (navigation.kind) {
+		case 'orbit':
+			return `SCENE_NAVIGATE ORBIT ${navigation.horizontal} ${navigation.vertical} ${navigation.viewportWidth} ${navigation.viewportHeight}`;
+		case 'pan':
+			return `SCENE_NAVIGATE PAN ${navigation.horizontal} ${navigation.vertical} ${navigation.viewportWidth} ${navigation.viewportHeight}`;
+		case 'zoom':
+			return `SCENE_NAVIGATE ZOOM ${navigation.amount}`;
+		case 'gizmoClick':
+			return `SCENE_NAVIGATE GIZMO_CLICK ${navigation.horizontal} ${navigation.vertical} ${navigation.viewportWidth} ${navigation.viewportHeight}`;
+		case 'focusSelected':
+			return 'SCENE_NAVIGATE FOCUS_SELECTED';
+		case 'frameAll':
+			return 'SCENE_NAVIGATE FRAME_ALL';
+		case 'toggleProjection':
+			return 'SCENE_NAVIGATE TOGGLE_PROJECTION';
+	}
+}
+
+function finite(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value);
 }
 
 export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaunch {

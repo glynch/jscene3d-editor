@@ -69,6 +69,34 @@
 				"command": "jscene3d.gettingStarted",
 				"title": "%command.gettingStarted%",
 				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.focusSelected",
+				"title": "%command.sceneView.focusSelected%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.frameAll",
+				"title": "%command.sceneView.frameAll%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.resetNavigationSettings",
+				"title": "%command.sceneView.resetNavigationSettings%",
+				"category": "JScene3D"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "jscene3d.sceneView.focusSelected",
+				"key": "f",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview"
+			},
+			{
+				"command": "jscene3d.sceneView.frameAll",
+				"key": "home",
+				"mac": "home",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview"
 			}
 		],
 		"menus": {
@@ -191,6 +219,67 @@
 						"default": [],
 						"scope": "machine",
 						"description": "%configuration.authoring.runtimeArtifacts%"
+					},
+					"jscene3d.sceneView.navigation.altDragOrbitEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.altDragOrbitEnabled%"
+					},
+					"jscene3d.sceneView.navigation.shiftAltDragPanEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.shiftAltDragPanEnabled%"
+					},
+					"jscene3d.sceneView.navigation.middleButtonPanEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.middleButtonPanEnabled%"
+					},
+					"jscene3d.sceneView.navigation.scrollZoomEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.scrollZoomEnabled%"
+					},
+					"jscene3d.sceneView.navigation.pinchZoomEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.pinchZoomEnabled%"
+					},
+					"jscene3d.sceneView.navigation.altRightDragZoomEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.navigation.altRightDragZoomEnabled%"
+					},
+					"jscene3d.sceneView.navigation.orbitSensitivity": {
+						"type": "number",
+						"default": 1,
+						"minimum": 0.05,
+						"maximum": 10,
+						"description": "%configuration.sceneView.navigation.orbitSensitivity%"
+					},
+					"jscene3d.sceneView.navigation.panSensitivity": {
+						"type": "number",
+						"default": 1,
+						"minimum": 0.05,
+						"maximum": 10,
+						"description": "%configuration.sceneView.navigation.panSensitivity%"
+					},
+					"jscene3d.sceneView.navigation.zoomSensitivity": {
+						"type": "number",
+						"default": 1,
+						"minimum": 0.05,
+						"maximum": 10,
+						"description": "%configuration.sceneView.navigation.zoomSensitivity%"
+					},
+					"jscene3d.sceneView.navigation.invertOrbit": {
+						"type": "boolean",
+						"default": false,
+						"description": "%configuration.sceneView.navigation.invertOrbit%"
+					},
+					"jscene3d.sceneView.navigation.invertZoom": {
+						"type": "boolean",
+						"default": false,
+						"description": "%configuration.sceneView.navigation.invertZoom%"
 					}
 			}
 		},

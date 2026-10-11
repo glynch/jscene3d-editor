@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { EditorInputCapabilities, Verbosity } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
@@ -295,6 +295,26 @@ suite('JScene3DViewportEditorInput', () => {
 		}
 	});
 
+	test('sends navigation only through the active retained Scene session', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		try {
+			input.navigate(presentation, { kind: 'frameAll' });
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			input.navigate(presentation, { kind: 'orbit', horizontal: 4, vertical: -2, viewportWidth: 800, viewportHeight: 600 });
+			input.navigateActive({ kind: 'focusSelected' });
+
+			assert.deepStrictEqual(bridge.navigated.map(entry => entry.navigation), [
+				{ kind: 'orbit', horizontal: 4, vertical: -2, viewportWidth: 800, viewportHeight: 600 },
+				{ kind: 'focusSelected' }
+			]);
+		} finally {
+			await input.stop();
+			input.dispose();
+		}
+	});
+
 	test('keeps loading visible until the first native frame is presented', async () => {
 		const bridge = new TestViewportBridge();
 		const presentation = new TestPresentation();
@@ -471,6 +491,7 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 	readonly updated: Array<{ viewportId: string; revision: number }> = [];
 	readonly selected: Array<{ viewportId: string; revision: number; occurrence: IJScene3DSceneViewOccurrence | null }> = [];
 	readonly picked: Array<{ viewportId: string; revision: number; horizontal: number; vertical: number }> = [];
+	readonly navigated: Array<{ viewportId: string; navigation: IJScene3DSceneViewNavigation }> = [];
 	private readonly consumers = new Map<string, {
 		onReady(session: IJScene3DViewportSessionIdentity): void;
 		onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
@@ -523,6 +544,13 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
 		if (viewportId) {
 			this.picked.push({ viewportId, revision, horizontal, vertical });
+		}
+	}
+
+	navigateSceneView(paneId: string, _session: IJScene3DViewportSessionIdentity, navigation: IJScene3DSceneViewNavigation): void {
+		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
+		if (viewportId) {
+			this.navigated.push({ viewportId, navigation });
 		}
 	}
 

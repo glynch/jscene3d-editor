@@ -1,0 +1,193 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) JScene3D contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.jscene3d-scene-toolbar {
+	position: absolute;
+	z-index: 5;
+	display: none;
+	box-sizing: border-box;
+	padding: var(--vscode-spacing-size40);
+	border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #6b6b6b) 52%, transparent);
+	border-radius: var(--vscode-cornerRadius-large);
+	background: color-mix(in srgb, var(--vscode-editorWidget-background, #20242d) 96%, #101218);
+	box-shadow: 0 3px 12px #0000003d, inset 0 1px 0 #ffffff08;
+	backdrop-filter: blur(10px);
+	gap: var(--vscode-spacing-size20);
+}
+
+.jscene3d-scene-toolbar.is-visible {
+	display: flex;
+}
+
+.jscene3d-scene-toolbar-top {
+	top: 10px;
+	left: 10px;
+	flex-direction: row;
+}
+
+.jscene3d-scene-toolbar-left {
+	top: 58px;
+	left: 10px;
+	flex-direction: column;
+}
+
+.jscene3d-scene-toolbar-right {
+	right: 16px;
+	flex-direction: column;
+}
+
+.jscene3d-scene-toolbar-button {
+	display: flex;
+	box-sizing: border-box;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border: var(--vscode-strokeThickness) solid transparent;
+	border-radius: var(--vscode-cornerRadius-medium);
+	outline: none;
+	background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, #ffffff18) 16%, transparent);
+	color: color-mix(in srgb, var(--vscode-foreground) 86%, transparent);
+	font: inherit;
+	font-size: var(--vscode-fontSize-heading2);
+	line-height: 1;
+	cursor: pointer;
+	transition: background-color 80ms ease, border-color 80ms ease, color 80ms ease, transform 60ms ease;
+	align-items: center;
+	justify-content: center;
+}
+
+.jscene3d-scene-toolbar-button:not(:disabled):hover {
+	border-color: color-mix(in srgb, #9887ff 38%, transparent);
+	background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, #ffffff18) 82%, #806bf426);
+	color: #ffffff;
+}
+
+.jscene3d-scene-toolbar-button:not(:disabled):active {
+	border-color: color-mix(in srgb, #aa9cff 58%, transparent);
+	background: color-mix(in srgb, #806bf4 64%, var(--vscode-editorWidget-background, #20242d));
+	box-shadow: inset 0 0 0 1px #ffffff12;
+	color: #ffffff;
+	transform: translateY(1px);
+}
+
+.jscene3d-scene-toolbar-button.is-selected {
+	border-color: color-mix(in srgb, #aa9cff 58%, transparent);
+	background: color-mix(in srgb, #806bf4 38%, var(--vscode-editorWidget-background, #20242d));
+	box-shadow: inset 0 0 0 1px #ffffff0d;
+	color: #ffffff;
+}
+
+.jscene3d-scene-toolbar-button.is-dragging {
+	border-color: color-mix(in srgb, #b8aeff 78%, transparent);
+	background: color-mix(in srgb, #806bf4 64%, var(--vscode-editorWidget-background, #20242d));
+	box-shadow: inset 0 0 0 1px #ffffff16, 0 0 0 1px #806bf42e;
+	color: #ffffff;
+	transform: translateY(1px);
+}
+
+.jscene3d-scene-toolbar-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.jscene3d-scene-toolbar-button:disabled {
+	border-color: transparent;
+	background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, #ffffff18) 24%, transparent);
+	color: color-mix(in srgb, var(--vscode-foreground) 58%, transparent);
+	cursor: not-allowed;
+}
+
+.jscene3d-scene-toolbar-button.is-selected:disabled {
+	border-color: color-mix(in srgb, #aa9cff 58%, transparent);
+	background: color-mix(in srgb, #806bf4 38%, var(--vscode-editorWidget-background, #20242d));
+	color: color-mix(in srgb, #ffffff 88%, transparent);
+}
+
+.jscene3d-scene-toolbar-text-button {
+	width: auto;
+	min-width: 50px;
+	padding: 0 8px;
+	font-size: var(--vscode-fontSize-body1);
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.jscene3d-scene-toolbar-navigation-button {
+	cursor: grab;
+}
+
+.jscene3d-scene-toolbar-navigation-button.is-zoom {
+	cursor: ns-resize;
+}
+
+.jscene3d-scene-toolbar-navigation-button.is-dragging {
+	cursor: grabbing;
+}
+
+.jscene3d-scene-toolbar-navigation-button.is-zoom.is-dragging {
+	cursor: ns-resize;
+}
+
+.jscene3d-scene-toolbar-projection {
+	position: relative;
+	margin-top: var(--vscode-spacing-size40);
+}
+
+.jscene3d-scene-toolbar-projection::before {
+	position: absolute;
+	top: -4px;
+	left: 5px;
+	width: 22px;
+	height: 1px;
+	background: color-mix(in srgb, var(--vscode-widget-border, #6b6b6b) 65%, transparent);
+	content: '';
+}
+
+.jscene3d-scene-toolbar-svg {
+	display: block;
+	width: 21px;
+	height: 21px;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.55;
+}
+
+.jscene3d-scene-toolbar-projection-icon .projection-perspective {
+	display: initial;
+}
+
+.jscene3d-scene-toolbar-projection-icon .projection-orthographic {
+	display: none;
+}
+
+.jscene3d-scene-toolbar-projection[data-projection='orthographic'] .projection-perspective {
+	display: none;
+}
+
+.jscene3d-scene-toolbar-projection[data-projection='orthographic'] .projection-orthographic {
+	display: initial;
+}
+
+canvas.jscene3d-scene-viewport.is-gizmo-hover {
+	cursor: grab;
+}
+
+canvas.jscene3d-scene-viewport[data-navigation-action='orbit'],
+canvas.jscene3d-scene-viewport[data-navigation-action='pan'] {
+	cursor: grabbing;
+}
+
+canvas.jscene3d-scene-viewport[data-navigation-action='zoom'] {
+	cursor: ns-resize;
+}
+
+@media (forced-colors: active) {
+	.jscene3d-scene-toolbar,
+	.jscene3d-scene-toolbar-button.is-selected,
+	.jscene3d-scene-toolbar-button.is-dragging {
+		border-color: CanvasText;
+	}
+}

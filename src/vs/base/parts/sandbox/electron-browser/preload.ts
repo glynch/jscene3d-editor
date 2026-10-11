@@ -17,6 +17,7 @@
 	type IJScene3DSceneViewSnapshot = import('../common/jscene3dViewport.js').IJScene3DSceneViewSnapshot;
 	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
 	type IJScene3DViewportSelection = import('../common/jscene3dViewport.js').IJScene3DViewportSelection;
+	type IJScene3DSceneViewNavigation = import('../common/jscene3dViewport.js').IJScene3DSceneViewNavigation;
 
 	//#region Utilities
 
@@ -113,6 +114,28 @@
 	const jscene3dPanes = new Map<string, JScene3DPaneRegistration>();
 	const validPaneId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 128;
 	const validDimension = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0 && (value as number) <= 16384;
+	const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+	const validSceneViewNavigation = (value: unknown): value is IJScene3DSceneViewNavigation => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DSceneViewNavigation> & Record<string, unknown>;
+		switch (candidate.kind) {
+			case 'orbit':
+			case 'pan':
+			case 'gizmoClick':
+				return finite(candidate.horizontal) && finite(candidate.vertical)
+					&& validDimension(candidate.viewportWidth) && validDimension(candidate.viewportHeight);
+			case 'zoom':
+				return finite(candidate.amount);
+			case 'focusSelected':
+			case 'frameAll':
+			case 'toggleProjection':
+				return true;
+			default:
+				return false;
+		}
+	};
 	const validSession = (value: unknown): value is IJScene3DViewportSessionIdentity => {
 		if (!value || typeof value !== 'object') {
 			return false;
@@ -298,6 +321,12 @@
 				&& Number.isFinite(horizontal) && horizontal >= -1 && horizontal <= 1
 				&& Number.isFinite(vertical) && vertical >= -1 && vertical <= 1) {
 				ipcRenderer.send('vscode:jscene3dViewport:pickSceneView', paneId, session, revision, horizontal, vertical);
+			}
+		},
+
+		navigateSceneView(paneId, session, navigation: IJScene3DSceneViewNavigation): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validSceneViewNavigation(navigation)) {
+				ipcRenderer.send('vscode:jscene3dViewport:navigateSceneView', paneId, session, navigation);
 			}
 		},
 

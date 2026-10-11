@@ -8,6 +8,7 @@ import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -41,6 +42,9 @@ export const JSCENE3D_CLOSE_PROJECT_VIEWPORTS_COMMAND_ID = 'jscene3d.workbench.c
 export const JSCENE3D_UPDATE_SCENE_VIEW_COMMAND_ID = 'jscene3d.workbench.updateSceneView';
 export const JSCENE3D_SELECT_SCENE_VIEW_COMMAND_ID = 'jscene3d.workbench.selectSceneView';
 export const JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.closeViewport';
+export const JSCENE3D_FOCUS_SELECTED_COMMAND_ID = 'jscene3d.sceneView.focusSelected';
+export const JSCENE3D_FRAME_ALL_COMMAND_ID = 'jscene3d.sceneView.frameAll';
+export const JSCENE3D_RESET_NAVIGATION_SETTINGS_COMMAND_ID = 'jscene3d.sceneView.resetNavigationSettings';
 
 CommandsRegistry.registerCommand(JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID, async (accessor, launch: unknown) => {
 	if (!isViewportLaunch(launch)) {
@@ -122,6 +126,43 @@ CommandsRegistry.registerCommand(JSCENE3D_CLOSE_PROJECT_VIEWPORTS_COMMAND_ID, as
 	}).map(entry => entry.identifier);
 	await editorService.closeEditors(editors);
 });
+
+CommandsRegistry.registerCommand(JSCENE3D_FOCUS_SELECTED_COMMAND_ID, accessor => {
+	activeSceneViewport(accessor.get(IEditorService))?.navigate({ kind: 'focusSelected' });
+});
+
+CommandsRegistry.registerCommand(JSCENE3D_FRAME_ALL_COMMAND_ID, accessor => {
+	activeSceneViewport(accessor.get(IEditorService))?.navigate({ kind: 'frameAll' });
+});
+
+CommandsRegistry.registerCommand(JSCENE3D_RESET_NAVIGATION_SETTINGS_COMMAND_ID, async accessor => {
+	const configurationService = accessor.get(IConfigurationService);
+	await Promise.all(NAVIGATION_SETTINGS.map(setting => configurationService.updateValue(setting, undefined, ConfigurationTarget.USER)));
+});
+
+const NAVIGATION_SETTINGS = [
+	'jscene3d.sceneView.navigation.altDragOrbitEnabled',
+	'jscene3d.sceneView.navigation.shiftAltDragPanEnabled',
+	'jscene3d.sceneView.navigation.middleButtonPanEnabled',
+	'jscene3d.sceneView.navigation.scrollZoomEnabled',
+	'jscene3d.sceneView.navigation.pinchZoomEnabled',
+	'jscene3d.sceneView.navigation.altRightDragZoomEnabled',
+	'jscene3d.sceneView.navigation.orbitSensitivity',
+	'jscene3d.sceneView.navigation.panSensitivity',
+	'jscene3d.sceneView.navigation.zoomSensitivity',
+	'jscene3d.sceneView.navigation.invertOrbit',
+	'jscene3d.sceneView.navigation.invertZoom'
+] as const;
+
+function activeSceneViewport(editorService: IEditorService): { navigate(navigation: { readonly kind: 'focusSelected' | 'frameAll' }): void } | undefined {
+	const editor = editorService.activeEditor;
+	if (!(editor instanceof JScene3DSceneEditorInput) || editor.viewport.launch.kind !== 'scene') {
+		return undefined;
+	}
+	return {
+		navigate: navigation => editor.viewport.navigateActive(navigation)
+	};
+}
 
 function viewportEditors(editorService: IEditorService) {
 	return editorService.getEditors(EditorsOrder.SEQUENTIAL).flatMap(identifier => {

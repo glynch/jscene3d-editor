@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { addDisposableListener, Dimension, EventType, isMouseEvent } from '../../../../base/browser/dom.js';
+import { Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { MutableDisposable } from '../../../../base/common/lifecycle.js';
@@ -12,17 +12,21 @@ import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browse
 import { IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
+import { EditorPartModalVisibleContext } from '../../../common/contextkeys.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
 import { beginJScene3DViewportInput, IJScene3DViewportPresentation, jscene3dViewportStartupPresentation, JScene3DViewportEditorInput, JScene3DViewportStartupState } from '../browser/jscene3dViewportEditorInput.js';
 import { JScene3DSceneEditorInput } from '../browser/jscene3dSceneEditorInput.js';
-import { JScene3DViewportFrameGate, jscene3dViewportVertexShader, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
+import { isJScene3DViewportPresentationVisible, JScene3DViewportFrameGate, jscene3dViewportVertexShader, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
+import { JScene3DViewportNavigation } from './jscene3dViewportNavigation.js';
 
 /** Presents one project world from the native JScene3D renderer without browser-side scene rendering. */
 export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DViewportPresentation {
@@ -41,6 +45,8 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	private resizeTimer: number | undefined;
 	private readonly frameGate = new JScene3DViewportFrameGate();
 	private readonly selectionListener = this._register(new MutableDisposable());
+	private readonly navigation = this._register(new MutableDisposable<JScene3DViewportNavigation>());
+	private editorVisible = false;
 
 	constructor(
 		group: IEditorGroup,
@@ -48,7 +54,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
 		@ILifecycleService lifecycleService: ILifecycleService,
-		@ICommandService private readonly commandService: ICommandService
+		@ICommandService private readonly commandService: ICommandService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService
 	) {
 		super(JScene3DViewportEditorPane.ID, group, telemetryService, themeService, storageService);
 		this._register(group.onWillCloseEditor(event => {
@@ -63,6 +71,11 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 					id: 'jscene3dNativeViewport',
 					label: localize('jscene3dNativeViewportShutdown', "Stopping JScene3D native viewport")
 				});
+			}
+		}));
+		this._register(contextKeyService.onDidChangeContext(event => {
+			if (event.affectsSome(new Set([EditorPartModalVisibleContext.key]))) {
+				this.updateViewportVisibility();
 			}
 		}));
 	}
@@ -80,20 +93,13 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		canvas.setAttribute('aria-label', localize('jscene3dNativeViewportCanvas', "JScene3D native project viewport"));
 		parent.appendChild(canvas);
 		this.canvas = canvas;
-		this._register(addDisposableListener(canvas, EventType.CLICK, event => {
-			if (!isMouseEvent(event) || event.button !== 0) {
-				return;
-			}
-			const bounds = canvas.getBoundingClientRect();
-			if (bounds.width <= 0 || bounds.height <= 0) {
-				return;
-			}
-			this.viewportInput()?.selectAt(
-				this,
-				((event.clientX - bounds.left) / bounds.width) * 2 - 1,
-				1 - ((event.clientY - bounds.top) / bounds.height) * 2
-			);
-		}));
+		this.navigation.value = new JScene3DViewportNavigation(
+			parent,
+			canvas,
+			this.configurationService,
+			navigation => this.viewportInput()?.navigate(this, navigation),
+			(horizontal, vertical) => this.viewportInput()?.selectAt(this, horizontal, vertical)
+		);
 
 		const errorElement = parent.ownerDocument.createElement('div');
 		errorElement.style.position = 'absolute';
@@ -134,6 +140,15 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
+		this.editorVisible = visible;
+		this.updateViewportVisibility();
+	}
+
+	private updateViewportVisibility(): void {
+		const visible = isJScene3DViewportPresentationVisible(
+			this.editorVisible,
+			this.contextKeyService.getContextKeyValue<boolean>(EditorPartModalVisibleContext.key) === true
+		);
 		this.viewportInput()?.setVisible(this, visible);
 		if (visible) {
 			this.scheduleResize();
@@ -142,6 +157,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		const viewport = this.viewportInput(input);
+		this.navigation.value?.setActive(viewport?.launch.kind === 'scene');
 		this.selectionListener.value = viewport?.onDidChangeSceneSelection(selection => {
 			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, selection);
 		});
@@ -175,6 +191,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	}
 
 	override clearInput(): void {
+		this.navigation.value?.setActive(false);
 		this.selectionListener.clear();
 		this.viewportInput()?.detach(this);
 		super.clearInput();

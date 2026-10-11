@@ -144,8 +144,42 @@ suite('JScene3D extension contributions', () => {
 			openProjectCommandId,
 			closeProjectCommandId,
 			runProjectCommandId,
-			gettingStartedCommandId
+			gettingStartedCommandId,
+			'jscene3d.sceneView.focusSelected',
+			'jscene3d.sceneView.frameAll',
+			'jscene3d.sceneView.resetNavigationSettings'
 		]);
+	});
+
+	test('contributes configurable Scene View navigation bindings', () => {
+		const contributions = extensionManifest().contributes;
+
+		assert.deepStrictEqual(contributions.keybindings, [{
+			command: 'jscene3d.sceneView.focusSelected',
+			key: 'f',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview'
+		}, {
+			command: 'jscene3d.sceneView.frameAll',
+			key: 'home',
+			mac: 'home',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview'
+		}]);
+		const properties = contributions.configuration.properties;
+		for (const setting of [
+			'altDragOrbitEnabled',
+			'shiftAltDragPanEnabled',
+			'middleButtonPanEnabled',
+			'scrollZoomEnabled',
+			'pinchZoomEnabled',
+			'altRightDragZoomEnabled',
+			'orbitSensitivity',
+			'panSensitivity',
+			'zoomSensitivity',
+			'invertOrbit',
+			'invertZoom'
+		]) {
+			assert.ok(properties[`jscene3d.sceneView.navigation.${setting}`]);
+		}
 	});
 
 	test('activates Project history commands before the Welcome editor queries them', () => {
@@ -189,6 +223,12 @@ interface ExtensionManifest {
 	readonly activationEvents: readonly string[];
 	readonly contributes: {
 		readonly commands: readonly { readonly command: string; readonly enablement?: string }[];
+		readonly keybindings: readonly {
+			readonly command: string;
+			readonly key: string;
+			readonly mac?: string;
+			readonly when?: string;
+		}[];
 		readonly menus: Readonly<Record<string, readonly { readonly command: string; readonly when?: string }[]>>;
 		readonly viewsContainers: {
 			readonly activitybar: readonly { readonly id: string; readonly title: string; readonly icon: string }[];

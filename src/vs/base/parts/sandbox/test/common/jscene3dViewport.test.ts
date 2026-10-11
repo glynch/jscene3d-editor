@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { JScene3DViewportFrameRouter, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, stopViewportSessions } from '../../common/jscene3dViewport.js';
+import { JScene3DViewportFrameRouter, isSceneViewNavigation, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, sceneViewNavigationCommand, stopViewportSessions } from '../../common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('JScene3DViewportFrameRouter', () => {
@@ -125,6 +125,24 @@ suite('JScene3DViewportFrameRouter', () => {
 		assert.strictEqual(await router.route(1, { paneId: 'pane-a' }), false);
 		assert.strictEqual(await router.route(2, { paneId: 'pane-a', sessionId: 9, rendererGeneration: 2, surfaceGeneration: 1, frameNumber: 1 }), false);
 		assert.deepStrictEqual(frames, []);
+	});
+
+	test('validates bounded Scene View navigation operations', () => {
+		assert.strictEqual(isSceneViewNavigation({ kind: 'orbit', horizontal: 2, vertical: -1, viewportWidth: 800, viewportHeight: 600 }), true);
+		assert.strictEqual(isSceneViewNavigation({ kind: 'pan', horizontal: 2, vertical: -1, viewportWidth: 0, viewportHeight: 600 }), false);
+		assert.strictEqual(isSceneViewNavigation({ kind: 'zoom', amount: Number.NaN }), false);
+		assert.strictEqual(isSceneViewNavigation({ kind: 'focusSelected' }), true);
+		assert.strictEqual(isSceneViewNavigation({ kind: 'unknown' }), false);
+	});
+
+	test('serializes Scene View navigation with the protocol 1.0 vocabulary', () => {
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'orbit', horizontal: 2, vertical: -3, viewportWidth: 800, viewportHeight: 600 }), 'SCENE_NAVIGATE ORBIT 2 -3 800 600');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'pan', horizontal: -4, vertical: 5, viewportWidth: 900, viewportHeight: 700 }), 'SCENE_NAVIGATE PAN -4 5 900 700');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'zoom', amount: 120 }), 'SCENE_NAVIGATE ZOOM 120');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'gizmoClick', horizontal: 700, vertical: 80, viewportWidth: 800, viewportHeight: 600 }), 'SCENE_NAVIGATE GIZMO_CLICK 700 80 800 600');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'focusSelected' }), 'SCENE_NAVIGATE FOCUS_SELECTED');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'frameAll' }), 'SCENE_NAVIGATE FRAME_ALL');
+		assert.strictEqual(sceneViewNavigationCommand({ kind: 'toggleProjection' }), 'SCENE_NAVIGATE TOGGLE_PROJECTION');
 	});
 
 	test('rejects stale generations and duplicate frames', async () => {
