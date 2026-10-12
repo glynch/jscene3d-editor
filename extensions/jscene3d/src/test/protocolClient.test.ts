@@ -28,7 +28,7 @@ suite('JScene3D authoring protocol client', () => {
 			engineVersion: '0.1.0-SNAPSHOT',
 			capabilities: [
 				'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'sceneView/read',
-				'definition/open', 'definition/mutate',
+					'definition/open', 'definition/mutate', 'definition/interact',
 				'definition/undo', 'definition/redo', 'definition/save', 'definition/revert', 'definition/backup',
 				'definition/restoreBackup', 'inspector/read', 'service/shutdown'
 			]
@@ -207,6 +207,37 @@ suite('JScene3D authoring protocol client', () => {
 					kind: 'number-array', value: null, literal: null,
 					literals: ['9.25', '-2', '3.0000000000000000001']
 				}
+			}
+		});
+	});
+
+	test('uses the dedicated interactive-edit contract for transform previews', async () => {
+		const transport = new TestTransport();
+		const client = await initializedClient(transport);
+		const target = {
+			kind: 'component-property' as const,
+			occurrence: { definitionAssetId: 'world-a', entityPath: ['entity-a'] },
+			entityId: 'entity-a', componentId: 'transform-a', propertyId: 'position'
+		};
+		const interaction = client.interactDefinition(1, 'world-a', 4, target, 'update', 'drag-a', {
+			kind: 'number-array', literals: ['4', '2', '3']
+		});
+		const result = {
+			definition: 'world-a', outcome: 'accepted', revision: 5,
+			dirty: true, canUndo: false, canRedo: false, diagnostics: []
+		};
+		transport.respond(success(2, result));
+
+		assert.deepStrictEqual(await interaction, result);
+		assert.deepStrictEqual(transport.sent[1], {
+			jsonrpc: '2.0', id: 2, method: 'definition/interact', params: {
+				expectedProjectGeneration: 1,
+				assetId: 'world-a',
+				expectedDefinitionRevision: 4,
+				target: { ...target, componentId: 'transform-a', propertyId: 'position' },
+				phase: 'update',
+				editId: 'drag-a',
+				value: { kind: 'number-array', value: null, literal: null, literals: ['4', '2', '3'] }
 			}
 		});
 	});

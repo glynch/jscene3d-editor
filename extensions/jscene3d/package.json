@@ -84,19 +84,59 @@
 				"command": "jscene3d.sceneView.resetNavigationSettings",
 				"title": "%command.sceneView.resetNavigationSettings%",
 				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.select",
+				"title": "%command.sceneView.tool.select%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.move",
+				"title": "%command.sceneView.tool.move%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.rotate",
+				"title": "%command.sceneView.tool.rotate%",
+				"category": "JScene3D"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.scale",
+				"title": "%command.sceneView.tool.scale%",
+				"category": "JScene3D"
 			}
 		],
 		"keybindings": [
 			{
 				"command": "jscene3d.sceneView.focusSelected",
 				"key": "f",
-				"when": "activeEditor == workbench.editor.jscene3dRendererPreview"
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
 			},
 			{
 				"command": "jscene3d.sceneView.frameAll",
 				"key": "home",
 				"mac": "home",
-				"when": "activeEditor == workbench.editor.jscene3dRendererPreview"
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.select",
+				"key": "q",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.move",
+				"key": "w",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.rotate",
+				"key": "e",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
+			},
+			{
+				"command": "jscene3d.sceneView.tool.scale",
+				"key": "r",
+				"when": "activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus"
 			}
 		],
 		"menus": {
@@ -280,6 +320,24 @@
 						"type": "boolean",
 						"default": false,
 						"description": "%configuration.sceneView.navigation.invertZoom%"
+					},
+					"jscene3d.sceneView.transform.translationSnap": {
+						"type": "number",
+						"default": 0.5,
+						"exclusiveMinimum": 0,
+						"description": "%configuration.sceneView.transform.translationSnap%"
+					},
+					"jscene3d.sceneView.transform.rotationSnap": {
+						"type": "number",
+						"default": 15,
+						"exclusiveMinimum": 0,
+						"description": "%configuration.sceneView.transform.rotationSnap%"
+					},
+					"jscene3d.sceneView.transform.scaleSnap": {
+						"type": "number",
+						"default": 0.1,
+						"exclusiveMinimum": 0,
+						"description": "%configuration.sceneView.transform.scaleSnap%"
 					}
 			}
 		},

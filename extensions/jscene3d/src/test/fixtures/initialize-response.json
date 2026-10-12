@@ -9,6 +9,6 @@
 		"processKind": "authoring",
 		"serviceVersion": "0.1.0-SNAPSHOT",
 		"engineVersion": "0.1.0-SNAPSHOT",
-		"capabilities": ["project/open", "project/replace", "project/close", "viewport/prepareLaunch", "sceneView/read", "definition/open", "definition/mutate", "definition/undo", "definition/redo", "definition/save", "definition/revert", "definition/backup", "definition/restoreBackup", "inspector/read", "service/shutdown"]
+		"capabilities": ["project/open", "project/replace", "project/close", "viewport/prepareLaunch", "sceneView/read", "definition/open", "definition/mutate", "definition/interact", "definition/undo", "definition/redo", "definition/save", "definition/revert", "definition/backup", "definition/restoreBackup", "inspector/read", "service/shutdown"]
 	}
 }

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DefinitionSnapshotDto, HierarchyNodeDto, HierarchyOccurrenceDto, HierarchySemanticTargetDto } from '../protocol/authoringProtocol';
+import { DefinitionMutationValueDto, DefinitionSnapshotDto, HierarchyNodeDto, HierarchyOccurrenceDto, HierarchySemanticTargetDto, InspectorMutationTargetDto } from '../protocol/authoringProtocol';
 
 /** One custom-editor resource mapped to authoritative generation-scoped JScene3D identity. */
 export interface AuthoredDefinitionResource {
@@ -24,6 +24,14 @@ export interface HierarchySelection {
 /** Describes which supporting editor surface must react to an authored-definition state change. */
 export type AuthoredDefinitionStateChange = 'project' | 'snapshot' | 'active' | 'selection';
 
+/** One Java-accepted preview applied without reopening or reprojecting the definition. */
+export interface AuthoredDefinitionPreview {
+	readonly resource: string;
+	readonly revision: number;
+	readonly target: InspectorMutationTargetDto;
+	readonly value: DefinitionMutationValueDto;
+}
+
 interface RetainedHierarchySelection {
 	readonly node: HierarchyNodeDto;
 	readonly semantic: HierarchySelection;
@@ -43,6 +51,7 @@ interface AuthoredDefinitionContext {
 /** Owns generation-scoped per-definition snapshots, selections, and supporting-view context. */
 export class AuthoredDefinitionState {
 	private readonly listeners = new Set<(change: AuthoredDefinitionStateChange) => void>();
+	private readonly previewListeners = new Set<(preview: AuthoredDefinitionPreview) => void>();
 	private readonly contexts = new Map<string, AuthoredDefinitionContext>();
 	private projectGeneration: number | undefined;
 	private activeResource: string | undefined;
@@ -74,6 +83,12 @@ export class AuthoredDefinitionState {
 	onDidChange(listener: (change: AuthoredDefinitionStateChange) => void): { dispose(): void } {
 		this.listeners.add(listener);
 		return { dispose: () => this.listeners.delete(listener) };
+	}
+
+	/** Subscribes to accepted interactive previews that preserve definition structure and renderer identity. */
+	onDidPreview(listener: (preview: AuthoredDefinitionPreview) => void): { dispose(): void } {
+		this.previewListeners.add(listener);
+		return { dispose: () => this.previewListeners.delete(listener) };
 	}
 
 	setProjectGeneration(projectGeneration: number | undefined): void {
@@ -137,6 +152,25 @@ export class AuthoredDefinitionState {
 			this.emit('snapshot');
 		}
 		return updated;
+	}
+
+	/** Advances one authoritative revision and publishes its accepted property value without replacing the snapshot. */
+	acceptPreview(
+		resource: string,
+		revision: number,
+		target: InspectorMutationTargetDto,
+		value: DefinitionMutationValueDto
+	): void {
+		const context = this.contexts.get(resource);
+		const current = this.resolve(resource);
+		if (context === undefined || current === undefined || revision <= current.snapshot.revision) {
+			throw new Error('Interactive preview revision does not advance the active definition');
+		}
+		context.definition = { ...current, snapshot: { ...current.snapshot, revision } };
+		const preview = { resource, revision, target, value };
+		for (const listener of this.previewListeners) {
+			listener(preview);
+		}
 	}
 
 	activate(resource: string | undefined): void {
@@ -215,6 +249,7 @@ export class AuthoredDefinitionState {
 	dispose(): void {
 		this.contexts.clear();
 		this.listeners.clear();
+		this.previewListeners.clear();
 		this.activeResource = undefined;
 	}
 

@@ -9,7 +9,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
-import { IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -45,6 +45,8 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	private resizeTimer: number | undefined;
 	private readonly frameGate = new JScene3DViewportFrameGate();
 	private readonly selectionListener = this._register(new MutableDisposable());
+	private readonly transformListener = this._register(new MutableDisposable());
+	private readonly transformToolListener = this._register(new MutableDisposable());
 	private readonly navigation = this._register(new MutableDisposable<JScene3DViewportNavigation>());
 	private editorVisible = false;
 
@@ -61,6 +63,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		super(JScene3DViewportEditorPane.ID, group, telemetryService, themeService, storageService);
 		this._register(group.onWillCloseEditor(event => {
 			if (this.input && event.editor.matches(this.input)) {
+				this.navigation.value?.setActive(false);
 				void this.viewportInput()?.stop();
 			}
 		}));
@@ -98,7 +101,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 			canvas,
 			this.configurationService,
 			navigation => this.viewportInput()?.navigate(this, navigation),
-			(horizontal, vertical) => this.viewportInput()?.selectAt(this, horizontal, vertical)
+			(horizontal, vertical) => this.viewportInput()?.selectAt(this, horizontal, vertical),
+			settings => this.viewportInput()?.configureTransform(this, settings),
+			pointer => this.viewportInput()?.transform(this, pointer)
 		);
 
 		const errorElement = parent.ownerDocument.createElement('div');
@@ -161,6 +166,10 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		this.selectionListener.value = viewport?.onDidChangeSceneSelection(selection => {
 			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, selection);
 		});
+		this.transformListener.value = viewport?.onDidRequestSceneTransform(transform => {
+			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID, transform);
+		});
+		this.transformToolListener.value = viewport?.onDidRequestTransformTool(tool => this.navigation.value?.selectTransformTool(tool));
 		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting', viewport?.launch.kind ?? 'game');
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.canvas) {
@@ -193,6 +202,8 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	override clearInput(): void {
 		this.navigation.value?.setActive(false);
 		this.selectionListener.clear();
+		this.transformListener.clear();
+		this.transformToolListener.clear();
 		this.viewportInput()?.detach(this);
 		super.clearInput();
 	}

@@ -13,6 +13,7 @@ import {
 	ConnectionScopedResult,
 	DefinitionBackupResultDto,
 	DefinitionMutationDto,
+	DefinitionMutationValueDto,
 	DefinitionOpenResultDto,
 	DefinitionOperationResultDto,
 	DefinitionSnapshotDto,
@@ -132,12 +133,52 @@ suite('JScene3D authored definition lifecycle', () => {
 		assert.deepStrictEqual(client.mutations, []);
 		assert.deepStrictEqual(client.lifecycle, []);
 	});
+
+	test('refreshes interactive previews and exposes one native undo edit only on commit', async () => {
+		const state = activeState();
+		const client = new TestLifecycleClient();
+		const lifecycle = new AuthoredDefinitionLifecycle(client, state, () => undefined);
+
+		client.nextMutation = operation('no-op', 0, false);
+		assert.strictEqual((await lifecycle.interact(resource, target, 'begin', 'drag-a')).status, 'noOp');
+		client.nextMutation = operation('accepted', 1, true);
+		assert.strictEqual((await lifecycle.interact(
+			resource, target, 'update', 'drag-a', { kind: 'number-array', literals: ['1', '2', '3'] })).status, 'noOp');
+		assert.strictEqual(client.openCalls, 0);
+		client.nextMutation = operation('accepted', 1, true);
+		const committed = await lifecycle.interact(resource, target, 'commit', 'drag-a');
+
+		assert.strictEqual(committed.status, 'accepted');
+		assert.deepStrictEqual(client.interactions.map(interaction => interaction.phase), ['begin', 'update', 'commit']);
+		assert.strictEqual(client.openCalls, 1);
+		if (committed.status === 'accepted') {
+			await committed.edit.undo();
+		}
+		assert.deepStrictEqual(client.history, ['undo:1']);
+	});
+
+	test('reconciles the full authoritative snapshot after a rejected interactive preview', async () => {
+		const state = activeState();
+		const client = new TestLifecycleClient();
+		const lifecycle = new AuthoredDefinitionLifecycle(client, state, () => undefined);
+		client.nextMutation = operation('no-op', 0, false);
+		await lifecycle.interact(resource, target, 'begin', 'drag-a');
+		client.nextMutation = operation('validation-rejected', 0, false, [diagnostic]);
+
+		const outcome = await lifecycle.interact(
+			resource, target, 'update', 'drag-a', { kind: 'number-array', literals: ['bad', '0', '0'] });
+
+		assert.strictEqual(outcome.status, 'rejected');
+		assert.strictEqual(client.openCalls, 1);
+		assert.strictEqual(state.active?.snapshot.revision, 0);
+	});
 });
 
 class TestLifecycleClient implements AuthoredDefinitionLifecycleClient {
 	readonly mutations: { readonly mutation: DefinitionMutationDto }[] = [];
 	readonly history: string[] = [];
 	readonly lifecycle: string[] = [];
+	readonly interactions: { readonly phase: 'begin' | 'update' | 'commit' | 'cancel' }[] = [];
 	openCalls = 0;
 	nextRevision = 0;
 	nextMutation: DefinitionOperationResultDto = operation('accepted', 1, true);
@@ -160,6 +201,20 @@ class TestLifecycleClient implements AuthoredDefinitionLifecycleClient {
 		mutation: DefinitionMutationDto
 	): Promise<DefinitionOperationResultDto> {
 		this.mutations.push({ mutation });
+		this.nextRevision = this.nextMutation.revision;
+		return Promise.resolve(this.nextMutation);
+	}
+
+	interactDefinition(
+		_projectGeneration: number,
+		_assetId: string,
+		_revision: number,
+		_target: InspectorMutationTargetDto,
+		_phase: 'begin' | 'update' | 'commit' | 'cancel',
+		_editId: string,
+		_value?: DefinitionMutationValueDto
+	): Promise<DefinitionOperationResultDto> {
+		this.interactions.push({ phase: _phase });
 		this.nextRevision = this.nextMutation.revision;
 		return Promise.resolve(this.nextMutation);
 	}

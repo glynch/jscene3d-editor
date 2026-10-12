@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { IJScene3DSceneSelectionChange, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSnapshot } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneSelectionChange, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform, isSceneViewSnapshot, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { EditorInputCapabilities } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
@@ -79,9 +79,14 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	private readonly startupStateEmitter = this._register(new Emitter<JScene3DViewportStartupState>());
 	private readonly sceneViewSnapshotEmitter = this._register(new Emitter<IJScene3DSceneViewSnapshot>());
 	private readonly sceneSelectionEmitter = this._register(new Emitter<IJScene3DSceneSelectionChange>());
+	private readonly sceneTransformEmitter = this._register(new Emitter<IJScene3DViewportTransform>());
+	private readonly transformToolEmitter = this._register(new Emitter<JScene3DTransformTool>());
+	private activeSceneTransform: IJScene3DViewportTransform | undefined;
 	readonly onDidChangeStartupState: Event<JScene3DViewportStartupState> = this.startupStateEmitter.event;
 	readonly onDidChangeSceneViewSnapshot: Event<IJScene3DSceneViewSnapshot> = this.sceneViewSnapshotEmitter.event;
 	readonly onDidChangeSceneSelection: Event<IJScene3DSceneSelectionChange> = this.sceneSelectionEmitter.event;
+	readonly onDidRequestSceneTransform: Event<IJScene3DViewportTransform> = this.sceneTransformEmitter.event;
+	readonly onDidRequestTransformTool: Event<JScene3DTransformTool> = this.transformToolEmitter.event;
 
 	constructor(launch: IJScene3DViewportLaunch) {
 		super();
@@ -149,6 +154,26 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		}
 	}
 
+	configureTransform(presentation: IJScene3DViewportPresentation, settings: IJScene3DTransformSettings): void {
+		const session = this.model.sessionIdentity;
+		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
+			this.bridge?.configureSceneTransform(this.paneId, session, settings);
+		}
+	}
+
+	transform(presentation: IJScene3DViewportPresentation, pointer: IJScene3DTransformPointer): void {
+		const session = this.model.sessionIdentity;
+		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
+			this.bridge?.transformSceneView(this.paneId, session, pointer);
+		}
+	}
+
+	selectTransformTool(tool: JScene3DTransformTool): void {
+		if (this.launch.kind === 'scene' && !this.model.isTerminal) {
+			this.transformToolEmitter.fire(tool);
+		}
+	}
+
 	/** Rebinds a restored authored tab before its retained native session starts. */
 	prepareLaunch(launch: IJScene3DViewportLaunch): boolean {
 		if (this.registered || this.model.sessionIdentity
@@ -197,7 +222,8 @@ export class JScene3DViewportEditorInput extends EditorInput {
 					identity => this.onRendererReady(identity),
 					(frame, identity) => this.onFrame(frame, identity),
 					failure => this.onFailure(failure),
-					selection => this.onSelection(selection)
+					selection => this.onSelection(selection),
+					transform => this.onTransform(transform)
 				);
 				this.registered = true;
 			}
@@ -252,6 +278,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	stop(preserveFailure = false): Promise<void> {
 		return this.stopGate.run(async () => {
 			this.startToken++;
+			this.cancelActiveSceneTransform();
 			const session = this.model.sessionIdentity;
 			this.model.dispose();
 			this.pendingReady = undefined;
@@ -305,6 +332,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		if (this.model.isTerminal) {
 			return;
 		}
+		this.cancelActiveSceneTransform();
 		this.failure = failure.message;
 		this.transitionTo('failed');
 		this.presentation?.showFailure(failure.message);
@@ -345,6 +373,28 @@ export class JScene3DViewportEditorInput extends EditorInput {
 			revision: selection.revision,
 			occurrence: selection.occurrence
 		});
+	}
+
+	private onTransform(transform: IJScene3DViewportTransform): void {
+		const session = this.model.sessionIdentity;
+		if (this.launch.kind === 'scene' && session && sameSession(session, transform)
+			&& transform.definitionAssetId === this.launch.sceneAssetId && !this.model.isTerminal) {
+			if (transform.phase === 'begin' || transform.phase === 'update') {
+				this.activeSceneTransform = transform;
+			} else if (transform.phase === 'commit' || transform.phase === 'cancel') {
+				this.activeSceneTransform = undefined;
+			}
+			this.sceneTransformEmitter.fire(transform);
+		}
+	}
+
+	private cancelActiveSceneTransform(): void {
+		const transform = this.activeSceneTransform;
+		if (transform === undefined) {
+			return;
+		}
+		this.activeSceneTransform = undefined;
+		this.sceneTransformEmitter.fire({ ...transform, phase: 'cancel' });
 	}
 
 	private async onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void> {

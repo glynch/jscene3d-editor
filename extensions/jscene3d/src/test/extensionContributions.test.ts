@@ -147,7 +147,11 @@ suite('JScene3D extension contributions', () => {
 			gettingStartedCommandId,
 			'jscene3d.sceneView.focusSelected',
 			'jscene3d.sceneView.frameAll',
-			'jscene3d.sceneView.resetNavigationSettings'
+			'jscene3d.sceneView.resetNavigationSettings',
+			'jscene3d.sceneView.tool.select',
+			'jscene3d.sceneView.tool.move',
+			'jscene3d.sceneView.tool.rotate',
+			'jscene3d.sceneView.tool.scale'
 		]);
 	});
 
@@ -157,12 +161,28 @@ suite('JScene3D extension contributions', () => {
 		assert.deepStrictEqual(contributions.keybindings, [{
 			command: 'jscene3d.sceneView.focusSelected',
 			key: 'f',
-			when: 'activeEditor == workbench.editor.jscene3dRendererPreview'
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
 		}, {
 			command: 'jscene3d.sceneView.frameAll',
 			key: 'home',
 			mac: 'home',
-			when: 'activeEditor == workbench.editor.jscene3dRendererPreview'
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
+		}, {
+			command: 'jscene3d.sceneView.tool.select',
+			key: 'q',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
+		}, {
+			command: 'jscene3d.sceneView.tool.move',
+			key: 'w',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
+		}, {
+			command: 'jscene3d.sceneView.tool.rotate',
+			key: 'e',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
+		}, {
+			command: 'jscene3d.sceneView.tool.scale',
+			key: 'r',
+			when: 'activeEditor == workbench.editor.jscene3dRendererPreview && !inputFocus'
 		}]);
 		const properties = contributions.configuration.properties;
 		for (const setting of [

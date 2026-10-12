@@ -15,16 +15,19 @@ import {
 	SceneViewSelectionEvent,
 	SceneViewSynchronizationOutcome
 } from './sceneViewLifecycle';
-import { SceneViewLifecycleOperations, SceneViewRegistration } from './sceneViewRegistration';
+import { SceneTransformEditEvent, SceneViewLifecycleOperations, SceneViewRegistration } from './sceneViewRegistration';
 
 const updateSceneViewWorkbenchCommandId = 'jscene3d.workbench.updateSceneView';
 const closeViewportWorkbenchCommandId = 'jscene3d.workbench.closeViewport';
 const openSceneEditorWorkbenchCommandId = 'jscene3d.workbench.openSceneEditor';
 const selectSceneViewWorkbenchCommandId = 'jscene3d.workbench.selectSceneView';
 const acceptSceneViewSelectionCommandId = 'jscene3d.acceptSceneViewSelection';
+const acceptSceneViewTransformCommandId = 'jscene3d.acceptSceneViewTransform';
 
 /** Registered Scene View feature owned by extension activation. */
-export interface RegisteredSceneViewFeature extends SceneViewLifecycleOperations, vscode.Disposable { }
+export interface RegisteredSceneViewFeature extends SceneViewLifecycleOperations, vscode.Disposable {
+	setTransformEditHandler(handler: (event: SceneTransformEditEvent) => Promise<boolean>): void;
+}
 
 /** Creates the VS Code adapters, diagnostics, and definition-state registration for Safe Scene View. */
 export function registerSceneViewFeature(
@@ -39,15 +42,27 @@ export function registerSceneViewFeature(
 		const event = sceneViewSelectionEvent(value);
 		return event !== undefined && registration.acceptSelection(event);
 	});
-	return new RegisteredVsCodeSceneViewFeature(registration, diagnostics, selectionCommand);
+	let transformHandler: ((event: SceneTransformEditEvent) => Promise<boolean>) | undefined;
+	const transformCommand = vscode.commands.registerCommand(acceptSceneViewTransformCommandId, value => {
+		const event = sceneTransformEditEvent(value);
+		return event === undefined || transformHandler === undefined ? false : transformHandler(event);
+	});
+	return new RegisteredVsCodeSceneViewFeature(
+		registration, diagnostics, selectionCommand, transformCommand, handler => { transformHandler = handler; });
 }
 
 class RegisteredVsCodeSceneViewFeature implements RegisteredSceneViewFeature {
 	constructor(
 		private readonly registration: SceneViewRegistration,
 		private readonly diagnostics: vscode.DiagnosticCollection,
-		private readonly selectionCommand: vscode.Disposable
+		private readonly selectionCommand: vscode.Disposable,
+		private readonly transformCommand: vscode.Disposable,
+		private readonly assignTransformHandler: (handler: (event: SceneTransformEditEvent) => Promise<boolean>) => void
 	) { }
+
+	setTransformEditHandler(handler: (event: SceneTransformEditEvent) => Promise<boolean>): void {
+		this.assignTransformHandler(handler);
+	}
 
 	synchronize(definition: Parameters<SceneViewRegistration['synchronize']>[0]): Promise<SceneViewSynchronizationOutcome> {
 		return this.registration.synchronize(definition);
@@ -67,9 +82,34 @@ class RegisteredVsCodeSceneViewFeature implements RegisteredSceneViewFeature {
 
 	dispose(): void {
 		this.selectionCommand.dispose();
+		this.transformCommand.dispose();
 		this.registration.dispose();
 		this.diagnostics.dispose();
 	}
+}
+
+function sceneTransformEditEvent(value: unknown): SceneTransformEditEvent | undefined {
+	if (value === null || typeof value !== 'object') {
+		return undefined;
+	}
+	const candidate = value as Partial<SceneTransformEditEvent>;
+	const phase = candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit'
+		|| candidate.phase === 'cancel' || candidate.phase === 'blocked';
+	if (!phase || typeof candidate.editId !== 'string' || candidate.editId.length === 0
+		|| !Number.isInteger(candidate.revision) || candidate.revision! < 0
+		|| typeof candidate.definitionAssetId !== 'string' || !Array.isArray(candidate.entityPath)
+		|| candidate.entityPath.length === 0 || !candidate.entityPath.every(nonEmpty)
+		|| typeof candidate.authoredDefinitionAssetId !== 'string' || typeof candidate.authoredEntityId !== 'string'
+		|| typeof candidate.componentId !== 'string'
+		|| (candidate.propertyId !== 'position' && candidate.propertyId !== 'orientation' && candidate.propertyId !== 'scale')
+		|| !Array.isArray(candidate.literals) || candidate.literals.length !== 3 || !candidate.literals.every(nonEmpty)) {
+		return undefined;
+	}
+	return candidate as SceneTransformEditEvent;
+}
+
+function nonEmpty(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0;
 }
 
 class VsCodeSceneViewHost implements SceneViewHost {

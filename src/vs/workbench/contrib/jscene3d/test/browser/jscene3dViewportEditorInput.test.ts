@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { EditorInputCapabilities, Verbosity } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
@@ -442,6 +442,26 @@ suite('JScene3DViewportEditorInput', () => {
 		assert.strictEqual(pendingBridge.registeredPaneCount, 0);
 	});
 
+	test('cancels an active transform when its renderer session fails', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-transform'));
+		const phases: string[] = [];
+		const listener = input.onDidRequestSceneTransform(transform => phases.push(transform.phase));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.sceneTransform({ phase: 'begin' });
+			bridge.fail('renderer interrupted during transform');
+
+			assert.deepStrictEqual(phases, ['begin', 'cancel']);
+			assert.strictEqual(presentation.failures.at(-1), 'renderer interrupted during transform');
+		} finally {
+			listener.dispose();
+			await input.stop(true);
+			input.dispose();
+		}
+	});
+
 	test('closing one Scene stops only its session and reopening starts a fresh session', async () => {
 		const bridge = new TestViewportBridge();
 		const presentation = new TestPresentation();
@@ -497,6 +517,7 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
 		onFailure(failure: IJScene3DViewportFailure): void;
 		onSelection(selection: IJScene3DViewportSelection): void;
+		onTransform(transform: IJScene3DViewportTransform): void;
 	}>();
 	private startResolver: ((session: IJScene3DViewportSessionIdentity) => void) | undefined;
 
@@ -509,9 +530,10 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		onReady: (session: IJScene3DViewportSessionIdentity) => void,
 		_onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
 		onFailure: (failure: IJScene3DViewportFailure) => void,
-		onSelection: (selection: IJScene3DViewportSelection) => void
+		onSelection: (selection: IJScene3DViewportSelection) => void,
+		onTransform: (transform: IJScene3DViewportTransform) => void
 	): void {
-		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure, onSelection });
+		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure, onSelection, onTransform });
 	}
 
 	unregisterPane(paneId: string): void {
@@ -553,6 +575,10 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 			this.navigated.push({ viewportId, navigation });
 		}
 	}
+
+	configureSceneTransform(_paneId: string, _session: IJScene3DViewportSessionIdentity, _settings: IJScene3DTransformSettings): void { }
+
+	transformSceneView(_paneId: string, _session: IJScene3DViewportSessionIdentity, _pointer: IJScene3DTransformPointer): void { }
 
 	resize(paneId: string, _session: IJScene3DViewportSessionIdentity, width: number, height: number): void {
 		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
@@ -604,6 +630,26 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 			rendererGeneration: 1,
 			revision: 0,
 			occurrence: null,
+			...overrides
+		});
+	}
+
+	sceneTransform(overrides: Partial<IJScene3DViewportTransform>): void {
+		const started = this.started[0];
+		this.consumers.get(started.paneId)?.onTransform({
+			paneId: started.paneId,
+			sessionId: 1,
+			rendererGeneration: 1,
+			phase: 'update',
+			editId: 'drag-1',
+			revision: 0,
+			definitionAssetId: 'main',
+			entityPath: ['cube'],
+			authoredDefinitionAssetId: 'main',
+			authoredEntityId: 'cube',
+			componentId: 'transform',
+			propertyId: 'position',
+			literals: ['1', '2', '3'],
 			...overrides
 		});
 	}

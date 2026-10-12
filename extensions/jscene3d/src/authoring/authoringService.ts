@@ -11,6 +11,7 @@ import {
 	ConnectionScopedResult,
 	DefinitionBackupResultDto,
 	DefinitionMutationDto,
+	DefinitionMutationValueDto,
 	DefinitionOperationResultDto,
 	DefinitionOpenResultDto,
 	InitializeResultDto,
@@ -222,6 +223,19 @@ export class AuthoringService implements Disposable {
 		mutation: DefinitionMutationDto
 	): Promise<DefinitionOperationResultDto> {
 		return this.withClient(client => client.mutateDefinition(projectGeneration, assetId, revision, target, mutation));
+	}
+
+	async interactDefinition(
+		projectGeneration: number,
+		assetId: string,
+		revision: number,
+		target: InspectorMutationTargetDto,
+		phase: 'begin' | 'update' | 'commit' | 'cancel',
+		editId: string,
+		value?: DefinitionMutationValueDto
+	): Promise<DefinitionOperationResultDto> {
+		return this.withClient(client => client.interactDefinition(
+			projectGeneration, assetId, revision, target, phase, editId, value));
 	}
 
 	async undoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto> {

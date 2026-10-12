@@ -22,7 +22,10 @@ suite('JScene3DViewportToolbars', () => {
 			beginDrag: (_event, action) => actions.push(action),
 			continueDrag: () => undefined,
 			endDrag: () => undefined,
-			toggleProjection: () => projectionToggles++
+			toggleProjection: () => projectionToggles++,
+			selectTool: () => undefined,
+			toggleSnapping: () => undefined,
+			toggleSpace: () => undefined
 		}));
 		return { parent, toolbars, actions, projectionToggles: () => projectionToggles };
 	}
@@ -40,12 +43,13 @@ suite('JScene3DViewportToolbars', () => {
 		assert.strictEqual(select.getAttribute('aria-pressed'), 'true');
 		assert.ok(select.classList.contains('is-selected'));
 
-		for (const label of ['Move (W)', 'Rotate (E)', 'Scale (R)', 'Rect / Bounds (T)']) {
+		for (const label of ['Move (W)', 'Rotate (E)', 'Scale (R)']) {
 			const button = parent.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
-			assert.strictEqual(button.disabled, true);
+			assert.strictEqual(button.disabled, false);
 			assert.strictEqual(button.getAttribute('aria-pressed'), 'false');
 			assert.ok(!button.classList.contains('is-selected'));
 		}
+		assert.strictEqual(parent.querySelector<HTMLButtonElement>('[aria-label="Rect / Bounds (T)"]')!.disabled, true);
 	});
 
 	test('retains readable semantic states for disabled display controls', () => {
@@ -61,7 +65,7 @@ suite('JScene3DViewportToolbars', () => {
 		}, {
 			shaded: { disabled: true, pressed: 'true', selected: true },
 			grid: { disabled: true, pressed: 'true', selected: true },
-			snap: { disabled: true, pressed: 'false', selected: false }
+			snap: { disabled: false, pressed: 'false', selected: false }
 		});
 	});
 

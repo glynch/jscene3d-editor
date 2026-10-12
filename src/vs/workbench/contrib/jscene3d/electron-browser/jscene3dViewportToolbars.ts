@@ -9,6 +9,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
 import { JScene3DViewportDragAction } from '../browser/jscene3dViewportNavigationBindings.js';
+import { JScene3DTransformSpace, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import './media/jscene3dViewport.css';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -18,6 +19,9 @@ interface JScene3DViewportToolbarCallbacks {
 	readonly continueDrag: (event: PointerEvent) => void;
 	readonly endDrag: (event: PointerEvent) => void;
 	readonly toggleProjection: () => void;
+	readonly selectTool: (tool: JScene3DTransformTool) => void;
+	readonly toggleSnapping: () => void;
+	readonly toggleSpace: () => void;
 }
 
 /** Owns the presentation and transient interaction state of the Scene View overlay toolbars. */
@@ -25,6 +29,9 @@ export class JScene3DViewportToolbars extends Disposable {
 	private readonly toolbars: HTMLElement[];
 	private readonly navigationButtons = new Map<JScene3DViewportDragAction, HTMLButtonElement>();
 	private readonly projectionButton: HTMLButtonElement;
+	private readonly entityButtons = new Map<JScene3DTransformTool, HTMLButtonElement>();
+	private readonly snapButton: HTMLButtonElement;
+	private readonly spaceButton: HTMLButtonElement;
 	private projection: 'perspective' | 'orthographic' = 'perspective';
 
 	constructor(parent: HTMLElement, rightTop: number, callbacks: JScene3DViewportToolbarCallbacks) {
@@ -35,10 +42,26 @@ export class JScene3DViewportToolbars extends Disposable {
 		right.style.top = `${rightTop}px`;
 		this.toolbars = [top, left, right];
 
-		this.populateEntityTools(left);
-		this.populateDisplayTools(top);
+		this.populateEntityTools(left, callbacks);
+		const display = this.populateDisplayTools(top, callbacks);
+		this.snapButton = display.snap;
+		this.spaceButton = display.space;
 		this.projectionButton = this.populateNavigationTools(right, callbacks);
 		this.updateProjectionPresentation();
+	}
+
+	setTransformState(tool: JScene3DTransformTool, space: JScene3DTransformSpace, snapping: boolean): void {
+		for (const [candidate, button] of this.entityButtons) {
+			const selected = candidate === tool;
+			button.classList.toggle('is-selected', selected);
+			button.setAttribute('aria-pressed', String(selected));
+		}
+		this.snapButton.classList.toggle('is-selected', snapping);
+		this.snapButton.setAttribute('aria-pressed', String(snapping));
+		this.spaceButton.textContent = space === 'local'
+			? localize('jscene3dSceneViewLocal', "Local")
+			: localize('jscene3dSceneViewGlobal', "Global");
+		this.spaceButton.setAttribute('aria-pressed', String(space === 'local'));
 	}
 
 	/** Shows the overlay controls only for an active authored Scene View. */
@@ -66,21 +89,22 @@ export class JScene3DViewportToolbars extends Disposable {
 		this.updateProjectionPresentation();
 	}
 
-	private populateEntityTools(toolbar: HTMLElement): void {
-		this.addCodiconButton(toolbar, Codicon.cursor, localize('jscene3dSceneViewSelect', "Select (Q)"), true, undefined, true);
-		this.addCodiconButton(toolbar, Codicon.move, localize('jscene3dSceneViewMove', "Move (W)"), false);
-		this.addCodiconButton(toolbar, Codicon.sync, localize('jscene3dSceneViewRotate', "Rotate (E)"), false);
-		this.addCodiconButton(toolbar, Codicon.screenFull, localize('jscene3dSceneViewScale', "Scale (R)"), false);
+	private populateEntityTools(toolbar: HTMLElement, callbacks: JScene3DViewportToolbarCallbacks): void {
+		this.entityButtons.set('select', this.addCodiconButton(toolbar, Codicon.cursor, localize('jscene3dSceneViewSelect', "Select (Q)"), true, () => callbacks.selectTool('select'), true));
+		this.entityButtons.set('move', this.addCodiconButton(toolbar, Codicon.move, localize('jscene3dSceneViewMove', "Move (W)"), true, () => callbacks.selectTool('move')));
+		this.entityButtons.set('rotate', this.addCodiconButton(toolbar, Codicon.sync, localize('jscene3dSceneViewRotate', "Rotate (E)"), true, () => callbacks.selectTool('rotate')));
+		this.entityButtons.set('scale', this.addCodiconButton(toolbar, Codicon.screenFull, localize('jscene3dSceneViewScale', "Scale (R)"), true, () => callbacks.selectTool('scale')));
 		this.addCodiconButton(toolbar, Codicon.selection, localize('jscene3dSceneViewRect', "Rect / Bounds (T)"), false);
 	}
 
-	private populateDisplayTools(toolbar: HTMLElement): void {
+	private populateDisplayTools(toolbar: HTMLElement, callbacks: JScene3DViewportToolbarCallbacks): { snap: HTMLButtonElement; space: HTMLButtonElement } {
 		this.addTextButton(toolbar, localize('jscene3dSceneViewShaded', "Shaded"), false, true);
 		this.addTextButton(toolbar, localize('jscene3dSceneViewGrid', "Grid"), false, true);
-		this.addTextButton(toolbar, localize('jscene3dSceneViewSnap', "Snap"), false);
-		this.addTextButton(toolbar, localize('jscene3dSceneViewLocalGlobal', "Local / Global"), false);
+		const snap = this.addTextButton(toolbar, localize('jscene3dSceneViewSnap', "Snap"), true, false, callbacks.toggleSnapping);
+		const space = this.addTextButton(toolbar, localize('jscene3dSceneViewGlobal', "Global"), true, false, callbacks.toggleSpace);
 		this.addCodiconButton(toolbar, Codicon.eye, localize('jscene3dSceneViewDisplayOptions', "Display Options"), false);
 		this.addCodiconButton(toolbar, Codicon.ellipsis, localize('jscene3dSceneViewMore', "More"), false);
+		return { snap, space };
 	}
 
 	private populateNavigationTools(toolbar: HTMLElement, callbacks: JScene3DViewportToolbarCallbacks): HTMLButtonElement {
@@ -132,10 +156,11 @@ export class JScene3DViewportToolbars extends Disposable {
 		return button;
 	}
 
-	private addTextButton(toolbar: HTMLElement, label: string, enabled: boolean, selected = false): void {
-		const button = this.createButton(toolbar, label, enabled, undefined, selected);
+	private addTextButton(toolbar: HTMLElement, label: string, enabled: boolean, selected = false, action?: () => void): HTMLButtonElement {
+		const button = this.createButton(toolbar, label, enabled, action, selected);
 		button.classList.add('jscene3d-scene-toolbar-text-button');
 		button.textContent = label;
+		return button;
 	}
 
 	private addDragButton(toolbar: HTMLElement, icon: ThemeIcon | SVGSVGElement, label: string, action: JScene3DViewportDragAction, callbacks: JScene3DViewportToolbarCallbacks): void {

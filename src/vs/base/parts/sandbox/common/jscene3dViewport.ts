@@ -27,6 +27,43 @@ export interface IJScene3DViewportSelection extends IJScene3DViewportSessionIden
 	readonly occurrence: IJScene3DSceneViewOccurrence | null;
 }
 
+export type JScene3DTransformTool = 'select' | 'move' | 'rotate' | 'scale';
+export type JScene3DTransformSpace = 'global' | 'local';
+export type JScene3DTransformPhase = 'begin' | 'update' | 'commit' | 'cancel' | 'blocked';
+export type JScene3DTransformPointerPhase = 'hover' | 'begin' | 'update' | 'commit' | 'cancel';
+
+/** Renderer-authored intent for one authoritative component-property edit transaction. */
+export interface IJScene3DViewportTransform extends IJScene3DViewportSessionIdentity {
+	readonly paneId: string;
+	readonly phase: JScene3DTransformPhase;
+	readonly editId: string;
+	readonly revision: number;
+	readonly definitionAssetId: string;
+	readonly entityPath: readonly string[];
+	readonly authoredDefinitionAssetId: string;
+	readonly authoredEntityId: string;
+	readonly componentId: string;
+	readonly propertyId: 'position' | 'orientation' | 'scale';
+	readonly literals: readonly [string, string, string];
+}
+
+export interface IJScene3DTransformSettings {
+	readonly tool: JScene3DTransformTool;
+	readonly space: JScene3DTransformSpace;
+	readonly snapping: boolean;
+	readonly translationSnap: number;
+	readonly rotationSnap: number;
+	readonly scaleSnap: number;
+}
+
+export interface IJScene3DTransformPointer {
+	readonly phase: JScene3DTransformPointerPhase;
+	readonly horizontal: number;
+	readonly vertical: number;
+	readonly viewportWidth: number;
+	readonly viewportHeight: number;
+}
+
 /** Validated Scene View editor-camera operation sent to its retained native session. */
 export type IJScene3DSceneViewNavigation =
 	| { readonly kind: 'orbit' | 'pan'; readonly horizontal: number; readonly vertical: number; readonly viewportWidth: number; readonly viewportHeight: number }
@@ -45,6 +82,7 @@ export interface IJScene3DSceneSelectionChange {
 }
 
 export const JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID = 'jscene3d.acceptSceneViewSelection';
+export const JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID = 'jscene3d.acceptSceneViewTransform';
 
 interface IJScene3DViewportLaunchBase {
 	readonly viewportId: string;
@@ -150,7 +188,8 @@ export interface IJScene3DViewportBridge {
 		onReady: (session: IJScene3DViewportSessionIdentity) => void,
 		onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
 		onFailure: (failure: IJScene3DViewportFailure) => void,
-		onSelection: (selection: IJScene3DViewportSelection) => void
+		onSelection: (selection: IJScene3DViewportSelection) => void,
+		onTransform: (transform: IJScene3DViewportTransform) => void
 	): void;
 	unregisterPane(paneId: string): void;
 	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
@@ -158,6 +197,8 @@ export interface IJScene3DViewportBridge {
 	selectSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, occurrence: IJScene3DSceneViewOccurrence | null): void;
 	pickSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, revision: number, horizontal: number, vertical: number): void;
 	navigateSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, navigation: IJScene3DSceneViewNavigation): void;
+	configureSceneTransform(paneId: string, session: IJScene3DViewportSessionIdentity, settings: IJScene3DTransformSettings): void;
+	transformSceneView(paneId: string, session: IJScene3DViewportSessionIdentity, pointer: IJScene3DTransformPointer): void;
 	resize(paneId: string, session: IJScene3DViewportSessionIdentity, width: number, height: number): void;
 	pause(paneId: string, session: IJScene3DViewportSessionIdentity): void;
 	resume(paneId: string, session: IJScene3DViewportSessionIdentity): void;
@@ -227,8 +268,59 @@ export function sceneViewNavigationCommand(navigation: IJScene3DSceneViewNavigat
 	}
 }
 
+export function isSceneTransformSettings(value: unknown): value is IJScene3DTransformSettings {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DTransformSettings>;
+	return (candidate.tool === 'select' || candidate.tool === 'move' || candidate.tool === 'rotate' || candidate.tool === 'scale')
+		&& (candidate.space === 'global' || candidate.space === 'local')
+		&& typeof candidate.snapping === 'boolean'
+		&& positive(candidate.translationSnap) && positive(candidate.rotationSnap) && positive(candidate.scaleSnap);
+}
+
+export function sceneTransformConfigCommand(settings: IJScene3DTransformSettings): string {
+	return `SCENE_TRANSFORM_CONFIG ${settings.tool.toUpperCase()} ${settings.space.toUpperCase()} ${settings.snapping ? 'ON' : 'OFF'} ${settings.translationSnap} ${settings.rotationSnap} ${settings.scaleSnap}`;
+}
+
+export function isSceneTransformPointer(value: unknown): value is IJScene3DTransformPointer {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DTransformPointer>;
+	return (candidate.phase === 'hover' || candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit' || candidate.phase === 'cancel')
+		&& finite(candidate.horizontal) && finite(candidate.vertical)
+		&& isViewportDimension(candidate.viewportWidth) && isViewportDimension(candidate.viewportHeight);
+}
+
+export function isViewportTransform(value: unknown): value is IJScene3DViewportTransform {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DViewportTransform>;
+	return isViewportPaneId(candidate.paneId)
+		&& Number.isInteger(candidate.sessionId) && candidate.sessionId! > 0
+		&& Number.isInteger(candidate.rendererGeneration) && candidate.rendererGeneration! > 0
+		&& (candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit' || candidate.phase === 'cancel' || candidate.phase === 'blocked')
+		&& nonEmpty(candidate.editId) && candidate.editId!.length <= 128
+		&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
+		&& nonEmpty(candidate.definitionAssetId)
+		&& Array.isArray(candidate.entityPath) && candidate.entityPath.length > 0 && candidate.entityPath.every(nonEmpty)
+		&& nonEmpty(candidate.authoredDefinitionAssetId) && nonEmpty(candidate.authoredEntityId) && nonEmpty(candidate.componentId)
+		&& (candidate.propertyId === 'position' || candidate.propertyId === 'orientation' || candidate.propertyId === 'scale')
+		&& Array.isArray(candidate.literals) && candidate.literals.length === 3 && candidate.literals.every(nonEmpty);
+}
+
+export function sceneTransformPointerCommand(pointer: IJScene3DTransformPointer, selectionRequest: number | undefined, revision: number): string {
+	return `SCENE_TRANSFORM_POINTER ${pointer.phase.toUpperCase()} ${pointer.horizontal} ${pointer.vertical} ${pointer.viewportWidth} ${pointer.viewportHeight} ${selectionRequest ?? 'NONE'} ${revision}`;
+}
+
 function finite(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);
+}
+
+function positive(value: unknown): value is number {
+	return finite(value) && value > 0;
 }
 
 export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaunch {

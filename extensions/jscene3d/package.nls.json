@@ -9,6 +9,10 @@
 	"command.sceneView.focusSelected": "Focus Selected",
 	"command.sceneView.frameAll": "Frame All",
 	"command.sceneView.resetNavigationSettings": "Reset Scene View Navigation Settings",
+	"command.sceneView.tool.select": "Select Tool",
+	"command.sceneView.tool.move": "Move Tool",
+	"command.sceneView.tool.rotate": "Rotate Tool",
+	"command.sceneView.tool.scale": "Scale Tool",
 	"viewsContainer.jscene3d": "JScene3D",
 	"viewsContainer.inspector": "JScene3D Inspector",
 	"view.project": "JScene3D Project",
@@ -31,5 +35,8 @@
 	"configuration.sceneView.navigation.panSensitivity": "Scene View pan sensitivity.",
 	"configuration.sceneView.navigation.zoomSensitivity": "Scene View zoom sensitivity.",
 	"configuration.sceneView.navigation.invertOrbit": "Invert Scene View orbit direction.",
-	"configuration.sceneView.navigation.invertZoom": "Invert Scene View zoom direction."
+	"configuration.sceneView.navigation.invertZoom": "Invert Scene View zoom direction.",
+	"configuration.sceneView.transform.translationSnap": "Translation snap increment used by the Scene View Move tool.",
+	"configuration.sceneView.transform.rotationSnap": "Rotation snap increment in degrees used by the Scene View Rotate tool.",
+	"configuration.sceneView.transform.scaleSnap": "Scale snap increment used by the Scene View Scale tool."
 }

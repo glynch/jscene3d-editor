@@ -7,6 +7,20 @@ import { AuthoredDefinitionResource, AuthoredDefinitionState } from '../definiti
 import { HierarchyOccurrenceDto } from '../protocol/authoringProtocol';
 import { ResolvedSceneViewSelection, SceneViewSelectionEvent, SceneViewSynchronizationOutcome } from './sceneViewLifecycle';
 
+/** Validated renderer intent for one Scene transform transaction. */
+export interface SceneTransformEditEvent {
+	readonly phase: 'begin' | 'update' | 'commit' | 'cancel' | 'blocked';
+	readonly editId: string;
+	readonly revision: number;
+	readonly definitionAssetId: string;
+	readonly entityPath: readonly string[];
+	readonly authoredDefinitionAssetId: string;
+	readonly authoredEntityId: string;
+	readonly componentId: string;
+	readonly propertyId: 'position' | 'orientation' | 'scale';
+	readonly literals: readonly [string, string, string];
+}
+
 /** Scene View lifecycle operations coordinated by the feature registration. */
 export interface SceneViewLifecycleOperations {
 	synchronize(definition: AuthoredDefinitionResource): Promise<SceneViewSynchronizationOutcome>;

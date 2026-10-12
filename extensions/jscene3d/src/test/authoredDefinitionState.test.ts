@@ -106,6 +106,26 @@ suite('JScene3D authored definition state', () => {
 		assert.strictEqual(state.selectedInspectorGroupId, undefined);
 	});
 
+	test('advances an interactive preview without publishing a reconstructing snapshot change', () => {
+		const state = stateWithGeneration();
+		const scene = definition('scene-map', 'scene-definition', ['player']);
+		state.register('definition:/map', 3, scene);
+		state.activate('definition:/map');
+		const changes: string[] = [];
+		const previews: number[] = [];
+		state.onDidChange(change => changes.push(change));
+		state.onDidPreview(preview => previews.push(preview.revision));
+
+		state.acceptPreview('definition:/map', 1, {
+			kind: 'component-property', occurrence: scene.roots[0].occurrence, entityId: 'player',
+			componentId: 'transform', propertyId: 'position'
+		}, { kind: 'number-array', literals: ['1', '2', '3'] });
+
+		assert.strictEqual(state.active?.snapshot.revision, 1);
+		assert.deepStrictEqual(previews, [1]);
+		assert.deepStrictEqual(changes, []);
+	});
+
 	test('uses a deliberate empty supporting context when no definition is active', () => {
 		const state = stateWithGeneration();
 		const scene = definition('scene-map', 'scene-definition', ['player']);

@@ -85,6 +85,60 @@ suite('JScene3D Inspector state', () => {
 		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.selectedGroupId : '', 'entity');
 	});
 
+	test('keeps the ready Inspector visible while refreshing an unchanged preview selection', async () => {
+		const definitions = activeDefinitions();
+		const reader = new DeferredReader();
+		const state = new InspectorState(reader, definitions);
+		const [first] = definitions.active!.snapshot.roots;
+		definitions.select(first);
+		reader.requests[0].resolve(success(first.target, 'Initial'));
+		await settled();
+		assert.strictEqual(state.snapshot.status, 'ready');
+
+		const statuses: string[] = [];
+		state.onDidChange(() => statuses.push(state.snapshot.status));
+		definitions.update('jscene3d-definition:/world-a', { ...definition(), revision: 5 });
+
+		assert.strictEqual(state.snapshot.status, 'ready');
+		assert.deepStrictEqual(statuses, []);
+		const refreshed = definitions.active!.snapshot.roots[0];
+		reader.requests[1].resolve(success(refreshed.target, 'Preview', 7, 5));
+		await settled();
+		assert.strictEqual(state.snapshot.status === 'ready' ? state.snapshot.inspector.title : '', 'Preview');
+		assert.deepStrictEqual(statuses, ['ready']);
+	});
+
+	test('patches accepted transform previews in place without rereading or showing loading', async () => {
+		const definitions = activeDefinitions();
+		const reader = new ImmediateReader();
+		const state = new InspectorState(reader, definitions);
+		const [first] = definitions.active!.snapshot.roots;
+		definitions.select(first);
+		await settled();
+		const statuses: string[] = [];
+		state.onDidChange(() => statuses.push(state.snapshot.status));
+
+		definitions.acceptPreview('jscene3d-definition:/world-a', 5, {
+			kind: 'component-property', occurrence: first.occurrence, entityId: 'entity-a',
+			componentId: 'component-a', propertyId: 'position'
+		}, { kind: 'number-array', literals: ['7', '8', '9'] });
+
+		assert.strictEqual(reader.requests, 1);
+		assert.deepStrictEqual(statuses, ['ready']);
+		assert.strictEqual(state.snapshot.status, 'ready');
+		if (state.snapshot.status === 'ready') {
+			assert.strictEqual(state.snapshot.inspector.revision, 5);
+			assert.deepStrictEqual(state.snapshot.inspector.groups[1].properties[0].state.effectiveValue, {
+				kind: 'array',
+				values: [
+					{ kind: 'number', decimal: '7' },
+					{ kind: 'number', decimal: '8' },
+					{ kind: 'number', decimal: '9' }
+				]
+			});
+		}
+	});
+
 	test('restores each definition Inspector target and focused group independently', async () => {
 		const definitions = activeDefinitions();
 		const secondDefinition = definition('entity-b');
@@ -114,11 +168,14 @@ suite('JScene3D Inspector state', () => {
 });
 
 class ImmediateReader implements InspectorReader {
+	requests = 0;
+
 	readInspector(
 		expectedProjectGeneration: number,
 		expectedDefinitionRevision: number,
 		target: HierarchySemanticTargetDto
 	): Promise<InspectorReadResultDto> {
+		this.requests++;
 		return Promise.resolve(success(target, target.identity, expectedProjectGeneration, expectedDefinitionRevision));
 	}
 }
@@ -188,20 +245,37 @@ function success(
 function inspector(target: HierarchySemanticTargetDto, title: string, revision: number): InspectorSnapshotDto {
 	return {
 		revision, target, title, definitionOrigin: 'authored', provenance: 'local', editable: true,
-		groups: [group('entity', 'entity', 'Entity'), group('component-a', 'component', 'Movement')]
+		groups: [group('entity', 'entity', 'Entity'), group('component-a', 'component', 'Movement', target)]
 	};
 }
 
 function group(
 	identity: string,
 	kind: 'entity' | 'component',
-	label: string
+	label: string,
+	target?: HierarchySemanticTargetDto
 ): InspectorSnapshotDto['groups'][number] {
 	return {
 		identity, kind, label, description: null,
 		componentId: kind === 'component' ? identity : null,
 		componentType: kind === 'component' ? { id: 'example/movement', version: 1 } : null,
-		metadataStatus: 'available', editable: true, properties: []
+		metadataStatus: 'available', editable: true,
+		properties: kind === 'component' && target?.occurrence !== null && target?.occurrence !== undefined ? [{
+			identity: 'position', label: 'Position', description: null, valueKind: 'array', required: true,
+			constraints: {
+				elementKind: 'number', exactElementCount: 3, acceptedReferenceKinds: [],
+				editor: { semantic: 'vector3', minimum: null, maximum: null }
+			},
+			state: {
+				authoredValue: { kind: 'array', values: [] }, defaultValue: null,
+				effectiveValue: { kind: 'array', values: [] }, origin: 'authored', validity: 'valid',
+				editable: true, modified: false
+			},
+			mutationTarget: {
+				kind: 'component-property', occurrence: target.occurrence, entityId: target.identity,
+				componentId: identity, propertyId: 'position'
+			}
+		}] : []
 	};
 }
 

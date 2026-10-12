@@ -3,14 +3,16 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { addDisposableListener, EventType } from '../../../../base/browser/dom.js';
+import { addDisposableListener, EventType, isHTMLElement } from '../../../../base/browser/dom.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IJScene3DSceneViewNavigation } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DTransformPointer, IJScene3DTransformSettings, JScene3DTransformSpace, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IJScene3DViewportGestureSettings, isJScene3DViewportWheelZoomEnabled, JScene3DViewportDragAction, resolveJScene3DViewportDragAction } from '../browser/jscene3dViewportNavigationBindings.js';
 import { JScene3DViewportToolbars } from './jscene3dViewportToolbars.js';
+import { JScene3DViewportTransformInteraction } from './jscene3dViewportTransformInteraction.js';
 
 const SETTING_PREFIX = 'jscene3d.sceneView.navigation';
+const TRANSFORM_SETTING_PREFIX = 'jscene3d.sceneView.transform';
 const GIZMO_WIDTH = 238;
 const GIZMO_HEIGHT = 202;
 const GIZMO_MARGIN = 26;
@@ -29,7 +31,11 @@ interface DragState {
 /** Adapts configurable workbench gestures and overlay controls to renderer-owned camera commands. */
 export class JScene3DViewportNavigation extends Disposable {
 	private readonly toolbars: JScene3DViewportToolbars;
+	private readonly transformInteraction: JScene3DViewportTransformInteraction;
 	private drag: DragState | undefined;
+	private tool: JScene3DTransformTool = 'select';
+	private space: JScene3DTransformSpace = 'global';
+	private snapping = false;
 	private active = false;
 
 	constructor(
@@ -37,7 +43,9 @@ export class JScene3DViewportNavigation extends Disposable {
 		private readonly canvas: HTMLCanvasElement,
 		private readonly configurationService: IConfigurationService,
 		private readonly navigate: (navigation: IJScene3DSceneViewNavigation) => void,
-		private readonly select: (horizontal: number, vertical: number) => void
+		private readonly select: (horizontal: number, vertical: number) => void,
+		private readonly configureTransform: (settings: IJScene3DTransformSettings) => void,
+		transform: (pointer: IJScene3DTransformPointer) => void
 	) {
 		super();
 		this.canvas.classList.add('jscene3d-scene-viewport');
@@ -46,9 +54,16 @@ export class JScene3DViewportNavigation extends Disposable {
 			beginDrag: (event, action) => this.beginDrag(event, action, false),
 			continueDrag: event => this.onPointerMove(event),
 			endDrag: event => this.finishToolbarPointer(event),
-			toggleProjection: () => this.navigate({ kind: 'toggleProjection' })
+			toggleProjection: () => this.navigate({ kind: 'toggleProjection' }),
+			selectTool: tool => this.selectTool(tool),
+			toggleSnapping: () => this.setSnapping(!this.snapping),
+			toggleSpace: () => this.setSpace(this.space === 'global' ? 'local' : 'global')
 		}));
+		this.transformInteraction = this._register(new JScene3DViewportTransformInteraction(canvas, transform));
 		this.registerCanvasInput();
+		const hostWindow = parent.ownerDocument.defaultView!;
+		this._register(addDisposableListener(hostWindow, EventType.KEY_DOWN, event => this.onKeyDown(event)));
+		this.updateTransformConfiguration();
 		this.setActive(false);
 	}
 
@@ -56,8 +71,19 @@ export class JScene3DViewportNavigation extends Disposable {
 	setActive(active: boolean): void {
 		this.active = active;
 		this.toolbars.setActive(active);
-		if (!active) {
+		if (active) {
+			this.updateTransformConfiguration();
+		} else {
+			this.cancelTransform();
 			this.clearDragPresentation();
+		}
+		this.transformInteraction.setTool(active, this.tool);
+	}
+
+	/** Selects one persistent entity tool through the command/keybinding service. */
+	selectTransformTool(tool: JScene3DTransformTool): void {
+		if (this.active) {
+			this.selectTool(tool);
 		}
 	}
 
@@ -84,6 +110,10 @@ export class JScene3DViewportNavigation extends Disposable {
 			return;
 		}
 		const gizmo = event.button === 0 && this.isInsideGizmo(event);
+		if (!gizmo && event.button === 0 && this.tool !== 'select' && !event.altKey && !event.shiftKey) {
+			this.transformInteraction.begin(event);
+			return;
+		}
 		const action = gizmo ? 'orbit' : this.configuredDragAction(event);
 		if (!action) {
 			return;
@@ -113,6 +143,9 @@ export class JScene3DViewportNavigation extends Disposable {
 		const drag = this.drag;
 		if (!drag) {
 			this.canvas.classList.toggle('is-gizmo-hover', this.active && this.isInsideGizmo(event));
+			if (this.active && this.tool !== 'select' && !this.isInsideGizmo(event)) {
+				this.transformInteraction.hover(event);
+			}
 			return;
 		}
 		if (drag.pointerId !== event.pointerId) {
@@ -238,4 +271,63 @@ export class JScene3DViewportNavigation extends Disposable {
 			altRightDragZoomEnabled: this.setting('altRightDragZoomEnabled', true)
 		};
 	}
+
+	private selectTool(tool: JScene3DTransformTool): void {
+		if (this.tool === tool) {
+			return;
+		}
+		this.cancelTransform();
+		this.tool = tool;
+		this.updateTransformConfiguration();
+		this.transformInteraction.setTool(this.active, tool);
+	}
+
+	private setSpace(space: JScene3DTransformSpace): void {
+		this.cancelTransform();
+		this.space = space;
+		this.updateTransformConfiguration();
+	}
+
+	private setSnapping(snapping: boolean): void {
+		this.cancelTransform();
+		this.snapping = snapping;
+		this.updateTransformConfiguration();
+	}
+
+	private updateTransformConfiguration(): void {
+		const settings: IJScene3DTransformSettings = {
+			tool: this.tool,
+			space: this.space,
+			snapping: this.snapping,
+			translationSnap: this.transformSetting('translationSnap', 0.5),
+			rotationSnap: this.transformSetting('rotationSnap', 15),
+			scaleSnap: this.transformSetting('scaleSnap', 0.1)
+		};
+		this.toolbars.setTransformState(this.tool, this.space, this.snapping);
+		this.configureTransform(settings);
+	}
+
+	private cancelTransform(): void {
+		this.transformInteraction.cancel();
+	}
+
+	private onKeyDown(event: KeyboardEvent): void {
+		if (!this.active || event.metaKey || event.ctrlKey || event.altKey || isTextInput(event.target)) {
+			return;
+		}
+		if (event.key === 'Escape' && this.transformInteraction.dragging()) {
+			event.preventDefault();
+			this.cancelTransform();
+			return;
+		}
+	}
+
+	private transformSetting(name: string, fallback: number): number {
+		const value = this.configurationService.getValue<number>(`${TRANSFORM_SETTING_PREFIX}.${name}`);
+		return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+	}
+}
+
+function isTextInput(target: EventTarget | null): boolean {
+	return isHTMLElement(target) && (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
 }

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportLaunch } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportLaunch, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -45,6 +45,7 @@ export const JSCENE3D_CLOSE_VIEWPORT_COMMAND_ID = 'jscene3d.workbench.closeViewp
 export const JSCENE3D_FOCUS_SELECTED_COMMAND_ID = 'jscene3d.sceneView.focusSelected';
 export const JSCENE3D_FRAME_ALL_COMMAND_ID = 'jscene3d.sceneView.frameAll';
 export const JSCENE3D_RESET_NAVIGATION_SETTINGS_COMMAND_ID = 'jscene3d.sceneView.resetNavigationSettings';
+export const JSCENE3D_SELECT_TOOL_COMMAND_PREFIX = 'jscene3d.sceneView.tool.';
 
 CommandsRegistry.registerCommand(JSCENE3D_OPEN_PROJECT_VIEWPORT_COMMAND_ID, async (accessor, launch: unknown) => {
 	if (!isViewportLaunch(launch)) {
@@ -135,6 +136,12 @@ CommandsRegistry.registerCommand(JSCENE3D_FRAME_ALL_COMMAND_ID, accessor => {
 	activeSceneViewport(accessor.get(IEditorService))?.navigate({ kind: 'frameAll' });
 });
 
+for (const tool of ['select', 'move', 'rotate', 'scale'] as const) {
+	CommandsRegistry.registerCommand(`${JSCENE3D_SELECT_TOOL_COMMAND_PREFIX}${tool}`, accessor => {
+		activeSceneViewport(accessor.get(IEditorService))?.selectTransformTool(tool);
+	});
+}
+
 CommandsRegistry.registerCommand(JSCENE3D_RESET_NAVIGATION_SETTINGS_COMMAND_ID, async accessor => {
 	const configurationService = accessor.get(IConfigurationService);
 	await Promise.all(NAVIGATION_SETTINGS.map(setting => configurationService.updateValue(setting, undefined, ConfigurationTarget.USER)));
@@ -151,16 +158,23 @@ const NAVIGATION_SETTINGS = [
 	'jscene3d.sceneView.navigation.panSensitivity',
 	'jscene3d.sceneView.navigation.zoomSensitivity',
 	'jscene3d.sceneView.navigation.invertOrbit',
-	'jscene3d.sceneView.navigation.invertZoom'
+	'jscene3d.sceneView.navigation.invertZoom',
+	'jscene3d.sceneView.transform.translationSnap',
+	'jscene3d.sceneView.transform.rotationSnap',
+	'jscene3d.sceneView.transform.scaleSnap'
 ] as const;
 
-function activeSceneViewport(editorService: IEditorService): { navigate(navigation: { readonly kind: 'focusSelected' | 'frameAll' }): void } | undefined {
+function activeSceneViewport(editorService: IEditorService): {
+	navigate(navigation: { readonly kind: 'focusSelected' | 'frameAll' }): void;
+	selectTransformTool(tool: JScene3DTransformTool): void;
+} | undefined {
 	const editor = editorService.activeEditor;
 	if (!(editor instanceof JScene3DSceneEditorInput) || editor.viewport.launch.kind !== 'scene') {
 		return undefined;
 	}
 	return {
-		navigate: navigation => editor.viewport.navigateActive(navigation)
+		navigate: navigation => editor.viewport.navigateActive(navigation),
+		selectTransformTool: tool => editor.viewport.selectTransformTool(tool)
 	};
 }
 

@@ -7,8 +7,10 @@ import * as vscode from 'vscode';
 import { AuthoringTextDto, DefinitionContextDto, DefinitionMutationDto, InspectorMutationTargetDto } from '../protocol/authoringProtocol';
 import { sceneEditorHtml } from '../sceneView/sceneEditorPresentation';
 import { SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
-import { AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './authoredDefinitionLifecycle';
+import { SceneTransformEditEvent } from '../sceneView/sceneViewRegistration';
+import { AcceptedDefinitionEdit, AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './authoredDefinitionLifecycle';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
+import { InteractiveDefinitionEditCoordinator } from './interactiveDefinitionEditCoordinator';
 import { isDefinitionViewType } from './authoredDefinitionOpener';
 import { definitionResourceKey } from './definitionResource';
 
@@ -37,14 +39,20 @@ export class AuthoredDefinitionDocument implements vscode.CustomDocument {
 export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 	private readonly viewProviders = new Map<string, AuthoredDefinitionViewProvider>();
 	private readonly documents = new Map<string, AuthoredDefinitionDocument>();
-	private readonly pendingMutations = new Set<Promise<DefinitionMutationOutcome>>();
+	private readonly pendingMutations = new Set<Promise<unknown>>();
+	private readonly interactiveEdits: InteractiveDefinitionEditCoordinator;
 
 	constructor(
 		private readonly state: AuthoredDefinitionState,
 		private readonly lifecycle: AuthoredDefinitionLifecycle,
 		private readonly currentProject: () => { readonly generation: number; readonly id: string } | undefined,
 		private readonly sceneViews?: DefinitionSceneViewLifecycle
-	) { }
+	) {
+		this.interactiveEdits = new InteractiveDefinitionEditCoordinator(
+			lifecycle,
+			state,
+			(resource, edit) => this.recordTransformEdit(resource, edit));
+	}
 
 	providerFor(viewType: string): vscode.CustomEditorProvider<AuthoredDefinitionDocument> {
 		if (!isDefinitionViewType(viewType)) {
@@ -79,7 +87,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		const document = new AuthoredDefinitionDocument(uri, viewType, this.state.resolve(resource), () => {
 			this.documents.delete(resource);
 			void this.sceneViews?.close(resource);
-			this.state.unregister(resource);
+			void this.interactiveEdits.cancelResource(resource).finally(() => this.state.unregister(resource));
 		});
 		this.documents.set(resource, document);
 		return document;
@@ -135,6 +143,32 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		return pending;
 	}
 
+	acceptSceneTransform(event: SceneTransformEditEvent): Promise<boolean> {
+		if (event.phase === 'blocked') {
+			void vscode.window.showWarningMessage(vscode.l10n.t(
+				'This transform is inherited from an Entity Definition and cannot be edited from the Scene.'));
+			return Promise.resolve(true);
+		}
+		const pending = this.interactiveEdits.accept(event);
+		this.pendingMutations.add(pending);
+		void pending.then(
+			() => this.pendingMutations.delete(pending),
+			() => this.pendingMutations.delete(pending)
+		);
+		return pending;
+	}
+
+	private async recordTransformEdit(resource: string, edit: AcceptedDefinitionEdit): Promise<void> {
+		const document = this.documents.get(resource);
+		const provider = document === undefined ? undefined : this.viewProviders.get(document.viewType);
+		if (document === undefined || provider === undefined) {
+			throw new Error('Accepted Scene transform has no open custom document');
+		}
+		const nativeDirty = this.waitForNativeDirty(document);
+		provider.fireEdit({ document, label: edit.label, undo: edit.undo, redo: edit.redo });
+		await nativeDirty;
+	}
+
 	private async applyInspectorMutation(
 		target: InspectorMutationTargetDto,
 		mutation: DefinitionMutationDto,
@@ -168,6 +202,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 	}
 
 	async closeProjectDocuments(): Promise<boolean> {
+		await this.interactiveEdits.cancelAll();
 		await this.waitForPendingMutations();
 		const tabs = this.authoredDefinitionTabs();
 		if (tabs.length === 0) {
@@ -180,6 +215,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 	}
 
 	dispose(): void {
+		this.interactiveEdits.dispose();
 		this.documents.clear();
 		for (const provider of this.viewProviders.values()) {
 			provider.dispose();
@@ -203,7 +239,9 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		document: AuthoredDefinitionDocument,
 		context: vscode.CustomDocumentBackupContext
 	): Promise<vscode.CustomDocumentBackup> {
-		const backup = await this.lifecycle.backup(definitionResourceKey(document.uri));
+		const resource = definitionResourceKey(document.uri);
+		await this.interactiveEdits.cancelResource(resource);
+		const backup = await this.lifecycle.backup(resource);
 		await vscode.workspace.fs.writeFile(context.destination, Buffer.from(backup, 'base64'));
 		return {
 			id: context.destination.toString(true),

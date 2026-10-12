@@ -18,6 +18,9 @@
 	type IJScene3DViewportSessionIdentity = import('../common/jscene3dViewport.js').IJScene3DViewportSessionIdentity;
 	type IJScene3DViewportSelection = import('../common/jscene3dViewport.js').IJScene3DViewportSelection;
 	type IJScene3DSceneViewNavigation = import('../common/jscene3dViewport.js').IJScene3DSceneViewNavigation;
+	type IJScene3DViewportTransform = import('../common/jscene3dViewport.js').IJScene3DViewportTransform;
+	type IJScene3DTransformSettings = import('../common/jscene3dViewport.js').IJScene3DTransformSettings;
+	type IJScene3DTransformPointer = import('../common/jscene3dViewport.js').IJScene3DTransformPointer;
 
 	//#region Utilities
 
@@ -105,6 +108,7 @@
 		readonly onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>;
 		readonly onFailure: (failure: IJScene3DViewportFailure) => void;
 		readonly onSelection: (selection: IJScene3DViewportSelection) => void;
+		readonly onTransform: (transform: IJScene3DViewportTransform) => void;
 		session?: IJScene3DViewportSessionIdentity;
 		pendingReady?: IJScene3DViewportSessionIdentity;
 		surfaceGeneration: number;
@@ -135,6 +139,26 @@
 			default:
 				return false;
 		}
+	};
+	const validTransformSettings = (value: unknown): value is IJScene3DTransformSettings => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DTransformSettings>;
+		return (candidate.tool === 'select' || candidate.tool === 'move' || candidate.tool === 'rotate' || candidate.tool === 'scale')
+			&& (candidate.space === 'global' || candidate.space === 'local') && typeof candidate.snapping === 'boolean'
+			&& finite(candidate.translationSnap) && candidate.translationSnap! > 0
+			&& finite(candidate.rotationSnap) && candidate.rotationSnap! > 0
+			&& finite(candidate.scaleSnap) && candidate.scaleSnap! > 0;
+	};
+	const validTransformPointer = (value: unknown): value is IJScene3DTransformPointer => {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<IJScene3DTransformPointer>;
+		return (candidate.phase === 'hover' || candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit' || candidate.phase === 'cancel')
+			&& finite(candidate.horizontal) && finite(candidate.vertical)
+			&& validDimension(candidate.viewportWidth) && validDimension(candidate.viewportHeight);
 	};
 	const validSession = (value: unknown): value is IJScene3DViewportSessionIdentity => {
 		if (!value || typeof value !== 'object') {
@@ -266,13 +290,34 @@
 		}
 	});
 
+	ipcRenderer.on('vscode:jscene3dViewport:transform', (_event: Electron.IpcRendererEvent, transform: unknown) => {
+		if (!transform || typeof transform !== 'object') {
+			return;
+		}
+		const candidate = transform as Partial<IJScene3DViewportTransform>;
+		const validPhase = candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit'
+			|| candidate.phase === 'cancel' || candidate.phase === 'blocked';
+		if (!validPaneId(candidate.paneId) || !validSession(transform) || !validPhase
+			|| !nonEmpty(candidate.editId) || !Number.isInteger(candidate.revision) || candidate.revision! < 0
+			|| !nonEmpty(candidate.definitionAssetId) || !Array.isArray(candidate.entityPath) || !candidate.entityPath.every(nonEmpty)
+			|| !nonEmpty(candidate.authoredDefinitionAssetId) || !nonEmpty(candidate.authoredEntityId) || !nonEmpty(candidate.componentId)
+			|| (candidate.propertyId !== 'position' && candidate.propertyId !== 'orientation' && candidate.propertyId !== 'scale')
+			|| !Array.isArray(candidate.literals) || candidate.literals.length !== 3 || !candidate.literals.every(nonEmpty)) {
+			return;
+		}
+		const registration = jscene3dPanes.get(candidate.paneId);
+		if (registration && sameSession(registration.session, transform as IJScene3DViewportTransform)) {
+			registration.onTransform(transform as IJScene3DViewportTransform);
+		}
+	});
+
 	const jscene3dViewport: IJScene3DViewportBridge = {
-		registerPane(paneId, onReady, onFrame, onFailure, onSelection): void {
+		registerPane(paneId, onReady, onFrame, onFailure, onSelection, onTransform): void {
 			if (!validPaneId(paneId) || typeof onReady !== 'function' || typeof onFrame !== 'function'
-				|| typeof onFailure !== 'function' || typeof onSelection !== 'function' || jscene3dPanes.has(paneId)) {
+				|| typeof onFailure !== 'function' || typeof onSelection !== 'function' || typeof onTransform !== 'function' || jscene3dPanes.has(paneId)) {
 				throw new Error('Invalid or duplicate JScene3D native viewport pane registration');
 			}
-			jscene3dPanes.set(paneId, { onReady, onFrame, onFailure, onSelection, surfaceGeneration: 0, frameNumber: 0 });
+			jscene3dPanes.set(paneId, { onReady, onFrame, onFailure, onSelection, onTransform, surfaceGeneration: 0, frameNumber: 0 });
 		},
 
 		unregisterPane(paneId): void {
@@ -327,6 +372,18 @@
 		navigateSceneView(paneId, session, navigation: IJScene3DSceneViewNavigation): void {
 			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validSceneViewNavigation(navigation)) {
 				ipcRenderer.send('vscode:jscene3dViewport:navigateSceneView', paneId, session, navigation);
+			}
+		},
+
+		configureSceneTransform(paneId, session, settings): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validTransformSettings(settings)) {
+				ipcRenderer.send('vscode:jscene3dViewport:configureSceneTransform', paneId, session, settings);
+			}
+		},
+
+		transformSceneView(paneId, session, pointer): void {
+			if (sameSession(jscene3dPanes.get(paneId)?.session, session) && validTransformPointer(pointer)) {
+				ipcRenderer.send('vscode:jscene3dViewport:transformSceneView', paneId, session, pointer);
 			}
 		},
 

@@ -7,6 +7,7 @@ import {
 	ConnectionScopedResult,
 	DefinitionBackupResultDto,
 	DefinitionMutationDto,
+	DefinitionMutationValueDto,
 	DefinitionOpenResultDto,
 	DefinitionOperationResultDto,
 	InspectorMutationTargetDto,
@@ -19,6 +20,9 @@ export interface AuthoredDefinitionLifecycleClient {
 	openDefinition(projectGeneration: number, assetId: string): Promise<ConnectionScopedResult<DefinitionOpenResultDto>>;
 	mutateDefinition(projectGeneration: number, assetId: string, revision: number,
 		target: InspectorMutationTargetDto, mutation: DefinitionMutationDto): Promise<DefinitionOperationResultDto>;
+	interactDefinition(projectGeneration: number, assetId: string, revision: number,
+		target: InspectorMutationTargetDto, phase: 'begin' | 'update' | 'commit' | 'cancel', editId: string,
+		value?: DefinitionMutationValueDto): Promise<DefinitionOperationResultDto>;
 	undoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto>;
 	redoDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto>;
 	saveDefinition(projectGeneration: number, assetId: string, revision: number): Promise<DefinitionOperationResultDto>;
@@ -78,6 +82,60 @@ export class AuthoredDefinitionLifecycle {
 			}
 			return { status: 'rejected', outcome: result.outcome, diagnostics: result.diagnostics };
 		});
+	}
+
+	interact(
+		resource: string,
+		target: InspectorMutationTargetDto,
+		phase: 'begin' | 'update' | 'commit' | 'cancel',
+		editId: string,
+		value?: DefinitionMutationValueDto
+	): Promise<DefinitionMutationOutcome> {
+		return this.exclusive(async () => {
+			const document = this.requireDocument(resource);
+			if (target.occurrence.definitionAssetId !== document.assetId || !document.snapshot.context.editable) {
+				throw new Error('Interactive edit does not belong to an editable authored definition');
+			}
+			const result = await this.client.interactDefinition(
+				document.projectGeneration, document.assetId, document.snapshot.revision,
+				target, phase, editId, value);
+			this.publishDiagnostics(result.diagnostics);
+			if (phase === 'update' && result.outcome === 'accepted') {
+				this.definitions.acceptPreview(
+				document.resource,
+					result.revision,
+					target,
+					value ?? requiredInteractiveValue());
+				return { status: 'noOp' };
+			}
+			if (phase === 'commit' && result.outcome === 'accepted') {
+				await this.refresh(document.resource);
+				return {
+					status: 'accepted',
+					edit: {
+						label: 'Transform entity',
+						undo: () => this.history(document.resource, 'undo'),
+						redo: () => this.history(document.resource, 'redo')
+					}
+				};
+			}
+			if ((phase === 'commit' || phase === 'cancel')
+				&& (result.outcome === 'accepted' || result.outcome === 'no-op')) {
+				await this.refresh(document.resource);
+			}
+			if (result.outcome === 'no-op') {
+				return { status: 'noOp' };
+			}
+			await this.refresh(document.resource);
+			return result.outcome === 'accepted'
+				? { status: 'noOp' }
+				: { status: 'rejected', outcome: result.outcome, diagnostics: result.diagnostics };
+		});
+	}
+
+	/** Reopens one retained definition after a rejected or interrupted provisional interaction. */
+	reconcile(resource: string): Promise<void> {
+		return this.exclusive(async () => { await this.refresh(resource); });
 	}
 
 	async save(resource: string): Promise<void> {
@@ -224,4 +282,8 @@ export class AuthoredDefinitionLifecycle {
 
 function operationFailure(operation: string, result: DefinitionOperationResultDto): Error {
 	return new Error(`Authoring definition ${operation} failed: ${result.outcome}`);
+}
+
+function requiredInteractiveValue(): never {
+	throw new Error('Interactive update requires a preview value');
 }

@@ -306,7 +306,7 @@ class TestAuthoringProcess extends EventEmitter implements AuthoringProcess {
 						engineVersion: 'test',
 						capabilities: [
 							'project/open', 'project/replace', 'project/close', 'viewport/prepareLaunch', 'sceneView/read', 'definition/open',
-							'definition/mutate', 'definition/undo', 'definition/redo',
+							'definition/mutate', 'definition/interact', 'definition/undo', 'definition/redo',
 							'definition/save', 'definition/revert', 'definition/backup',
 							'definition/restoreBackup',
 							'inspector/read', 'service/shutdown'

@@ -184,6 +184,14 @@ canvas.jscene3d-scene-viewport[data-navigation-action='zoom'] {
 	cursor: ns-resize;
 }
 
+canvas.jscene3d-scene-viewport[data-transform-tool] {
+	cursor: crosshair;
+}
+
+canvas.jscene3d-scene-viewport.is-transform-dragging {
+	cursor: grabbing;
+}
+
 @media (forced-colors: active) {
 	.jscene3d-scene-toolbar,
 	.jscene3d-scene-toolbar-button.is-selected,

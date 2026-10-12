@@ -12,7 +12,7 @@ import {
 } from '../protocol/authoringProtocol';
 import { publishProjectDiagnostics } from '../project/projectDiagnostics';
 import { ProjectState } from '../project/projectState';
-import { SceneViewLifecycleOperations } from '../sceneView/sceneViewRegistration';
+import { SceneTransformEditEvent, SceneViewLifecycleOperations } from '../sceneView/sceneViewRegistration';
 import { AuthoredDefinitionEditorProvider } from './authoredDefinitionEditor';
 import { AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './authoredDefinitionLifecycle';
 import {
@@ -37,6 +37,7 @@ export interface RegisteredDefinitionFeature extends vscode.Disposable {
 		mutation: DefinitionMutationDto,
 		label: string
 	): Promise<DefinitionMutationOutcome>;
+	acceptSceneTransform(event: SceneTransformEditEvent): Promise<boolean>;
 	publishDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void;
 	registerOpenCommand(handler: (assetId?: string, projectGeneration?: number) => Promise<void>): void;
 	registerEditorProvider(): void;
@@ -125,6 +126,10 @@ class VsCodeDefinitionFeature implements RegisteredDefinitionFeature {
 		label: string
 	): Promise<DefinitionMutationOutcome> {
 		return this.editorProvider.acceptInspectorMutation(target, mutation, label);
+	}
+
+	acceptSceneTransform(event: SceneTransformEditEvent): Promise<boolean> {
+		return this.editorProvider.acceptSceneTransform(event);
 	}
 
 	publishDiagnostics(diagnostics: readonly ProjectDiagnosticDto[]): void {

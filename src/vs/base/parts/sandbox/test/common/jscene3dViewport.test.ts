@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { JScene3DViewportFrameRouter, isSceneViewNavigation, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, sceneViewNavigationCommand, stopViewportSessions } from '../../common/jscene3dViewport.js';
+import { JScene3DViewportFrameRouter, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('JScene3DViewportFrameRouter', () => {
@@ -143,6 +143,19 @@ suite('JScene3DViewportFrameRouter', () => {
 		assert.strictEqual(sceneViewNavigationCommand({ kind: 'focusSelected' }), 'SCENE_NAVIGATE FOCUS_SELECTED');
 		assert.strictEqual(sceneViewNavigationCommand({ kind: 'frameAll' }), 'SCENE_NAVIGATE FRAME_ALL');
 		assert.strictEqual(sceneViewNavigationCommand({ kind: 'toggleProjection' }), 'SCENE_NAVIGATE TOGGLE_PROJECTION');
+	});
+
+	test('validates and serializes transform configuration and pointer commands', () => {
+		const settings = { tool: 'move', space: 'local', snapping: true, translationSnap: 0.5, rotationSnap: 15, scaleSnap: 0.1 } as const;
+		const pointer = { phase: 'begin', horizontal: 320, vertical: 240, viewportWidth: 800, viewportHeight: 600 } as const;
+
+		assert.strictEqual(isSceneTransformSettings(settings), true);
+		assert.strictEqual(sceneTransformConfigCommand(settings), 'SCENE_TRANSFORM_CONFIG MOVE LOCAL ON 0.5 15 0.1');
+		assert.strictEqual(isSceneTransformSettings({ ...settings, translationSnap: 0 }), false);
+		assert.strictEqual(isSceneTransformPointer(pointer), true);
+		assert.strictEqual(sceneTransformPointerCommand(pointer, 8, 3), 'SCENE_TRANSFORM_POINTER BEGIN 320 240 800 600 8 3');
+		assert.strictEqual(sceneTransformPointerCommand({ ...pointer, phase: 'update' }, undefined, 3), 'SCENE_TRANSFORM_POINTER UPDATE 320 240 800 600 NONE 3');
+		assert.strictEqual(isSceneTransformPointer({ ...pointer, viewportWidth: 0 }), false);
 	});
 
 	test('rejects stale generations and duplicate frames', async () => {

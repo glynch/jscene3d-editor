@@ -18,6 +18,7 @@ export const authoringProtocolMethods = {
 	readSceneView: 'sceneView/read',
 	openDefinition: 'definition/open',
 	mutateDefinition: 'definition/mutate',
+	interactDefinition: 'definition/interact',
 	undoDefinition: 'definition/undo',
 	redoDefinition: 'definition/redo',
 	saveDefinition: 'definition/save',
@@ -618,6 +619,29 @@ export class AuthoringProtocolClient {
 			operation: mutation.operation,
 			target: mutationTargetJson(target),
 			value: mutation.operation === 'set' ? mutationValueJson(mutation.value) : null
+		}, validateDefinitionOperationResult)).result;
+	}
+
+	async interactDefinition(
+		expectedProjectGeneration: number,
+		assetId: string,
+		expectedDefinitionRevision: number,
+		target: InspectorMutationTargetDto,
+		phase: 'begin' | 'update' | 'commit' | 'cancel',
+		editId: string,
+		value?: DefinitionMutationValueDto
+	): Promise<DefinitionOperationResultDto> {
+		if ((phase === 'update') !== (value !== undefined)) {
+			throw new Error('Interactive definition update requires exactly one value');
+		}
+		return (await this.request(authoringProtocolMethods.interactDefinition, {
+			expectedProjectGeneration: requiredPositiveInteger(expectedProjectGeneration, 'expectedProjectGeneration'),
+			assetId: requiredNonEmptyString(assetId, 'assetId'),
+			expectedDefinitionRevision: requiredInteger(expectedDefinitionRevision, 'expectedDefinitionRevision'),
+			target: mutationTargetJson(target),
+			phase,
+			editId: requiredNonEmptyString(editId, 'editId'),
+			value: value === undefined ? null : mutationValueJson(value),
 		}, validateDefinitionOperationResult)).result;
 	}
 

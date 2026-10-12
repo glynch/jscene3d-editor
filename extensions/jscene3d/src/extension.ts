@@ -40,6 +40,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const definitionState = new AuthoredDefinitionState();
 	const sceneViews = registerSceneViewFeature(service, definitionState, output);
 	const definitions = registerDefinitionFeature(service, projectState, definitionState, sceneViews, output);
+	sceneViews.setTransformEditHandler(event => definitions.acceptSceneTransform(event));
 	const inspector = registerInspectorFeature(service, definitionState, definitions, output);
 	const hierarchy = registerHierarchyFeature(definitionState, output);
 	const runtimeViews = registerRuntimeViewportFeature(service, projectState, output);
