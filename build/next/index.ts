@@ -21,6 +21,7 @@ import { isWebExtension, type IScannedBuiltinExtension } from '../lib/extensions
 import { runBuildFast } from './build-fast.ts';
 import { bundleDevTunnelsWeb } from './devTunnelsWeb.ts';
 import { copyFile, mapWithConcurrency, MAX_CONCURRENT_FILE_OPERATIONS, transpileFile } from './transpile.ts';
+import { compileDesktopStandaloneFiles } from '../lib/desktopStandalone.ts';
 
 const globAsync = promisify(glob);
 
@@ -470,47 +471,15 @@ function readISODate(outDir: string): string {
 	}
 }
 
-/**
- * Standalone TypeScript files that need to be compiled separately (not bundled).
- * These run in special contexts (e.g., Electron preload) where bundling isn't appropriate.
- * Only needed for desktop target.
- */
-const desktopStandaloneFiles = [
-	'vs/base/parts/sandbox/electron-browser/preload.ts',
-	'vs/base/parts/sandbox/electron-browser/preload-aux.ts',
-	'vs/platform/browserView/electron-browser/preload-browserView.ts',
-];
-
 async function compileStandaloneFiles(outDir: string, doMinify: boolean, target: BuildTarget): Promise<void> {
 	// Only desktop needs preload scripts
 	if (target !== 'desktop') {
 		return;
 	}
 
-	console.log(`[standalone] Compiling ${desktopStandaloneFiles.length} standalone files...`);
+	console.log('[standalone] Compiling desktop standalone files...');
 
-	const banner = `/*!--------------------------------------------------------
- * Copyright (C) Microsoft Corporation. All rights reserved.
- *--------------------------------------------------------*/`;
-
-	await Promise.all(desktopStandaloneFiles.map(async (file) => {
-		const entryPath = path.join(REPO_ROOT, SRC_DIR, file);
-		const outPath = path.join(REPO_ROOT, outDir, file.replace(/\.ts$/, '.js'));
-
-		await esbuild.build({
-			entryPoints: [entryPath],
-			outfile: outPath,
-			bundle: false, // Don't bundle - these are standalone scripts
-			format: 'cjs', // CommonJS for Electron preload
-			platform: 'node',
-			target: ['es2024'],
-			sourcemap: 'linked',
-			sourcesContent: false,
-			minify: doMinify,
-			banner: { js: banner },
-			logLevel: 'warning',
-		});
-	}));
+	await compileDesktopStandaloneFiles(REPO_ROOT, outDir, doMinify);
 
 	console.log(`[standalone] Done`);
 }

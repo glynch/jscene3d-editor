@@ -22,6 +22,7 @@ import ts from 'typescript';
 import watch from './watch/index.ts';
 import * as tsb from './tsb/index.ts';
 import { createTsgoStream, spawnTsgo } from './tsgo.ts';
+import { compileDesktopStandaloneFiles } from './desktopStandalone.ts';
 
 
 import { extractExtensionPointNamesFromFile } from './extractExtensionPoints.ts';
@@ -169,6 +170,10 @@ export function compileTask(src: string, out: string, build: boolean, options: {
 		const typecheck = spawnTsgo(compile.projectPath, { taskName: `compile-${path.basename(src)}`, noEmit: true });
 
 		await Promise.all([emit, typecheck]);
+		if (src === 'src' && !build) {
+			const repoRoot = path.join(import.meta.dirname, '../..');
+			await compileDesktopStandaloneFiles(repoRoot, out, false);
+		}
 	};
 
 	task.taskName = `compile-${path.basename(src)}`;

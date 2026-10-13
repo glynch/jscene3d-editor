@@ -9,8 +9,8 @@ import { sceneEditorHtml } from '../sceneView/sceneEditorPresentation';
 import { SceneViewSynchronizationOutcome } from '../sceneView/sceneViewLifecycle';
 import { SceneTransformEditEvent } from '../sceneView/sceneViewRegistration';
 import { AcceptedDefinitionEdit, AuthoredDefinitionLifecycle, DefinitionMutationOutcome } from './authoredDefinitionLifecycle';
+import { AuthoredDefinitionEditBridge } from './authoredDefinitionEditBridge';
 import { AuthoredDefinitionResource, AuthoredDefinitionState } from './authoredDefinitionState';
-import { InteractiveDefinitionEditCoordinator } from './interactiveDefinitionEditCoordinator';
 import { isDefinitionViewType } from './authoredDefinitionOpener';
 import { definitionResourceKey } from './definitionResource';
 
@@ -39,8 +39,7 @@ export class AuthoredDefinitionDocument implements vscode.CustomDocument {
 export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 	private readonly viewProviders = new Map<string, AuthoredDefinitionViewProvider>();
 	private readonly documents = new Map<string, AuthoredDefinitionDocument>();
-	private readonly pendingMutations = new Set<Promise<unknown>>();
-	private readonly interactiveEdits: InteractiveDefinitionEditCoordinator;
+	private readonly edits: AuthoredDefinitionEditBridge;
 
 	constructor(
 		private readonly state: AuthoredDefinitionState,
@@ -48,7 +47,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		private readonly currentProject: () => { readonly generation: number; readonly id: string } | undefined,
 		private readonly sceneViews?: DefinitionSceneViewLifecycle
 	) {
-		this.interactiveEdits = new InteractiveDefinitionEditCoordinator(
+		this.edits = new AuthoredDefinitionEditBridge(
 			lifecycle,
 			state,
 			(resource, edit) => this.recordTransformEdit(resource, edit));
@@ -87,7 +86,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		const document = new AuthoredDefinitionDocument(uri, viewType, this.state.resolve(resource), () => {
 			this.documents.delete(resource);
 			void this.sceneViews?.close(resource);
-			void this.interactiveEdits.cancelResource(resource).finally(() => this.state.unregister(resource));
+			void this.edits.cancelResource(resource).finally(() => this.state.unregister(resource));
 		});
 		this.documents.set(resource, document);
 		return document;
@@ -134,28 +133,11 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		mutation: DefinitionMutationDto,
 		label: string
 	): Promise<DefinitionMutationOutcome> {
-		const pending = this.applyInspectorMutation(target, mutation, label);
-		this.pendingMutations.add(pending);
-		void pending.then(
-			() => this.pendingMutations.delete(pending),
-			() => this.pendingMutations.delete(pending)
-		);
-		return pending;
+		return this.edits.acceptInspectorMutation(target, mutation, label);
 	}
 
 	acceptSceneTransform(event: SceneTransformEditEvent): Promise<boolean> {
-		if (event.phase === 'blocked') {
-			void vscode.window.showWarningMessage(vscode.l10n.t(
-				'This transform is inherited from an Entity Definition and cannot be edited from the Scene.'));
-			return Promise.resolve(true);
-		}
-		const pending = this.interactiveEdits.accept(event);
-		this.pendingMutations.add(pending);
-		void pending.then(
-			() => this.pendingMutations.delete(pending),
-			() => this.pendingMutations.delete(pending)
-		);
-		return pending;
+		return this.edits.acceptSceneTransform(event);
 	}
 
 	private async recordTransformEdit(resource: string, edit: AcceptedDefinitionEdit): Promise<void> {
@@ -169,41 +151,9 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		await nativeDirty;
 	}
 
-	private async applyInspectorMutation(
-		target: InspectorMutationTargetDto,
-		mutation: DefinitionMutationDto,
-		label: string
-	): Promise<DefinitionMutationOutcome> {
-		const outcome = await this.lifecycle.mutate(target, mutation, label);
-		if (outcome.status !== 'accepted') {
-			return outcome;
-		}
-		const active = this.state.active;
-		if (active === undefined) {
-			throw new Error('Accepted Inspector mutation has no active definition document');
-		}
-		const document = this.documents.get(active.resource);
-		if (document === undefined) {
-			throw new Error('Accepted Inspector mutation has no open custom document');
-		}
-		const nativeDirty = this.waitForNativeDirty(document);
-		const provider = this.viewProviders.get(document.viewType);
-		if (provider === undefined) {
-			throw new Error(`No native custom-editor provider is registered for ${document.viewType}`);
-		}
-		provider.fireEdit({
-			document,
-			label: outcome.edit.label,
-			undo: outcome.edit.undo,
-			redo: outcome.edit.redo
-		});
-		await nativeDirty;
-		return outcome;
-	}
-
 	async closeProjectDocuments(): Promise<boolean> {
-		await this.interactiveEdits.cancelAll();
-		await this.waitForPendingMutations();
+		await this.edits.cancelAll();
+		await this.edits.waitForPending();
 		const tabs = this.authoredDefinitionTabs();
 		if (tabs.length === 0) {
 			if (this.documents.size > 0) {
@@ -215,7 +165,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 	}
 
 	dispose(): void {
-		this.interactiveEdits.dispose();
+		this.edits.dispose();
 		this.documents.clear();
 		for (const provider of this.viewProviders.values()) {
 			provider.dispose();
@@ -240,7 +190,7 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 		context: vscode.CustomDocumentBackupContext
 	): Promise<vscode.CustomDocumentBackup> {
 		const resource = definitionResourceKey(document.uri);
-		await this.interactiveEdits.cancelResource(resource);
+		await this.edits.cancelResource(resource);
 		const backup = await this.lifecycle.backup(resource);
 		await vscode.workspace.fs.writeFile(context.destination, Buffer.from(backup, 'base64'));
 		return {
@@ -256,12 +206,6 @@ export class AuthoredDefinitionEditorProvider implements vscode.Disposable {
 				&& isDefinitionViewType(input.viewType)
 				&& (resource === undefined || definitionResourceKey(input.uri) === resource);
 		});
-	}
-
-	private async waitForPendingMutations(): Promise<void> {
-		while (this.pendingMutations.size > 0) {
-			await Promise.all(this.pendingMutations);
-		}
 	}
 
 	private waitForNativeDirty(document: AuthoredDefinitionDocument): Promise<void> {

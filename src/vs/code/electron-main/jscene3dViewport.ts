@@ -4,57 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { app, sharedTexture } from 'electron';
-import { Disposable, IDisposable } from '../../base/common/lifecycle.js';
-import { isAbsolute, join } from '../../base/common/path.js';
-import { Promises, SymlinkSupport } from '../../base/node/pfs.js';
+import { Disposable } from '../../base/common/lifecycle.js';
 import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, isViewportTransform, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { ILogService } from '../../platform/log/common/log.js';
-import { ICodeWindow } from '../../platform/window/electron-main/window.js';
 import { IWindowsMainService } from '../../platform/windows/electron-main/windows.js';
-import { IJScene3DRendererApi, IJScene3DRendererLaunchRequest, IJScene3DRendererSession } from '../node/jscene3dRendererApi.js';
-
-interface IJScene3DViewportSize {
-	readonly width: number;
-	readonly height: number;
-}
-
-interface IJScene3DPendingSelection {
-	readonly revision: number;
-	readonly occurrence: IJScene3DSceneViewOccurrence | null;
-}
-
-interface IJScene3DMainSession {
-	readonly paneId: string;
-	readonly rendererGeneration: number;
-	readonly window: ICodeWindow;
-	readonly webContents: Electron.WebContents;
-	readonly frame: Electron.WebFrameMain;
-	readonly sessionId: number;
-	readonly pid: number;
-	readonly launch: IJScene3DViewportLaunch;
-	closeListener: IDisposable;
-	rendererReady: boolean;
-	paused: boolean;
-	closing: boolean;
-	frameInFlight: boolean;
-	firstFramePresented: boolean;
-	frameNumber: number;
-	surfaceGeneration: number;
-	desiredSize: IJScene3DViewportSize;
-	pendingSize?: IJScene3DViewportSize;
-	pendingSnapshot?: IJScene3DSceneViewSnapshot;
-	pendingSelection?: IJScene3DPendingSelection;
-	currentSnapshotRevision: number;
-	selectionRequest: number;
-	frameTimer?: ReturnType<typeof setTimeout>;
-	stopPromise?: Promise<void>;
-}
+import { IJScene3DRendererApi, IJScene3DRendererSession } from '../node/jscene3dRendererApi.js';
+import { JScene3DMainViewportSession } from './jscene3dMainViewportSession.js';
+import { JScene3DRendererLaunchResolver } from './jscene3dRendererLaunchResolver.js';
 
 /** Owns and isolates the native renderer process associated with each viewport pane. */
 export class JScene3DViewportController extends Disposable {
-	private readonly sessions = new Map<number, IJScene3DMainSession>();
-	private readonly panes = new Map<string, IJScene3DMainSession>();
+	private readonly sessions = new Map<number, JScene3DMainViewportSession>();
+	private readonly panes = new Map<string, JScene3DMainViewportSession>();
 	private rendererGeneration = 0;
 	private readonly pauseListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity) => this.setPaused(event, paneId, session, true);
 	private readonly resumeListener = (event: Electron.IpcMainEvent, paneId: string, session: IJScene3DViewportSessionIdentity) => this.setPaused(event, paneId, session, false);
@@ -70,7 +32,8 @@ export class JScene3DViewportController extends Disposable {
 	constructor(
 		private readonly renderer: IJScene3DRendererApi,
 		private readonly getWindowsMainService: () => IWindowsMainService | undefined,
-		private readonly logService: ILogService
+		private readonly logService: ILogService,
+		private readonly launchResolver = new JScene3DRendererLaunchResolver()
 	) {
 		super();
 		validatedIpcMain.handle('vscode:jscene3dViewport:start', async (event, paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number) => this.start(event, paneId, launch, width, height));
@@ -107,10 +70,10 @@ export class JScene3DViewportController extends Disposable {
 			return this.identity(existing);
 		}
 
-		const request = await this.createLaunchRequest(launch, width, height);
+		const request = await this.launchResolver.resolve(launch, width, height);
 		const generation = ++this.rendererGeneration;
 		let launched: IJScene3DRendererSession | undefined;
-		let session: IJScene3DMainSession | undefined;
+		let session: JScene3DMainViewportSession | undefined;
 		try {
 			this.logService.info(`[JScene3D viewport] renderer launch requested for pane ${paneId} (${launch.kind} ${launch.sceneAssetId})`);
 			launched = this.renderer.launchRenderer(request, {
@@ -121,29 +84,19 @@ export class JScene3DViewportController extends Disposable {
 				onSceneSelection: (requestId, revision, selection) => session && this.onSceneSelection(session, requestId, revision, selection),
 				onSceneTransform: transform => session && this.onSceneTransform(session, transform)
 			});
-			session = {
+			session = new JScene3DMainViewportSession(
 				paneId,
-				rendererGeneration: generation,
+				generation,
 				window,
-				webContents: event.sender,
+				event.sender,
 				frame,
-				sessionId: launched.sessionId,
-				pid: launched.pid,
 				launch,
-				closeListener: Disposable.None,
-				rendererReady: false,
-				paused: true,
-				closing: false,
-				frameInFlight: false,
-				firstFramePresented: false,
-				frameNumber: 0,
-				surfaceGeneration: launched.surfaceGeneration,
-				desiredSize: { width, height },
-				pendingSnapshot: launch.kind === 'scene' ? launch.snapshot : undefined,
-				currentSnapshotRevision: -1,
-				selectionRequest: 0
-			};
-			session.closeListener = window.onDidClose(() => { void this.stop(session!, 'workbench window closed'); });
+				launched,
+				width,
+				height,
+				this.renderer
+			);
+			session.listenForWindowClose(() => { void this.stop(session!, 'workbench window closed'); });
 			this.panes.set(paneKey, session);
 			this.sessions.set(session.sessionId, session);
 			this.logService.info(`[JScene3D viewport] renderer process ${session.pid} launched for session ${session.sessionId} and pane ${paneId}`);
@@ -156,90 +109,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private async createLaunchRequest(launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DRendererLaunchRequest> {
-		const javaExecutable = process.env.JSCENE3D_RENDERER_JAVA_EXECUTABLE;
-		const runtimeDirectory = process.env.JSCENE3D_RENDERER_RUNTIME_DIRECTORY;
-		const contractIdentity = process.env.JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY;
-		const buildIdentity = process.env.JSCENE3D_DEVELOPMENT_BUILD_IDENTITY;
-		if (!javaExecutable || !isAbsolute(javaExecutable) || !(await this.isFile(javaExecutable))) {
-			throw new Error('JSCENE3D_RENDERER_JAVA_EXECUTABLE must identify an absolute Java executable');
-		}
-		if (!runtimeDirectory || !isAbsolute(runtimeDirectory) || !(await this.isDirectory(runtimeDirectory))) {
-			throw new Error('JSCENE3D_RENDERER_RUNTIME_DIRECTORY must identify an extracted renderer runtime');
-		}
-		if (!contractIdentity || contractIdentity.trim() !== contractIdentity) {
-			throw new Error('JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY must identify the verified Java contract');
-		}
-		if (!buildIdentity || buildIdentity.trim() !== buildIdentity) {
-			throw new Error('JSCENE3D_DEVELOPMENT_BUILD_IDENTITY must identify the verified Java runtime build');
-		}
-		const libraryDirectory = join(runtimeDirectory, 'lib');
-		const nativeLibraryDirectory = join(runtimeDirectory, 'native');
-		if (!(await this.isDirectory(libraryDirectory)) || !(await this.isDirectory(nativeLibraryDirectory))) {
-			throw new Error('The JScene3D renderer runtime must contain lib and native directories');
-		}
-		const classPath = (await Promises.readdir(libraryDirectory))
-			.filter(entry => entry.endsWith('.jar'))
-			.sort()
-			.map(entry => join(libraryDirectory, entry));
-		if (classPath.length === 0) {
-			throw new Error('The JScene3D renderer runtime contains no library JARs');
-		}
-		if (launch.kind === 'game') {
-			for (const artifact of launch.runtimeArtifacts) {
-				if (!isAbsolute(artifact) || !(await this.isFile(artifact))) {
-					throw new Error('A prepared JScene3D project runtime artifact is unavailable');
-				}
-				if (!classPath.includes(artifact)) {
-					classPath.push(artifact);
-				}
-			}
-		}
-		if (!isAbsolute(launch.projectRoot) || !(await this.isDirectory(launch.projectRoot))) {
-			throw new Error('The prepared JScene3D project root is unavailable');
-		}
-		if (!isAbsolute(launch.publishedContentRoot)) {
-			throw new Error('The prepared JScene3D published-content root must be absolute');
-		}
-		return {
-			javaExecutable,
-			workingDirectory: runtimeDirectory,
-			nativeLibraryDirectory,
-			classPath,
-			mainClass: 'io.github.glynch.jscene3d.editor.renderer.process.EditorRendererMain',
-			rendererArguments: [
-				'--protocol-version=1.0',
-				`--contract-identity=${contractIdentity}`,
-				`--build-identity=${buildIdentity}`,
-				...(launch.kind === 'scene' ? ['--scene-view'] : []),
-				`--project-root=${launch.projectRoot}`,
-				`--published-content-root=${launch.publishedContentRoot}`,
-				`--engine-version=${launch.engineVersion}`,
-				`--project-id=${launch.projectId}`,
-				`--scene-asset-id=${launch.sceneAssetId}`
-			],
-			width,
-			height
-		};
-	}
-
-	private async isFile(path: string): Promise<boolean> {
-		try {
-			return (await SymlinkSupport.stat(path)).stat.isFile();
-		} catch {
-			return false;
-		}
-	}
-
-	private async isDirectory(path: string): Promise<boolean> {
-		try {
-			return (await SymlinkSupport.stat(path)).stat.isDirectory();
-		} catch {
-			return false;
-		}
-	}
-
-	private onReady(session: IJScene3DMainSession): void {
+	private onReady(session: JScene3DMainViewportSession): void {
 		if (!this.isActive(session) || session.rendererReady) {
 			return;
 		}
@@ -259,7 +129,7 @@ export class JScene3DViewportController extends Disposable {
 		this.requestFrame(session);
 	}
 
-	private onSurfaceReady(session: IJScene3DMainSession, surfaceGeneration: number, width: number, height: number): void {
+	private onSurfaceReady(session: JScene3DMainViewportSession, surfaceGeneration: number, width: number, height: number): void {
 		if (!this.isActive(session) || !isViewportDimension(surfaceGeneration) || !isViewportDimension(width) || !isViewportDimension(height)
 			|| surfaceGeneration <= session.surfaceGeneration) {
 			return;
@@ -270,7 +140,7 @@ export class JScene3DViewportController extends Disposable {
 		this.requestFrame(session);
 	}
 
-	private onFrameReady(session: IJScene3DMainSession): void {
+	private onFrameReady(session: JScene3DMainViewportSession): void {
 		if (!this.isActive(session) || !session.frameInFlight) {
 			return;
 		}
@@ -320,7 +190,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private applyPendingSnapshot(session: IJScene3DMainSession): boolean {
+	private applyPendingSnapshot(session: JScene3DMainViewportSession): boolean {
 		const snapshot = session.pendingSnapshot;
 		if (!snapshot) {
 			return true;
@@ -348,7 +218,7 @@ export class JScene3DViewportController extends Disposable {
 		this.applyPendingSelection(session);
 	}
 
-	private applyPendingSelection(session: IJScene3DMainSession): void {
+	private applyPendingSelection(session: JScene3DMainViewportSession): void {
 		const pending = session.pendingSelection;
 		if (!pending || !session.rendererReady || pending.revision !== session.currentSnapshotRevision) {
 			return;
@@ -399,7 +269,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private onSceneTransform(session: IJScene3DMainSession, encoded: string): void {
+	private onSceneTransform(session: JScene3DMainViewportSession, encoded: string): void {
 		if (!this.isActive(session) || session.launch.kind !== 'scene') {
 			return;
 		}
@@ -420,7 +290,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private onSceneSelection(session: IJScene3DMainSession, requestId: number, revision: number, encoded: string): void {
+	private onSceneSelection(session: JScene3DMainViewportSession, requestId: number, revision: number, encoded: string): void {
 		if (!this.isActive(session) || session.launch.kind !== 'scene'
 			|| requestId !== session.selectionRequest || revision !== session.currentSnapshotRevision || encoded === 'STALE') {
 			return;
@@ -447,13 +317,13 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private onExit(session: IJScene3DMainSession): void {
+	private onExit(session: JScene3DMainViewportSession): void {
 		if (this.isActive(session) && !session.closing) {
 			this.fail(session, 'The JScene3D renderer exited unexpectedly.');
 		}
 	}
 
-	private requestFrame(session: IJScene3DMainSession): void {
+	private requestFrame(session: JScene3DMainViewportSession): void {
 		if (!this.isActive(session) || !session.rendererReady || session.paused || session.frameInFlight || session.pendingSize) {
 			return;
 		}
@@ -465,7 +335,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private async presentFrame(session: IJScene3DMainSession): Promise<void> {
+	private async presentFrame(session: JScene3DMainViewportSession): Promise<void> {
 		const surface = this.renderer.getSurface(session.sessionId);
 		if (!surface || surface.surfaceGeneration !== session.surfaceGeneration) {
 			throw new Error('renderer surface is unavailable or stale');
@@ -504,7 +374,7 @@ export class JScene3DViewportController extends Disposable {
 		this.applyResize(session);
 	}
 
-	private applyResize(session: IJScene3DMainSession): void {
+	private applyResize(session: JScene3DMainViewportSession): void {
 		if (!this.isActive(session) || !session.rendererReady || session.pendingSize) {
 			return;
 		}
@@ -539,7 +409,7 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private fail(session: IJScene3DMainSession, message: string): void {
+	private fail(session: JScene3DMainViewportSession, message: string): void {
 		if (!this.isActive(session) || session.closing) {
 			return;
 		}
@@ -558,33 +428,22 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private stop(session: IJScene3DMainSession, reason: string): Promise<void> {
-		if (session.stopPromise) {
-			return session.stopPromise;
-		}
-		session.closing = true;
-		session.frameInFlight = false;
-		session.pendingSize = undefined;
-		session.pendingSnapshot = undefined;
-		session.pendingSelection = undefined;
-		if (session.frameTimer) {
-			clearTimeout(session.frameTimer);
-			session.frameTimer = undefined;
-		}
-		this.panes.delete(this.paneKey(session.webContents, session.paneId));
-		this.sessions.delete(session.sessionId);
-		session.closeListener.dispose();
-		session.stopPromise = this.renderer.stopRenderer(session.sessionId).finally(() => {
-			this.logService.info(`[JScene3D viewport] renderer session ${session.sessionId} stopped (${reason})`);
-		});
-		return session.stopPromise;
+	private stop(session: JScene3DMainViewportSession, reason: string): Promise<void> {
+		return session.stop(
+			reason,
+			() => {
+				this.panes.delete(this.paneKey(session.webContents, session.paneId));
+				this.sessions.delete(session.sessionId);
+			},
+			() => this.logService.info(`[JScene3D viewport] renderer session ${session.sessionId} stopped (${reason})`)
+		);
 	}
 
 	private stopAll(reason: string): Promise<void> {
 		return stopViewportSessions(this.sessions.values(), session => this.stop(session, reason));
 	}
 
-	private fromPane(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, paneId: string, identity?: IJScene3DViewportSessionIdentity): IJScene3DMainSession | undefined {
+	private fromPane(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent, paneId: string, identity?: IJScene3DViewportSessionIdentity): JScene3DMainViewportSession | undefined {
 		if (!isViewportPaneId(paneId) || (identity && !isViewportSessionIdentity(identity))) {
 			return undefined;
 		}
@@ -598,11 +457,11 @@ export class JScene3DViewportController extends Disposable {
 		return session;
 	}
 
-	private identity(session: IJScene3DMainSession): IJScene3DViewportSessionIdentity {
-		return { sessionId: session.sessionId, rendererGeneration: session.rendererGeneration };
+	private identity(session: JScene3DMainViewportSession): IJScene3DViewportSessionIdentity {
+		return session.identity();
 	}
 
-	private isActive(session: IJScene3DMainSession): boolean {
+	private isActive(session: JScene3DMainViewportSession): boolean {
 		return this.sessions.get(session.sessionId) === session && !session.closing;
 	}
 

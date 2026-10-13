@@ -13,7 +13,6 @@ suite('JScene3D authored definition editor', () => {
 			path.join(__dirname, '..', '..', 'src', 'definition', 'authoredDefinitionEditor.ts'),
 			'utf8'
 		);
-
 		assert.match(source, /Content-Security-Policy/);
 		assert.match(source, /default-src \\'none\\'/);
 		assert.strictEqual(source.match(/\$\{restrictiveContentSecurityPolicy\}/g)?.length, 2);
@@ -25,12 +24,16 @@ suite('JScene3D authored definition editor', () => {
 			path.join(__dirname, '..', '..', 'src', 'definition', 'authoredDefinitionEditor.ts'),
 			'utf8'
 		);
+		const editBridge = fs.readFileSync(
+			path.join(__dirname, '..', '..', 'src', 'definition', 'authoredDefinitionEditBridge.ts'),
+			'utf8'
+		);
 
 		assert.match(source, /class AuthoredDefinitionViewProvider implements vscode\.CustomEditorProvider<AuthoredDefinitionDocument>/);
 		assert.match(source, /EventEmitter<vscode\.CustomDocumentEditEvent<AuthoredDefinitionDocument>>/);
 		assert.match(source, /provider\.fireEdit\(\{/);
-		assert.match(source, /undo: outcome\.edit\.undo/);
-		assert.match(source, /redo: outcome\.edit\.redo/);
+		assert.match(source, /undo: edit\.undo/);
+		assert.match(source, /redo: edit\.redo/);
 		assert.match(source, /saveCustomDocument/);
 		assert.match(source, /revertCustomDocument/);
 		assert.match(source, /backupCustomDocument/);
@@ -39,8 +42,12 @@ suite('JScene3D authored definition editor', () => {
 		assert.match(source, /identity\?\.projectId === project\.id/);
 		assert.match(source, /tabGroups\.close\(tabs\)/);
 		assert.match(source, /this\.state\.unregister\(resource\)/);
-		assert.match(source, /await this\.waitForPendingMutations\(\)/);
+		assert.match(source, /await this\.edits\.waitForPending\(\)/);
 		assert.match(source, /tab\.isDirty/);
+		assert.match(editBridge, /class AuthoredDefinitionEditBridge/);
+		assert.match(editBridge, /this\.lifecycle\.mutate/);
+		assert.match(editBridge, /this\.interactive\.accept/);
+		assert.match(editBridge, /await this\.record\(active\.resource, outcome\.edit\)/);
 		assert.doesNotMatch(source, /tabs\.length === 0 \|\| vscode\.window\.tabGroups\.close/);
 	});
 
