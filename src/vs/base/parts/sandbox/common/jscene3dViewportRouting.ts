@@ -14,6 +14,7 @@ export async function stopViewportSessions<T>(sessions: Iterable<T>, stop: (sess
 interface IJScene3DViewportFrameRegistration<T> {
 	readonly consumer: IJScene3DViewportFrameConsumer<T>;
 	session?: IJScene3DViewportSessionIdentity;
+	presentationGeneration: number;
 	surfaceGeneration: number;
 	frameNumber: number;
 }
@@ -25,7 +26,7 @@ export class JScene3DViewportFrameRouter<T> {
 		if (!isViewportPaneId(paneId) || this.registrations.has(paneId)) {
 			return false;
 		}
-		this.registrations.set(paneId, { consumer, surfaceGeneration: 0, frameNumber: 0 });
+		this.registrations.set(paneId, { consumer, presentationGeneration: 0, surfaceGeneration: 0, frameNumber: 0 });
 		return true;
 	}
 
@@ -39,6 +40,7 @@ export class JScene3DViewportFrameRouter<T> {
 			return false;
 		}
 		registration.session = session;
+		registration.presentationGeneration = 0;
 		registration.surfaceGeneration = 0;
 		registration.frameNumber = 0;
 		return true;
@@ -50,6 +52,7 @@ export class JScene3DViewportFrameRouter<T> {
 			return;
 		}
 		registration.session = undefined;
+		registration.presentationGeneration = 0;
 		registration.surfaceGeneration = 0;
 		registration.frameNumber = 0;
 	}
@@ -62,10 +65,17 @@ export class JScene3DViewportFrameRouter<T> {
 		if (!registration || !this.matches(registration.session, identity)) {
 			return false;
 		}
-		if (identity.surfaceGeneration < registration.surfaceGeneration
-			|| (identity.surfaceGeneration === registration.surfaceGeneration && identity.frameNumber <= registration.frameNumber)) {
+		if (identity.presentationGeneration < registration.presentationGeneration
+			|| (identity.presentationGeneration === registration.presentationGeneration
+				&& (identity.surfaceGeneration < registration.surfaceGeneration
+					|| (identity.surfaceGeneration === registration.surfaceGeneration && identity.frameNumber <= registration.frameNumber)))) {
 			return false;
 		}
+		if (identity.presentationGeneration > registration.presentationGeneration) {
+			registration.surfaceGeneration = 0;
+			registration.frameNumber = 0;
+		}
+		registration.presentationGeneration = identity.presentationGeneration;
 		registration.surfaceGeneration = identity.surfaceGeneration;
 		registration.frameNumber = identity.frameNumber;
 		await registration.consumer.onFrame(frame, identity);

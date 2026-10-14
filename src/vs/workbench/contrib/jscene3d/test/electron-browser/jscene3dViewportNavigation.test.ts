@@ -52,7 +52,7 @@ suite('JScene3DViewportNavigation', () => {
 		));
 		navigation.setActive(true);
 		navigation.selectTransformTool('move');
-		return { canvas, navigation, selections, transforms };
+		return { canvas, navigation, parent, selections, transforms };
 	}
 
 	function pointer(type: string, init: PointerEventInit): PointerEvent {
@@ -104,5 +104,21 @@ suite('JScene3DViewportNavigation', () => {
 
 		assert.deepStrictEqual(selections, [{ horizontal: 0, vertical: 0 }]);
 		assert.deepStrictEqual(transforms, []);
+	});
+
+	test('routes toolbar clicks and command selections through one active tool state', () => {
+		const { navigation, parent } = createNavigation();
+		const select = (label: string) => parent.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click();
+		const selected = () => Array.from(parent.querySelectorAll<HTMLButtonElement>('.jscene3d-scene-toolbar-left [aria-pressed="true"]'))
+			.map(button => button.getAttribute('aria-label'));
+
+		select('Rotate (E)');
+		assert.deepStrictEqual(selected(), ['Rotate (E)']);
+		navigation.selectTransformTool('scale');
+		assert.deepStrictEqual(selected(), ['Scale (R)']);
+		select('Select (Q)');
+		assert.deepStrictEqual(selected(), ['Select (Q)']);
+		navigation.selectTransformTool('move');
+		assert.deepStrictEqual(selected(), ['Move (W)']);
 	});
 });

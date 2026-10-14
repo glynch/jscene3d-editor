@@ -7,12 +7,14 @@ import { Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { IAction } from '../../../../base/common/actions.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { jscene3dViewport } from '../../../../base/parts/sandbox/electron-browser/globals.js';
-import { IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DViewportCameraState, IJScene3DViewportFrameIdentity, JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -27,6 +29,7 @@ import { beginJScene3DViewportInput, IJScene3DViewportPresentation, jscene3dView
 import { JScene3DSceneEditorInput } from '../browser/jscene3dSceneEditorInput.js';
 import { isJScene3DViewportPresentationVisible, JScene3DViewportFrameGate, jscene3dViewportVertexShader, physicalViewportSize, synchronizeCanvasBackingStore } from '../browser/jscene3dViewportModel.js';
 import { JScene3DViewportNavigation } from './jscene3dViewportNavigation.js';
+import { isJScene3DCameraInfoVisible, JSCENE3D_CAMERA_INFO_VISIBLE_SETTING, JScene3DCameraInfoOverlay } from './jscene3dCameraInfoOverlay.js';
 
 /** Presents one project world from the native JScene3D renderer without browser-side scene rendering. */
 export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DViewportPresentation {
@@ -47,7 +50,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 	private readonly selectionListener = this._register(new MutableDisposable());
 	private readonly transformListener = this._register(new MutableDisposable());
 	private readonly transformToolListener = this._register(new MutableDisposable());
+	private readonly cameraStateListener = this._register(new MutableDisposable());
 	private readonly navigation = this._register(new MutableDisposable<JScene3DViewportNavigation>());
+	private readonly cameraInfo = this._register(new MutableDisposable<JScene3DCameraInfoOverlay>());
 	private editorVisible = false;
 
 	constructor(
@@ -58,6 +63,7 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		@ILifecycleService lifecycleService: ILifecycleService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService
 	) {
 		super(JScene3DViewportEditorPane.ID, group, telemetryService, themeService, storageService);
@@ -79,6 +85,11 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		this._register(contextKeyService.onDidChangeContext(event => {
 			if (event.affectsSome(new Set([EditorPartModalVisibleContext.key]))) {
 				this.updateViewportVisibility();
+			}
+		}));
+		this._register(configurationService.onDidChangeConfiguration(event => {
+			if (event.affectsConfiguration(JSCENE3D_CAMERA_INFO_VISIBLE_SETTING)) {
+				this.cameraInfo.value?.setVisible(this.cameraInfoVisible());
 			}
 		}));
 	}
@@ -103,8 +114,11 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 			navigation => this.viewportInput()?.navigate(this, navigation),
 			(horizontal, vertical) => this.viewportInput()?.selectAt(this, horizontal, vertical),
 			settings => this.viewportInput()?.configureTransform(this, settings),
-			pointer => this.viewportInput()?.transform(this, pointer)
+			pointer => this.viewportInput()?.transform(this, pointer),
+			anchor => this.showDisplayOptions(anchor)
 		);
+		this.cameraInfo.value = new JScene3DCameraInfoOverlay(parent);
+		this.cameraInfo.value.setVisible(this.cameraInfoVisible());
 
 		const errorElement = parent.ownerDocument.createElement('div');
 		errorElement.style.position = 'absolute';
@@ -162,7 +176,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 
 	override async setInput(input: JScene3DViewportEditorInput | JScene3DSceneEditorInput, options: IEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		const viewport = this.viewportInput(input);
-		this.navigation.value?.setActive(viewport?.launch.kind === 'scene');
+		if (this.viewportInput() !== viewport) {
+			this.navigation.value?.setActive(false);
+		}
 		this.selectionListener.value = viewport?.onDidChangeSceneSelection(selection => {
 			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_SELECTION_COMMAND_ID, selection);
 		});
@@ -170,11 +186,15 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 			void this.commandService.executeCommand(JSCENE3D_ACCEPT_SCENE_TRANSFORM_COMMAND_ID, transform);
 		});
 		this.transformToolListener.value = viewport?.onDidRequestTransformTool(tool => this.navigation.value?.selectTransformTool(tool));
+		this.cameraStateListener.value = viewport?.onDidChangeCameraState(state => this.updateCameraState(state));
 		beginJScene3DViewportInput(this, viewport?.startupState ?? 'renderer-starting', viewport?.launch.kind ?? 'game');
 		await super.setInput(input, options, context, token);
 		if (token.isCancellationRequested || !this.canvas) {
 			return;
 		}
+		this.navigation.value?.setActive(viewport?.launch.kind === 'scene');
+		this.cameraInfo.value?.setActive(viewport?.launch.kind === 'scene');
+		this.updateCameraState(viewport?.cameraState);
 
 		try {
 			this.hideFailure();
@@ -204,6 +224,9 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		this.selectionListener.clear();
 		this.transformListener.clear();
 		this.transformToolListener.clear();
+		this.cameraStateListener.clear();
+		this.cameraInfo.value?.setActive(false);
+		this.updateCameraState(undefined);
 		this.viewportInput()?.detach(this);
 		super.clearInput();
 	}
@@ -212,6 +235,40 @@ export class JScene3DViewportEditorPane extends EditorPane implements IJScene3DV
 		const bounds = this.canvas?.getBoundingClientRect();
 		const devicePixelRatio = this.window.devicePixelRatio || 1;
 		return bounds ? physicalViewportSize(bounds.width, bounds.height, devicePixelRatio) : undefined;
+	}
+
+	private updateCameraState(state: IJScene3DViewportCameraState | undefined): void {
+		this.cameraInfo.value?.setState(state);
+		if (state) {
+			this.navigation.value?.setProjection(state.projection);
+		}
+	}
+
+	private cameraInfoVisible(): boolean {
+		return isJScene3DCameraInfoVisible(
+			this.configurationService.getValue<boolean>(JSCENE3D_CAMERA_INFO_VISIBLE_SETTING)
+		);
+	}
+
+	private showDisplayOptions(anchor: HTMLElement): void {
+		const visible = this.cameraInfoVisible();
+		const cameraInfoAction: IAction = {
+			id: 'jscene3d.sceneView.cameraInfo.visible',
+			label: localize('jscene3dSceneViewCameraInformation', "Camera Information"),
+			tooltip: '',
+			class: undefined,
+			enabled: true,
+			checked: visible,
+			run: () => this.configurationService.updateValue(
+				JSCENE3D_CAMERA_INFO_VISIBLE_SETTING,
+				!visible,
+				ConfigurationTarget.USER
+			)
+		};
+		this.contextMenuService.showContextMenu({
+			getAnchor: () => anchor,
+			getActions: () => [cameraInfoAction]
+		});
 	}
 
 	private scheduleResize(): void {

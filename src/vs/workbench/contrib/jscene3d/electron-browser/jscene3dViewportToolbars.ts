@@ -22,6 +22,7 @@ interface JScene3DViewportToolbarCallbacks {
 	readonly selectTool: (tool: JScene3DTransformTool) => void;
 	readonly toggleSnapping: () => void;
 	readonly toggleSpace: () => void;
+	readonly showDisplayOptions: (anchor: HTMLElement) => void;
 }
 
 /** Owns the presentation and transient interaction state of the Scene View overlay toolbars. */
@@ -83,9 +84,9 @@ export class JScene3DViewportToolbars extends Disposable {
 		}
 	}
 
-	/** Mirrors a successful projection toggle in the button's icon and accessibility state. */
-	toggleProjectionPresentation(): void {
-		this.projection = this.projection === 'perspective' ? 'orthographic' : 'perspective';
+	/** Mirrors the renderer-authoritative projection in the button's icon and accessibility state. */
+	setProjection(projection: 'perspective' | 'orthographic'): void {
+		this.projection = projection;
 		this.updateProjectionPresentation();
 	}
 
@@ -102,7 +103,8 @@ export class JScene3DViewportToolbars extends Disposable {
 		this.addTextButton(toolbar, localize('jscene3dSceneViewGrid', "Grid"), false, true);
 		const snap = this.addTextButton(toolbar, localize('jscene3dSceneViewSnap', "Snap"), true, false, callbacks.toggleSnapping);
 		const space = this.addTextButton(toolbar, localize('jscene3dSceneViewGlobal', "Global"), true, false, callbacks.toggleSpace);
-		this.addCodiconButton(toolbar, Codicon.eye, localize('jscene3dSceneViewDisplayOptions', "Display Options"), false);
+		const displayOptions = this.addCodiconButton(toolbar, Codicon.eye, localize('jscene3dSceneViewDisplayOptions', "Display Options"), true, () => callbacks.showDisplayOptions(displayOptions));
+		displayOptions.setAttribute('aria-haspopup', 'menu');
 		this.addCodiconButton(toolbar, Codicon.ellipsis, localize('jscene3dSceneViewMore', "More"), false);
 		return { snap, space };
 	}
@@ -112,7 +114,6 @@ export class JScene3DViewportToolbars extends Disposable {
 		this.addDragButton(toolbar, this.createHandIcon(toolbar.ownerDocument), localize('jscene3dSceneViewPan', "Pan"), 'pan', callbacks);
 		this.addDragButton(toolbar, Codicon.zoomIn, localize('jscene3dSceneViewZoom', "Zoom"), 'zoom', callbacks);
 		const projection = this.addSvgButton(toolbar, this.createProjectionIcon(toolbar.ownerDocument), localize('jscene3dSceneViewProjection', "Toggle Perspective / Orthographic"), true, () => {
-			this.toggleProjectionPresentation();
 			callbacks.toggleProjection();
 		});
 		projection.classList.add('jscene3d-scene-toolbar-projection');

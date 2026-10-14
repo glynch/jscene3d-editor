@@ -7,6 +7,7 @@ import { Disposable, IDisposable } from '../../base/common/lifecycle.js';
 import { IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ICodeWindow } from '../../platform/window/electron-main/window.js';
 import { IJScene3DRendererApi, IJScene3DRendererSession } from '../node/jscene3dRendererApi.js';
+import { JScene3DFrameTransferLifecycle } from '../node/jscene3dFrameTransferLifecycle.js';
 
 export interface IJScene3DViewportSize {
 	readonly width: number;
@@ -20,6 +21,7 @@ export interface IJScene3DPendingSelection {
 
 /** Owns the mutable renderer, native-surface, pane, frame, and shutdown state of one viewport. */
 export class JScene3DMainViewportSession extends Disposable {
+	readonly frameTransfers = new JScene3DFrameTransferLifecycle();
 	closeListener: IDisposable = Disposable.None;
 	rendererReady = false;
 	paused = true;
@@ -77,6 +79,7 @@ export class JScene3DMainViewportSession extends Disposable {
 			return this.stopPromise;
 		}
 		this.closing = true;
+		this.frameTransfers.invalidate();
 		this.frameInFlight = false;
 		this.pendingSize = undefined;
 		this.pendingSnapshot = undefined;

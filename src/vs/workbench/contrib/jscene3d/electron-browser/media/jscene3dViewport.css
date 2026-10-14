@@ -64,9 +64,9 @@
 	color: #ffffff;
 }
 
-.jscene3d-scene-toolbar-button:not(:disabled):active {
-	border-color: color-mix(in srgb, #aa9cff 58%, transparent);
-	background: color-mix(in srgb, #806bf4 64%, var(--vscode-editorWidget-background, #20242d));
+.jscene3d-scene-toolbar-button:not(.is-selected):not(:disabled):active {
+	border-color: color-mix(in srgb, var(--vscode-foreground) 26%, transparent);
+	background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, #ffffff18) 88%, var(--vscode-editorWidget-background, #20242d));
 	box-shadow: inset 0 0 0 1px #ffffff12;
 	color: #ffffff;
 	transform: translateY(1px);
@@ -77,6 +77,11 @@
 	background: color-mix(in srgb, #806bf4 38%, var(--vscode-editorWidget-background, #20242d));
 	box-shadow: inset 0 0 0 1px #ffffff0d;
 	color: #ffffff;
+}
+
+.jscene3d-scene-toolbar-button.is-selected:not(:disabled):active {
+	background: color-mix(in srgb, #806bf4 50%, var(--vscode-editorWidget-background, #20242d));
+	transform: translateY(1px);
 }
 
 .jscene3d-scene-toolbar-button.is-dragging {
@@ -192,10 +197,81 @@ canvas.jscene3d-scene-viewport.is-transform-dragging {
 	cursor: grabbing;
 }
 
+.jscene3d-camera-info {
+	position: absolute;
+	bottom: 12px;
+	left: 12px;
+	z-index: 4;
+	display: none;
+	box-sizing: border-box;
+	width: min(310px, calc(100% - 24px));
+	padding: var(--vscode-spacing-size80);
+	border: var(--vscode-strokeThickness) solid var(--vscode-widget-border);
+	border-radius: var(--vscode-cornerRadius-large);
+	background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
+	box-shadow: 0 3px 12px var(--vscode-widget-shadow);
+	color: var(--vscode-editorWidget-foreground);
+	pointer-events: none;
+	backdrop-filter: blur(8px);
+}
+
+.jscene3d-camera-info.is-visible {
+	display: block;
+}
+
+.jscene3d-camera-info-heading {
+	margin-bottom: var(--vscode-spacing-size60);
+	font-size: var(--vscode-fontSize-body1);
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.jscene3d-camera-info-values {
+	display: grid;
+	gap: var(--vscode-spacing-size20);
+}
+
+.jscene3d-camera-info-row {
+	display: grid;
+	grid-template-columns: 78px minmax(0, 1fr);
+	gap: var(--vscode-spacing-size60);
+	align-items: baseline;
+}
+
+.jscene3d-camera-info-label {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label1);
+}
+
+.jscene3d-camera-info-value {
+	overflow: hidden;
+	font-family: var(--monaco-monospace-font);
+	font-size: var(--vscode-fontSize-label1);
+	font-variant-numeric: tabular-nums;
+	text-overflow: ellipsis;
+	white-space: pre;
+}
+
+@media (max-width: 520px) {
+	.jscene3d-camera-info {
+		width: min(250px, calc(100% - 24px));
+	}
+
+	.jscene3d-camera-info-row {
+		grid-template-columns: 70px minmax(0, 1fr);
+		gap: var(--vscode-spacing-size40);
+	}
+}
+
 @media (forced-colors: active) {
 	.jscene3d-scene-toolbar,
 	.jscene3d-scene-toolbar-button.is-selected,
 	.jscene3d-scene-toolbar-button.is-dragging {
 		border-color: CanvasText;
+	}
+
+	.jscene3d-camera-info {
+		border-color: CanvasText;
+		background: Canvas;
+		color: CanvasText;
 	}
 }

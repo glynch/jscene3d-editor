@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { JScene3DViewportFrameRouter, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isViewportFrameIdentity, isViewportLaunch, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../common/jscene3dViewport.js';
+import { JScene3DViewportFrameRouter, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isViewportCameraState, isViewportFrameIdentity, isViewportLaunch, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../test/common/utils.js';
 
 suite('JScene3DViewportFrameRouter', () => {
@@ -123,7 +123,7 @@ suite('JScene3DViewportFrameRouter', () => {
 
 		assert.strictEqual(isViewportFrameIdentity({ paneId: 'pane-a' }), false);
 		assert.strictEqual(await router.route(1, { paneId: 'pane-a' }), false);
-		assert.strictEqual(await router.route(2, { paneId: 'pane-a', sessionId: 9, rendererGeneration: 2, surfaceGeneration: 1, frameNumber: 1 }), false);
+		assert.strictEqual(await router.route(2, { paneId: 'pane-a', sessionId: 9, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 1, frameNumber: 1 }), false);
 		assert.deepStrictEqual(frames, []);
 	});
 
@@ -133,6 +133,25 @@ suite('JScene3DViewportFrameRouter', () => {
 		assert.strictEqual(isSceneViewNavigation({ kind: 'zoom', amount: Number.NaN }), false);
 		assert.strictEqual(isSceneViewNavigation({ kind: 'focusSelected' }), true);
 		assert.strictEqual(isSceneViewNavigation({ kind: 'unknown' }), false);
+	});
+
+	test('validates complete finite renderer-authoritative camera state', () => {
+		const cameraState = {
+			paneId: 'pane-a',
+			sessionId: 1,
+			rendererGeneration: 2,
+			position: [1, 2, 3],
+			orientationDegrees: [-15, 45, 0],
+			pivot: [0, 1, -2],
+			projection: 'perspective'
+		};
+
+		assert.strictEqual(isViewportCameraState(cameraState), true);
+		assert.strictEqual(isViewportCameraState({ ...cameraState, position: [1, 2] }), false);
+		assert.strictEqual(isViewportCameraState({ ...cameraState, pivot: [0, Number.NaN, 0] }), false);
+		assert.strictEqual(isViewportCameraState({ ...cameraState, orientationDegrees: [0, 0, Number.POSITIVE_INFINITY] }), false);
+		assert.strictEqual(isViewportCameraState({ ...cameraState, projection: 'isometric' }), false);
+		assert.strictEqual(isViewportCameraState({ ...cameraState, rendererGeneration: 0 }), false);
 	});
 
 	test('serializes Scene View navigation with the protocol 1.0 vocabulary', () => {
@@ -164,11 +183,13 @@ suite('JScene3DViewportFrameRouter', () => {
 		router.register('pane-a', { onFrame: async frame => { frames.push(frame); }, onFailure: () => undefined });
 		router.bindSession('pane-a', { sessionId: 1, rendererGeneration: 2 });
 
-		assert.strictEqual(await router.route(1, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, surfaceGeneration: 1, frameNumber: 1 }), true);
-		assert.strictEqual(await router.route(2, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, surfaceGeneration: 2, frameNumber: 2 }), true);
-		assert.strictEqual(await router.route(3, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, surfaceGeneration: 1, frameNumber: 3 }), false);
-		assert.strictEqual(await router.route(4, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, surfaceGeneration: 2, frameNumber: 2 }), false);
-		assert.deepStrictEqual(frames, [1, 2]);
+		assert.strictEqual(await router.route(1, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 1, frameNumber: 1 }), true);
+		assert.strictEqual(await router.route(2, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 2, frameNumber: 2 }), true);
+		assert.strictEqual(await router.route(3, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 1, frameNumber: 3 }), false);
+		assert.strictEqual(await router.route(4, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 2, frameNumber: 2 }), false);
+		assert.strictEqual(await router.route(5, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 1, surfaceGeneration: 2, frameNumber: 3 }), true);
+		assert.strictEqual(await router.route(6, { paneId: 'pane-a', sessionId: 1, rendererGeneration: 2, presentationGeneration: 0, surfaceGeneration: 3, frameNumber: 4 }), false);
+		assert.deepStrictEqual(frames, [1, 2, 5]);
 	});
 
 	test('routes failures only to the owning pane and session', () => {

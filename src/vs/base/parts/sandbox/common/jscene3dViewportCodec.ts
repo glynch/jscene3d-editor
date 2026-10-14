@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IJScene3DGameViewportLaunch, IJScene3DSceneViewportLaunch, IJScene3DSceneViewComponentIdentity, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewResourceReference, IJScene3DSceneViewSnapshot, IJScene3DSceneViewVector3, IJScene3DSceneViewVisualOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from './jscene3dViewportProtocol.js';
+import { IJScene3DGameViewportLaunch, IJScene3DSceneViewportLaunch, IJScene3DSceneViewComponentIdentity, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewResourceReference, IJScene3DSceneViewSnapshot, IJScene3DSceneViewVector3, IJScene3DSceneViewVisualOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportCameraState, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from './jscene3dViewportProtocol.js';
 
 export function isViewportPaneId(value: unknown): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= 128;
@@ -99,12 +99,31 @@ export function isViewportTransform(value: unknown): value is IJScene3DViewportT
 		&& Array.isArray(candidate.literals) && candidate.literals.length === 3 && candidate.literals.every(nonEmpty);
 }
 
+/** Returns whether a value is finite renderer-authoritative camera state for one viewport session. */
+export function isViewportCameraState(value: unknown): value is IJScene3DViewportCameraState {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const candidate = value as Partial<IJScene3DViewportCameraState>;
+	return isViewportPaneId(candidate.paneId)
+		&& Number.isInteger(candidate.sessionId) && candidate.sessionId! > 0
+		&& Number.isInteger(candidate.rendererGeneration) && candidate.rendererGeneration! > 0
+		&& finiteVector(candidate.position)
+		&& finiteVector(candidate.orientationDegrees)
+		&& finiteVector(candidate.pivot)
+		&& (candidate.projection === 'perspective' || candidate.projection === 'orthographic');
+}
+
 export function sceneTransformPointerCommand(pointer: IJScene3DTransformPointer, selectionRequest: number | undefined, revision: number): string {
 	return `SCENE_TRANSFORM_POINTER ${pointer.phase.toUpperCase()} ${pointer.horizontal} ${pointer.vertical} ${pointer.viewportWidth} ${pointer.viewportHeight} ${selectionRequest ?? 'NONE'} ${revision}`;
 }
 
 function finite(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);
+}
+
+function finiteVector(value: unknown): value is readonly [number, number, number] {
+	return Array.isArray(value) && value.length === 3 && value.every(finite);
 }
 
 function positive(value: unknown): value is number {
@@ -263,6 +282,7 @@ export function isViewportFrameIdentity(value: unknown): value is IJScene3DViewp
 	}
 	const candidate = value as Partial<IJScene3DViewportFrameIdentity>;
 	return isViewportPaneId(candidate.paneId)
+		&& Number.isInteger(candidate.presentationGeneration) && candidate.presentationGeneration! >= 0
 		&& Number.isInteger(candidate.surfaceGeneration) && candidate.surfaceGeneration! > 0
 		&& Number.isInteger(candidate.frameNumber) && candidate.frameNumber! > 0;
 }

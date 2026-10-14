@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportCameraState, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform } from '../../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { EditorInputCapabilities, Verbosity } from '../../../../common/editor.js';
 import { EditorInput } from '../../../../common/editor/editorInput.js';
@@ -276,6 +276,101 @@ suite('JScene3DViewportEditorInput', () => {
 		}
 	});
 
+	test('retains transform configuration until the exact renderer session is ready', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			input.configureTransform(presentation, transformSettings('move'));
+			bridge.rendererReady(undefined, { sessionId: 1, rendererGeneration: 2 });
+
+			assert.strictEqual(bridge.configured.length, 0);
+
+			bridge.rendererReady();
+			assert.deepStrictEqual(bridge.configured, [{
+				viewportId: 'viewport-main',
+				session: { sessionId: 1, rendererGeneration: 1 },
+				settings: transformSettings('move')
+			}]);
+			input.configureTransform(presentation, transformSettings('move'));
+			assert.strictEqual(bridge.configured.length, 1);
+		} finally {
+			await input.stop();
+			input.dispose();
+		}
+	});
+
+	test('coalesces transform configuration changes made before renderer readiness', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			input.configureTransform(presentation, transformSettings('move'));
+			input.configureTransform(presentation, transformSettings('rotate'));
+			input.configureTransform(presentation, transformSettings('scale'));
+
+			assert.strictEqual(bridge.configured.length, 0);
+
+			bridge.rendererReady();
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.settings), [transformSettings('scale')]);
+		} finally {
+			await input.stop();
+			input.dispose();
+		}
+	});
+
+	test('applies the retained pane tool only to the newly active Scene session', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const main = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const second = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
+		try {
+			await main.attach(presentation, { width: 800, height: 600 }, bridge);
+			main.configureTransform(presentation, transformSettings('move'));
+			bridge.rendererReady('viewport-main');
+			main.detach(presentation);
+
+			second.configureTransform(presentation, transformSettings('move'));
+			await second.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.rendererReady('viewport-main');
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.viewportId), ['viewport-main']);
+
+			bridge.rendererReady('viewport-second', { sessionId: 2, rendererGeneration: 1 });
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.viewportId), ['viewport-main', 'viewport-second']);
+		} finally {
+			await main.stop();
+			await second.stop();
+			main.dispose();
+			second.dispose();
+		}
+	});
+
+	test('defers a changed pane tool until a retained renderer session is reattached', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			input.configureTransform(presentation, transformSettings('move'));
+			bridge.rendererReady();
+			input.detach(presentation);
+
+			input.configureTransform(presentation, transformSettings('rotate'));
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.settings), [transformSettings('move')]);
+
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.settings), [
+				transformSettings('move'),
+				transformSettings('rotate')
+			]);
+		} finally {
+			await input.stop();
+			input.dispose();
+		}
+	});
+
 	test('reports only exact-session native picks to the shared Scene selection', async () => {
 		const bridge = new TestViewportBridge();
 		const presentation = new TestPresentation();
@@ -406,7 +501,9 @@ suite('JScene3DViewportEditorInput', () => {
 		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
 		try {
 			const attaching = input.attach(presentation, { width: 800, height: 600 }, bridge);
+			input.configureTransform(presentation, transformSettings('move'));
 			bridge.rendererReady();
+			bridge.rendererReady(undefined, { sessionId: 1, rendererGeneration: 2 });
 			bridge.resolveStart();
 			await attaching;
 
@@ -414,9 +511,82 @@ suite('JScene3DViewportEditorInput', () => {
 				'renderer-starting',
 				'waiting-for-first-frame'
 			]);
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.settings), [transformSettings('move')]);
 		} finally {
 			await input.stop();
 			input.dispose();
+		}
+	});
+
+	test('retains the initial camera state when it arrives before the start reply binds its session', async () => {
+		const bridge = new TestViewportBridge(true);
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const states: Array<IJScene3DViewportCameraState | undefined> = [];
+		const listener = input.onDidChangeCameraState(state => states.push(state));
+		try {
+			const attaching = input.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.cameraState({ position: [1, 2, 3] });
+			assert.strictEqual(input.cameraState, undefined);
+
+			bridge.resolveStart();
+			await attaching;
+
+			assert.deepStrictEqual(states.at(-1)?.position, [1, 2, 3]);
+			assert.strictEqual(states.length, 1);
+		} finally {
+			listener.dispose();
+			await input.stop();
+			input.dispose();
+		}
+	});
+
+	test('accepts camera state only from the exact retained renderer session', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const input = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const projections: Array<string | undefined> = [];
+		const listener = input.onDidChangeCameraState(state => projections.push(state?.projection));
+		try {
+			await input.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.cameraState({ sessionId: 2, projection: 'orthographic' });
+			bridge.cameraState({ rendererGeneration: 2, projection: 'orthographic' });
+			assert.strictEqual(input.cameraState, undefined);
+
+			bridge.cameraState({ projection: 'perspective' });
+			assert.strictEqual(projections.at(-1), 'perspective');
+
+			bridge.fail('renderer stopped');
+			assert.strictEqual(input.cameraState, undefined);
+			assert.deepStrictEqual(projections, ['perspective', undefined]);
+		} finally {
+			listener.dispose();
+			await input.stop(true);
+			input.dispose();
+		}
+	});
+
+	test('keeps renderer-authoritative camera state isolated between retained Scene sessions', async () => {
+		const bridge = new TestViewportBridge();
+		const presentation = new TestPresentation();
+		const main = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main'));
+		const second = new JScene3DViewportEditorInput(sceneLaunch('second', 'viewport-second'));
+		try {
+			await main.attach(presentation, { width: 800, height: 600 }, bridge);
+			main.detach(presentation);
+			await second.attach(presentation, { width: 800, height: 600 }, bridge);
+
+			bridge.cameraState({ position: [1, 2, 3] }, 'viewport-main');
+			bridge.cameraState({ position: [7, 8, 9], projection: 'orthographic' }, 'viewport-second');
+
+			assert.deepStrictEqual(main.cameraState?.position, [1, 2, 3]);
+			assert.deepStrictEqual(second.cameraState?.position, [7, 8, 9]);
+			assert.strictEqual(second.cameraState?.projection, 'orthographic');
+		} finally {
+			await main.stop();
+			await second.stop();
+			main.dispose();
+			second.dispose();
 		}
 	});
 
@@ -470,6 +640,8 @@ suite('JScene3DViewportEditorInput', () => {
 		const reopened = new JScene3DViewportEditorInput(sceneLaunch('main', 'viewport-main-reopened'));
 		try {
 			await main.attach(presentation, { width: 800, height: 600 }, bridge);
+			main.configureTransform(presentation, transformSettings('move'));
+			bridge.rendererReady('viewport-main');
 			main.detach(presentation);
 			await second.attach(presentation, { width: 800, height: 600 }, bridge);
 			second.detach(presentation);
@@ -485,10 +657,17 @@ suite('JScene3DViewportEditorInput', () => {
 			});
 
 			second.detach(presentation);
+			reopened.configureTransform(presentation, transformSettings('move'));
 			await reopened.attach(presentation, { width: 800, height: 600 }, bridge);
+			bridge.rendererReady('viewport-main');
+			bridge.rendererReady('viewport-main-reopened', { sessionId: 3, rendererGeneration: 1 });
 			assert.deepStrictEqual(bridge.started.map(entry => entry.launch.viewportId), [
 				'viewport-main',
 				'viewport-second',
+				'viewport-main-reopened'
+			]);
+			assert.deepStrictEqual(bridge.configured.map(entry => entry.viewportId), [
+				'viewport-main',
 				'viewport-main-reopened'
 			]);
 		} finally {
@@ -512,12 +691,14 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 	readonly selected: Array<{ viewportId: string; revision: number; occurrence: IJScene3DSceneViewOccurrence | null }> = [];
 	readonly picked: Array<{ viewportId: string; revision: number; horizontal: number; vertical: number }> = [];
 	readonly navigated: Array<{ viewportId: string; navigation: IJScene3DSceneViewNavigation }> = [];
+	readonly configured: Array<{ viewportId: string; session: IJScene3DViewportSessionIdentity; settings: IJScene3DTransformSettings }> = [];
 	private readonly consumers = new Map<string, {
 		onReady(session: IJScene3DViewportSessionIdentity): void;
 		onFrame(frame: VideoFrame, identity: IJScene3DViewportFrameIdentity): Promise<void>;
 		onFailure(failure: IJScene3DViewportFailure): void;
 		onSelection(selection: IJScene3DViewportSelection): void;
 		onTransform(transform: IJScene3DViewportTransform): void;
+		onCameraState(cameraState: IJScene3DViewportCameraState): void;
 	}>();
 	private startResolver: ((session: IJScene3DViewportSessionIdentity) => void) | undefined;
 
@@ -531,9 +712,10 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		_onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
 		onFailure: (failure: IJScene3DViewportFailure) => void,
 		onSelection: (selection: IJScene3DViewportSelection) => void,
-		onTransform: (transform: IJScene3DViewportTransform) => void
+		onTransform: (transform: IJScene3DViewportTransform) => void,
+		onCameraState: (cameraState: IJScene3DViewportCameraState) => void
 	): void {
-		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure, onSelection, onTransform });
+		this.consumers.set(paneId, { onReady, onFrame: _onFrame, onFailure, onSelection, onTransform, onCameraState });
 	}
 
 	unregisterPane(paneId: string): void {
@@ -576,7 +758,12 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		}
 	}
 
-	configureSceneTransform(_paneId: string, _session: IJScene3DViewportSessionIdentity, _settings: IJScene3DTransformSettings): void { }
+	configureSceneTransform(paneId: string, session: IJScene3DViewportSessionIdentity, settings: IJScene3DTransformSettings): void {
+		const viewportId = this.started.find(entry => entry.paneId === paneId)?.launch.viewportId;
+		if (viewportId) {
+			this.configured.push({ viewportId, session, settings });
+		}
+	}
 
 	transformSceneView(_paneId: string, _session: IJScene3DViewportSessionIdentity, _pointer: IJScene3DTransformPointer): void { }
 
@@ -608,6 +795,7 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 		return this.consumers.get(started.paneId)?.onFrame({} as VideoFrame, {
 			paneId: started.paneId,
 			...identity,
+			presentationGeneration: 0,
 			surfaceGeneration: 1,
 			frameNumber: 1
 		}) ?? Promise.resolve();
@@ -650,6 +838,23 @@ class TestViewportBridge implements IJScene3DViewportBridge {
 			componentId: 'transform',
 			propertyId: 'position',
 			literals: ['1', '2', '3'],
+			...overrides
+		});
+	}
+
+	cameraState(overrides: Partial<IJScene3DViewportCameraState>, viewportId?: string): void {
+		const startedIndex = viewportId
+			? this.started.findIndex(entry => entry.launch.viewportId === viewportId)
+			: 0;
+		const started = this.started[startedIndex];
+		this.consumers.get(started.paneId)?.onCameraState({
+			paneId: started.paneId,
+			sessionId: startedIndex + 1,
+			rendererGeneration: 1,
+			position: [0, 0, 5],
+			orientationDegrees: [0, 0, 0],
+			pivot: [0, 0, 0],
+			projection: 'perspective',
 			...overrides
 		});
 	}
@@ -716,6 +921,17 @@ function sceneLaunch(sceneAssetId: string, viewportId: string): IJScene3DViewpor
 		sceneAssetId,
 		sceneName: sceneAssetId,
 		snapshot: { sceneAssetId, revision: 0, occurrences: [] }
+	};
+}
+
+function transformSettings(tool: IJScene3DTransformSettings['tool']): IJScene3DTransformSettings {
+	return {
+		tool,
+		space: 'global',
+		snapping: false,
+		translationSnap: 0.5,
+		rotationSnap: 15,
+		scaleSnap: 0.1
 	};
 }
 

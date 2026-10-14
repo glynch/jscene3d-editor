@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportFrameIdentity, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, isViewportTransform } from '../common/jscene3dViewportCodec.js';
-import { IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from '../common/jscene3dViewportProtocol.js';
+import { isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewOccurrence, isSceneViewSnapshot, isViewportCameraState, isViewportDimension, isViewportFrameIdentity, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, isViewportTransform } from '../common/jscene3dViewportCodec.js';
+import { IJScene3DViewportBridge, IJScene3DViewportCameraState, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from '../common/jscene3dViewportProtocol.js';
 
 interface JScene3DPaneRegistration {
 	readonly onReady: (session: IJScene3DViewportSessionIdentity) => void;
@@ -12,10 +12,16 @@ interface JScene3DPaneRegistration {
 	readonly onFailure: (failure: IJScene3DViewportFailure) => void;
 	readonly onSelection: (selection: IJScene3DViewportSelection) => void;
 	readonly onTransform: (transform: IJScene3DViewportTransform) => void;
+	readonly onCameraState: (cameraState: IJScene3DViewportCameraState) => void;
 	session?: IJScene3DViewportSessionIdentity;
 	pendingReady?: IJScene3DViewportSessionIdentity;
+	pendingCameraState?: IJScene3DViewportCameraState;
+	presentationGeneration: number;
 	surfaceGeneration: number;
 	frameNumber: number;
+	width: number;
+	height: number;
+	paused: boolean;
 }
 
 /** Creates the validated JScene3D native-viewport bridge exposed across the sandbox boundary. */
@@ -36,6 +42,7 @@ export function createJScene3DViewportBridge(
 			}
 			const registration = panes.get(identity.paneId);
 			if (!registration || !sameSession(registration.session, identity)
+				|| identity.presentationGeneration !== registration.presentationGeneration
 				|| identity.surfaceGeneration < registration.surfaceGeneration
 				|| (identity.surfaceGeneration === registration.surfaceGeneration && identity.frameNumber <= registration.frameNumber)) {
 				return;
@@ -65,6 +72,11 @@ export function createJScene3DViewportBridge(
 		registration.onFailure(candidate as IJScene3DViewportFailure);
 		registration.session = undefined;
 		registration.pendingReady = undefined;
+		registration.pendingCameraState = undefined;
+		registration.presentationGeneration = 0;
+		registration.surfaceGeneration = 0;
+		registration.frameNumber = 0;
+		registration.paused = true;
 	});
 
 	ipcRenderer.on('vscode:jscene3dViewport:ready', (_event, ready: unknown) => {
@@ -112,13 +124,42 @@ export function createJScene3DViewportBridge(
 		}
 	});
 
+	ipcRenderer.on('vscode:jscene3dViewport:cameraState', (_event, cameraState: unknown) => {
+		if (!isViewportCameraState(cameraState)) {
+			return;
+		}
+		const registration = panes.get(cameraState.paneId);
+		if (!registration) {
+			return;
+		}
+		if (registration.session === undefined) {
+			registration.pendingCameraState = cameraState;
+		} else if (sameSession(registration.session, cameraState)) {
+			registration.onCameraState(cameraState);
+		}
+	});
+
 	return {
-		registerPane(paneId, onReady, onFrame, onFailure, onSelection, onTransform): void {
+		registerPane(paneId, onReady, onFrame, onFailure, onSelection, onTransform, onCameraState): void {
 			if (!isViewportPaneId(paneId) || typeof onReady !== 'function' || typeof onFrame !== 'function'
-				|| typeof onFailure !== 'function' || typeof onSelection !== 'function' || typeof onTransform !== 'function' || panes.has(paneId)) {
+				|| typeof onFailure !== 'function' || typeof onSelection !== 'function' || typeof onTransform !== 'function'
+				|| typeof onCameraState !== 'function' || panes.has(paneId)) {
 				throw new Error('Invalid or duplicate JScene3D native viewport pane registration');
 			}
-			panes.set(paneId, { onReady, onFrame, onFailure, onSelection, onTransform, surfaceGeneration: 0, frameNumber: 0 });
+			panes.set(paneId, {
+				onReady,
+				onFrame,
+				onFailure,
+				onSelection,
+				onTransform,
+				onCameraState,
+				presentationGeneration: 0,
+				surfaceGeneration: 0,
+				frameNumber: 0,
+				width: 0,
+				height: 0,
+				paused: true
+			});
 		},
 		unregisterPane(paneId): void {
 			if (isViewportPaneId(paneId)) {
@@ -135,12 +176,21 @@ export function createJScene3DViewportBridge(
 				throw new Error('Invalid JScene3D native viewport session identity');
 			}
 			registration.session = session;
+			registration.presentationGeneration = 0;
 			registration.surfaceGeneration = 0;
 			registration.frameNumber = 0;
+			registration.width = width;
+			registration.height = height;
+			registration.paused = true;
 			const pendingReady = registration.pendingReady;
 			registration.pendingReady = undefined;
 			if (pendingReady && sameSession(session, pendingReady)) {
 				registration.onReady(pendingReady);
+			}
+			const pendingCameraState = registration.pendingCameraState;
+			registration.pendingCameraState = undefined;
+			if (pendingCameraState && sameSession(session, pendingCameraState)) {
+				registration.onCameraState(pendingCameraState);
 			}
 			return session;
 		},
@@ -178,17 +228,27 @@ export function createJScene3DViewportBridge(
 			}
 		},
 		resize(paneId, session, width, height): void {
-			if (sameSession(panes.get(paneId)?.session, session) && isViewportDimension(width) && isViewportDimension(height)) {
+			const registration = panes.get(paneId);
+			if (registration && sameSession(registration.session, session) && isViewportDimension(width) && isViewportDimension(height)
+				&& (registration.width !== width || registration.height !== height)) {
+				registration.width = width;
+				registration.height = height;
+				registration.presentationGeneration++;
 				ipcRenderer.send('vscode:jscene3dViewport:resize', paneId, session, width, height);
 			}
 		},
 		pause(paneId, session): void {
-			if (sameSession(panes.get(paneId)?.session, session)) {
+			const registration = panes.get(paneId);
+			if (registration && sameSession(registration.session, session) && !registration.paused) {
+				registration.paused = true;
+				registration.presentationGeneration++;
 				ipcRenderer.send('vscode:jscene3dViewport:pause', paneId, session);
 			}
 		},
 		resume(paneId, session): void {
-			if (sameSession(panes.get(paneId)?.session, session)) {
+			const registration = panes.get(paneId);
+			if (registration && sameSession(registration.session, session) && registration.paused) {
+				registration.paused = false;
 				ipcRenderer.send('vscode:jscene3dViewport:resume', paneId, session);
 			}
 		},
@@ -199,8 +259,13 @@ export function createJScene3DViewportBridge(
 			}
 			registration.session = undefined;
 			registration.pendingReady = undefined;
+			registration.pendingCameraState = undefined;
+			registration.presentationGeneration = 0;
 			registration.surfaceGeneration = 0;
 			registration.frameNumber = 0;
+			registration.width = 0;
+			registration.height = 0;
+			registration.paused = true;
 			await ipcRenderer.invoke('vscode:jscene3dViewport:stop', paneId, session);
 		}
 	};

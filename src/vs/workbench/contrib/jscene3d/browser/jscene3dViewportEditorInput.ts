@@ -6,7 +6,7 @@
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { IJScene3DSceneSelectionChange, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform, isSceneViewSnapshot, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneSelectionChange, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportBridge, IJScene3DViewportCameraState, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportSelection, IJScene3DViewportSessionIdentity, IJScene3DSceneViewSnapshot, IJScene3DViewportLaunch, IJScene3DViewportTransform, isSceneViewSnapshot, JScene3DTransformTool } from '../../../../base/parts/sandbox/common/jscene3dViewport.js';
 import { localize } from '../../../../nls.js';
 import { EditorInputCapabilities } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
@@ -73,19 +73,26 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	private registered = false;
 	private startToken = 0;
 	private failure: string | undefined;
-	private pendingReady: IJScene3DViewportSessionIdentity | undefined;
+	private pendingReady: IJScene3DViewportSessionIdentity[] = [];
+	private pendingCameraState: IJScene3DViewportCameraState | undefined;
+	private _cameraState: IJScene3DViewportCameraState | undefined;
 	private desiredSelection: { readonly revision: number; readonly occurrence: IJScene3DSceneViewOccurrence | null } | undefined;
+	private desiredTransformSettings: IJScene3DTransformSettings | undefined;
+	private rendererReadySession: IJScene3DViewportSessionIdentity | undefined;
+	private appliedTransformConfiguration: { readonly session: IJScene3DViewportSessionIdentity; readonly settings: IJScene3DTransformSettings } | undefined;
 	private _startupState: JScene3DViewportStartupState = 'renderer-starting';
 	private readonly startupStateEmitter = this._register(new Emitter<JScene3DViewportStartupState>());
 	private readonly sceneViewSnapshotEmitter = this._register(new Emitter<IJScene3DSceneViewSnapshot>());
 	private readonly sceneSelectionEmitter = this._register(new Emitter<IJScene3DSceneSelectionChange>());
 	private readonly sceneTransformEmitter = this._register(new Emitter<IJScene3DViewportTransform>());
+	private readonly cameraStateEmitter = this._register(new Emitter<IJScene3DViewportCameraState | undefined>());
 	private readonly transformToolEmitter = this._register(new Emitter<JScene3DTransformTool>());
 	private activeSceneTransform: IJScene3DViewportTransform | undefined;
 	readonly onDidChangeStartupState: Event<JScene3DViewportStartupState> = this.startupStateEmitter.event;
 	readonly onDidChangeSceneViewSnapshot: Event<IJScene3DSceneViewSnapshot> = this.sceneViewSnapshotEmitter.event;
 	readonly onDidChangeSceneSelection: Event<IJScene3DSceneSelectionChange> = this.sceneSelectionEmitter.event;
 	readonly onDidRequestSceneTransform: Event<IJScene3DViewportTransform> = this.sceneTransformEmitter.event;
+	readonly onDidChangeCameraState: Event<IJScene3DViewportCameraState | undefined> = this.cameraStateEmitter.event;
 	readonly onDidRequestTransformTool: Event<JScene3DTransformTool> = this.transformToolEmitter.event;
 
 	constructor(launch: IJScene3DViewportLaunch) {
@@ -101,6 +108,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	}
 	get launch(): IJScene3DViewportLaunch { return this._launch; }
 	get startupState(): JScene3DViewportStartupState { return this._startupState; }
+	get cameraState(): IJScene3DViewportCameraState | undefined { return this._cameraState; }
 
 	override get typeId(): string { return JScene3DViewportEditorInput.ID; }
 	override get editorId(): string { return JScene3DViewportEditorInput.ID; }
@@ -155,10 +163,12 @@ export class JScene3DViewportEditorInput extends EditorInput {
 	}
 
 	configureTransform(presentation: IJScene3DViewportPresentation, settings: IJScene3DTransformSettings): void {
-		const session = this.model.sessionIdentity;
-		if (this.presentation === presentation && this.launch.kind === 'scene' && session && !this.model.isTerminal) {
-			this.bridge?.configureSceneTransform(this.paneId, session, settings);
+		if (this.launch.kind !== 'scene' || this.model.isTerminal
+			|| (this.presentation !== undefined && this.presentation !== presentation)) {
+			return;
 		}
+		this.desiredTransformSettings = settings;
+		this.applyDesiredTransformConfiguration();
 	}
 
 	transform(presentation: IJScene3DViewportPresentation, pointer: IJScene3DTransformPointer): void {
@@ -211,6 +221,7 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		}
 		if (this.model.sessionIdentity) {
 			this.applyLifecycleAction(this.model.setVisible(true));
+			this.applyDesiredTransformConfiguration();
 			this.resize(presentation, size);
 			return;
 		}
@@ -223,7 +234,8 @@ export class JScene3DViewportEditorInput extends EditorInput {
 					(frame, identity) => this.onFrame(frame, identity),
 					failure => this.onFailure(failure),
 					selection => this.onSelection(selection),
-					transform => this.onTransform(transform)
+					transform => this.onTransform(transform),
+					cameraState => this.onCameraState(cameraState)
 				);
 				this.registered = true;
 			}
@@ -234,9 +246,14 @@ export class JScene3DViewportEditorInput extends EditorInput {
 				return;
 			}
 			this.applyLifecycleAction(this.model.bindSession(session));
+			const pendingCameraState = this.pendingCameraState;
+			this.pendingCameraState = undefined;
+			if (pendingCameraState) {
+				this.onCameraState(pendingCameraState);
+			}
 			this.applyDesiredSelection();
-			const pendingReady = this.pendingReady;
-			this.pendingReady = undefined;
+			const pendingReady = this.pendingReady.find(identity => sameSession(session, identity));
+			this.pendingReady = [];
 			if (pendingReady) {
 				this.onRendererReady(pendingReady);
 			}
@@ -281,7 +298,12 @@ export class JScene3DViewportEditorInput extends EditorInput {
 			this.cancelActiveSceneTransform();
 			const session = this.model.sessionIdentity;
 			this.model.dispose();
-			this.pendingReady = undefined;
+			this.pendingReady = [];
+			this.pendingCameraState = undefined;
+			this.desiredTransformSettings = undefined;
+			this.rendererReadySession = undefined;
+			this.appliedTransformConfiguration = undefined;
+			this.clearCameraState();
 			if (!preserveFailure) {
 				this.transitionTo('disposed');
 			}
@@ -333,6 +355,8 @@ export class JScene3DViewportEditorInput extends EditorInput {
 			return;
 		}
 		this.cancelActiveSceneTransform();
+		this.pendingCameraState = undefined;
+		this.clearCameraState();
 		this.failure = failure.message;
 		this.transitionTo('failed');
 		this.presentation?.showFailure(failure.message);
@@ -348,13 +372,32 @@ export class JScene3DViewportEditorInput extends EditorInput {
 		}
 	}
 
+	private applyDesiredTransformConfiguration(): void {
+		const session = this.model.sessionIdentity;
+		const ready = this.rendererReadySession;
+		const desired = this.desiredTransformSettings;
+		const applied = this.appliedTransformConfiguration;
+		const bridge = this.bridge;
+		if (!this.presentation || !session || !ready || !desired || !bridge || this.launch.kind !== 'scene' || this.model.isTerminal
+			|| !sameSession(session, ready)
+			|| (applied && sameSession(session, applied.session) && sameTransformSettings(desired, applied.settings))) {
+			return;
+		}
+		bridge.configureSceneTransform(this.paneId, session, desired);
+		this.appliedTransformConfiguration = { session, settings: desired };
+	}
+
 	private onRendererReady(identity: IJScene3DViewportSessionIdentity): void {
 		const session = this.model.sessionIdentity;
 		if (!session) {
-			this.pendingReady = identity;
+			if (!this.pendingReady.some(candidate => sameSession(candidate, identity))) {
+				this.pendingReady.push(identity);
+			}
 			return;
 		}
 		if (sameSession(session, identity)) {
+			this.rendererReadySession = identity;
+			this.applyDesiredTransformConfiguration();
 			this.transitionTo('waiting-for-first-frame');
 		}
 	}
@@ -385,6 +428,25 @@ export class JScene3DViewportEditorInput extends EditorInput {
 				this.activeSceneTransform = undefined;
 			}
 			this.sceneTransformEmitter.fire(transform);
+		}
+	}
+
+	private onCameraState(cameraState: IJScene3DViewportCameraState): void {
+		const session = this.model.sessionIdentity;
+		if (!session) {
+			this.pendingCameraState = cameraState;
+			return;
+		}
+		if (this.launch.kind === 'scene' && sameSession(session, cameraState) && !this.model.isTerminal) {
+			this._cameraState = cameraState;
+			this.cameraStateEmitter.fire(cameraState);
+		}
+	}
+
+	private clearCameraState(): void {
+		if (this._cameraState !== undefined) {
+			this._cameraState = undefined;
+			this.cameraStateEmitter.fire(undefined);
 		}
 	}
 
@@ -430,4 +492,13 @@ function sameSession(
 ): boolean {
 	return actual?.sessionId === expected.sessionId
 		&& actual.rendererGeneration === expected.rendererGeneration;
+}
+
+function sameTransformSettings(first: IJScene3DTransformSettings, second: IJScene3DTransformSettings): boolean {
+	return first.tool === second.tool
+		&& first.space === second.space
+		&& first.snapping === second.snapping
+		&& first.translationSnap === second.translationSnap
+		&& first.rotationSnap === second.rotationSnap
+		&& first.scaleSnap === second.scaleSnap;
 }

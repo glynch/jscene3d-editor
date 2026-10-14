@@ -18,6 +18,7 @@ suite('JScene3DViewportToolbars', () => {
 		store.add({ dispose: () => parent.remove() });
 		const actions: JScene3DViewportDragAction[] = [];
 		let projectionToggles = 0;
+		let displayOptions = 0;
 		const toolbars = store.add(new JScene3DViewportToolbars(parent, 120, {
 			beginDrag: (_event, action) => actions.push(action),
 			continueDrag: () => undefined,
@@ -25,9 +26,10 @@ suite('JScene3DViewportToolbars', () => {
 			toggleProjection: () => projectionToggles++,
 			selectTool: () => undefined,
 			toggleSnapping: () => undefined,
-			toggleSpace: () => undefined
+			toggleSpace: () => undefined,
+			showDisplayOptions: () => displayOptions++
 		}));
-		return { parent, toolbars, actions, projectionToggles: () => projectionToggles };
+		return { parent, toolbars, actions, projectionToggles: () => projectionToggles, displayOptions: () => displayOptions };
 	}
 
 	test('presents three consistent floating toolbars and persistent entity-tool state', () => {
@@ -52,6 +54,24 @@ suite('JScene3DViewportToolbars', () => {
 		assert.strictEqual(parent.querySelector<HTMLButtonElement>('[aria-label="Rect / Bounds (T)"]')!.disabled, true);
 	});
 
+	test('keeps exactly one persistent entity tool selected through every transition', () => {
+		const { parent, toolbars } = createToolbars();
+		const expectedLabels = {
+			select: 'Select (Q)',
+			move: 'Move (W)',
+			rotate: 'Rotate (E)',
+			scale: 'Scale (R)'
+		} as const;
+		for (const tool of ['select', 'move', 'rotate', 'scale', 'select'] as const) {
+			toolbars.setTransformState(tool, 'global', false);
+			const selected = Array.from(parent.querySelectorAll<HTMLButtonElement>('.jscene3d-scene-toolbar-left [aria-pressed="true"]'));
+			assert.deepStrictEqual(selected.map(button => ({
+				label: button.getAttribute('aria-label'),
+				selected: button.classList.contains('is-selected')
+			})), [{ label: expectedLabels[tool], selected: true }]);
+		}
+	});
+
 	test('retains readable semantic states for disabled display controls', () => {
 		const { parent } = createToolbars();
 		const shaded = parent.querySelector<HTMLButtonElement>('[aria-label="Shaded"]')!;
@@ -70,7 +90,7 @@ suite('JScene3DViewportToolbars', () => {
 	});
 
 	test('uses recognizable orbit, hand, zoom and stateful projection icons', () => {
-		const { parent, projectionToggles } = createToolbars();
+		const { parent, toolbars, projectionToggles } = createToolbars();
 		assert.ok(parent.querySelector('[aria-label="Orbit"].codicon-sync'));
 		assert.ok(parent.querySelector('[aria-label="Pan"] .jscene3d-scene-toolbar-hand'));
 		assert.ok(parent.querySelector('[aria-label="Zoom"].codicon-zoom-in'));
@@ -79,10 +99,23 @@ suite('JScene3DViewportToolbars', () => {
 		assert.strictEqual(projection.dataset.projection, 'perspective');
 		assert.strictEqual(projection.getAttribute('aria-pressed'), 'false');
 		projection.click();
+		assert.strictEqual(projection.dataset.projection, 'perspective', 'waits for renderer-authoritative state');
+		assert.strictEqual(projection.getAttribute('aria-pressed'), 'false');
+		toolbars.setProjection('orthographic');
 		assert.strictEqual(projection.dataset.projection, 'orthographic');
 		assert.strictEqual(projection.getAttribute('aria-pressed'), 'true');
 		assert.ok(projection.classList.contains('is-selected'));
 		assert.strictEqual(projectionToggles(), 1);
+	});
+
+	test('opens the Scene display-options seam from an enabled toolbar control', () => {
+		const { parent, displayOptions } = createToolbars();
+		const button = parent.querySelector<HTMLButtonElement>('[aria-label="Display Options"]')!;
+
+		assert.strictEqual(button.disabled, false);
+		assert.strictEqual(button.getAttribute('aria-haspopup'), 'menu');
+		button.click();
+		assert.strictEqual(displayOptions(), 1);
 	});
 
 	test('highlights only the temporary navigation action', () => {

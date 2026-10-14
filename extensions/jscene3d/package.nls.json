@@ -36,6 +36,7 @@
 	"configuration.sceneView.navigation.zoomSensitivity": "Scene View zoom sensitivity.",
 	"configuration.sceneView.navigation.invertOrbit": "Invert Scene View orbit direction.",
 	"configuration.sceneView.navigation.invertZoom": "Invert Scene View zoom direction.",
+	"configuration.sceneView.cameraInfo.visible": "Show the renderer-authoritative editor camera information overlay in Scene View.",
 	"configuration.sceneView.transform.translationSnap": "Translation snap increment used by the Scene View Move tool.",
 	"configuration.sceneView.transform.rotationSnap": "Rotation snap increment in degrees used by the Scene View Rotate tool.",
 	"configuration.sceneView.transform.scaleSnap": "Scale snap increment used by the Scene View Scale tool."

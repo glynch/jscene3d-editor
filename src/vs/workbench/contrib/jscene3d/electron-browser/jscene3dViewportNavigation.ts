@@ -41,7 +41,8 @@ export class JScene3DViewportNavigation extends Disposable {
 		private readonly navigate: (navigation: IJScene3DSceneViewNavigation) => void,
 		private readonly select: (horizontal: number, vertical: number) => void,
 		configureTransform: (settings: IJScene3DTransformSettings) => void,
-		transform: (pointer: IJScene3DTransformPointer) => void
+		transform: (pointer: IJScene3DTransformPointer) => void,
+		showDisplayOptions: (anchor: HTMLElement) => void = () => undefined
 	) {
 		super();
 		this.canvas.classList.add('jscene3d-scene-viewport');
@@ -53,7 +54,8 @@ export class JScene3DViewportNavigation extends Disposable {
 			toggleProjection: () => this.navigate({ kind: 'toggleProjection' }),
 			selectTool: tool => this.transformController.selectTool(tool),
 			toggleSnapping: () => this.transformController.toggleSnapping(),
-			toggleSpace: () => this.transformController.toggleSpace()
+			toggleSpace: () => this.transformController.toggleSpace(),
+			showDisplayOptions
 		}));
 		this.transformController = this._register(new JScene3DViewportTransformController(
 			canvas,
@@ -80,6 +82,11 @@ export class JScene3DViewportNavigation extends Disposable {
 	/** Selects one persistent entity tool through the command/keybinding service. */
 	selectTransformTool(tool: JScene3DTransformTool): void {
 		this.transformController.selectTool(tool);
+	}
+
+	/** Synchronizes projection chrome with renderer-authoritative camera state. */
+	setProjection(projection: 'perspective' | 'orthographic'): void {
+		this.toolbars.setProjection(projection);
 	}
 
 	private registerCanvasInput(): void {
@@ -160,9 +167,6 @@ export class JScene3DViewportNavigation extends Disposable {
 		const drag = this.drag;
 		if (drag?.pointerId === event.pointerId && drag.gizmo && !drag.moved) {
 			const point = this.physicalPoint(event);
-			if (this.isInsideGizmoCenter(point.x, point.y)) {
-				this.toolbars.toggleProjectionPresentation();
-			}
 			this.navigate({ kind: 'gizmoClick', horizontal: point.x, vertical: point.y, ...this.viewportSize() });
 		} else if (!drag && this.active && event.button === 0) {
 			const bounds = this.canvas.getBoundingClientRect();
@@ -242,12 +246,6 @@ export class JScene3DViewportNavigation extends Disposable {
 		const point = this.physicalPoint(event);
 		return point.x >= this.canvas.width - GIZMO_WIDTH - GIZMO_MARGIN && point.x <= this.canvas.width - GIZMO_MARGIN
 			&& point.y >= GIZMO_MARGIN && point.y <= GIZMO_MARGIN + GIZMO_HEIGHT;
-	}
-
-	private isInsideGizmoCenter(horizontal: number, vertical: number): boolean {
-		const centerX = this.canvas.width - GIZMO_MARGIN - GIZMO_WIDTH / 2;
-		const centerY = GIZMO_MARGIN + 84;
-		return Math.abs(horizontal - centerX) <= 28 && Math.abs(vertical - centerY) <= 28;
 	}
 
 	private setting<T>(name: string, fallback: T): T {

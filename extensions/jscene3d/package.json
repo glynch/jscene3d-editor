@@ -321,6 +321,11 @@
 						"default": false,
 						"description": "%configuration.sceneView.navigation.invertZoom%"
 					},
+					"jscene3d.sceneView.cameraInfo.visible": {
+						"type": "boolean",
+						"default": true,
+						"description": "%configuration.sceneView.cameraInfo.visible%"
+					},
 					"jscene3d.sceneView.transform.translationSnap": {
 						"type": "number",
 						"default": 0.5,

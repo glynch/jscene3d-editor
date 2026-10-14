@@ -5,11 +5,12 @@
 
 import { app, sharedTexture } from 'electron';
 import { Disposable } from '../../base/common/lifecycle.js';
-import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, isViewportTransform, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
+import { IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewSnapshot, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportFailure, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, isSceneTransformPointer, isSceneTransformSettings, isSceneViewNavigation, isSceneViewSelectableOccurrence, isSceneViewSnapshot, isViewportCameraState, isViewportDimension, isViewportLaunch, isViewportPaneId, isViewportSessionIdentity, isViewportTransform, sceneTransformConfigCommand, sceneTransformPointerCommand, sceneViewNavigationCommand, stopViewportSessions } from '../../base/parts/sandbox/common/jscene3dViewport.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { IWindowsMainService } from '../../platform/windows/electron-main/windows.js';
 import { IJScene3DRendererApi, IJScene3DRendererSession } from '../node/jscene3dRendererApi.js';
+import { IJScene3DFrameTransfer } from '../node/jscene3dFrameTransferLifecycle.js';
 import { JScene3DMainViewportSession } from './jscene3dMainViewportSession.js';
 import { JScene3DRendererLaunchResolver } from './jscene3dRendererLaunchResolver.js';
 
@@ -82,7 +83,8 @@ export class JScene3DViewportController extends Disposable {
 				onExit: () => session && this.onExit(session),
 				onSurfaceReady: (surfaceGeneration, surfaceWidth, surfaceHeight) => session && this.onSurfaceReady(session, surfaceGeneration, surfaceWidth, surfaceHeight),
 				onSceneSelection: (requestId, revision, selection) => session && this.onSceneSelection(session, requestId, revision, selection),
-				onSceneTransform: transform => session && this.onSceneTransform(session, transform)
+				onSceneTransform: transform => session && this.onSceneTransform(session, transform),
+				onSceneCameraState: cameraState => session && this.onSceneCameraState(session, cameraState)
 			});
 			session = new JScene3DMainViewportSession(
 				paneId,
@@ -155,20 +157,11 @@ export class JScene3DViewportController extends Disposable {
 			session.frameInFlight = false;
 			return;
 		}
-		void this.presentFrame(session).then(() => {
-			if (!this.isActive(session)) {
-				return;
-			}
-			if (!session.firstFramePresented) {
-				session.firstFramePresented = true;
-				this.logService.info(`[JScene3D viewport] first frame presented for session ${session.sessionId} and pane ${session.paneId}`);
-			}
-			session.frameInFlight = false;
-			session.frameTimer = setTimeout(() => {
-				session.frameTimer = undefined;
-				this.requestFrame(session);
-			}, 16);
-		}, error => this.fail(session, `frame presentation failed: ${error instanceof Error ? error.message : String(error)}`));
+		const transfer = session.frameTransfers.begin(session.surfaceGeneration, session.frameNumber);
+		void this.presentFrame(session, transfer).then(
+			() => this.onFrameTransferSettled(session, transfer, true),
+			error => this.onFrameTransferSettled(session, transfer, false, error)
+		);
 	}
 
 	private updateSceneView(event: Electron.IpcMainEvent, paneId: string, identity: IJScene3DViewportSessionIdentity, snapshot: IJScene3DSceneViewSnapshot): void {
@@ -290,6 +283,24 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
+	private onSceneCameraState(session: JScene3DMainViewportSession, encoded: string): void {
+		if (!this.isActive(session) || session.launch.kind !== 'scene') {
+			return;
+		}
+		try {
+			const decoded = {
+				...JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')),
+				paneId: session.paneId,
+				...this.identity(session)
+			};
+			if (isViewportCameraState(decoded) && !session.frame.isDestroyed()) {
+				session.frame.send('vscode:jscene3dViewport:cameraState', decoded);
+			}
+		} catch {
+			// Malformed renderer events are ignored at the process boundary.
+		}
+	}
+
 	private onSceneSelection(session: JScene3DMainViewportSession, requestId: number, revision: number, encoded: string): void {
 		if (!this.isActive(session) || session.launch.kind !== 'scene'
 			|| requestId !== session.selectionRequest || revision !== session.currentSnapshotRevision || encoded === 'STALE') {
@@ -335,9 +346,9 @@ export class JScene3DViewportController extends Disposable {
 		}
 	}
 
-	private async presentFrame(session: JScene3DMainViewportSession): Promise<void> {
+	private async presentFrame(session: JScene3DMainViewportSession, transfer: IJScene3DFrameTransfer): Promise<void> {
 		const surface = this.renderer.getSurface(session.sessionId);
-		if (!surface || surface.surfaceGeneration !== session.surfaceGeneration) {
+		if (!surface || surface.surfaceGeneration !== session.surfaceGeneration || surface.surfaceGeneration !== transfer.surfaceGeneration) {
 			throw new Error('renderer surface is unavailable or stale');
 		}
 		const imported = sharedTexture.importSharedTexture({
@@ -352,14 +363,42 @@ export class JScene3DViewportController extends Disposable {
 		const identity: IJScene3DViewportFrameIdentity = {
 			...this.identity(session),
 			paneId: session.paneId,
+			presentationGeneration: transfer.presentationGeneration,
 			surfaceGeneration: surface.surfaceGeneration,
-			frameNumber: session.frameNumber
+			frameNumber: transfer.frameNumber
 		};
 		try {
 			await sharedTexture.sendSharedTexture({ frame: session.frame, importedSharedTexture: imported }, identity);
 		} finally {
 			imported.release();
 		}
+	}
+
+	private onFrameTransferSettled(session: JScene3DMainViewportSession, transfer: IJScene3DFrameTransfer, succeeded: boolean, error?: unknown): void {
+		const disposition = session.frameTransfers.settle(transfer, session.surfaceGeneration, succeeded);
+		if (disposition === 'fail') {
+			this.fail(session, `frame presentation failed: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
+		if (!this.isActive(session)) {
+			return;
+		}
+		session.frameInFlight = false;
+		if (disposition === 'present' && !session.firstFramePresented) {
+			session.firstFramePresented = true;
+			this.logService.info(`[JScene3D viewport] first frame presented for session ${session.sessionId} and pane ${session.paneId}`);
+		}
+		if (session.paused) {
+			return;
+		}
+		if (disposition === 'interrupted') {
+			this.requestFrame(session);
+			return;
+		}
+		session.frameTimer = setTimeout(() => {
+			session.frameTimer = undefined;
+			this.requestFrame(session);
+		}, 16);
 	}
 
 	private resize(event: Electron.IpcMainEvent, paneId: string, identity: IJScene3DViewportSessionIdentity, width: number, height: number): void {
@@ -371,6 +410,7 @@ export class JScene3DViewportController extends Disposable {
 			return;
 		}
 		session.desiredSize = { width, height };
+		session.frameTransfers.invalidate();
 		this.applyResize(session);
 	}
 
@@ -391,6 +431,9 @@ export class JScene3DViewportController extends Disposable {
 		const session = this.fromPane(event, paneId, identity);
 		if (!session || session.paused === paused) {
 			return;
+		}
+		if (paused) {
+			session.frameTransfers.invalidate();
 		}
 		session.paused = paused;
 		if (!session.rendererReady) {

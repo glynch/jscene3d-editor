@@ -10,6 +10,7 @@ export interface IJScene3DViewportSessionIdentity {
 
 export interface IJScene3DViewportFrameIdentity extends IJScene3DViewportSessionIdentity {
 	readonly paneId: string;
+	readonly presentationGeneration: number;
 	readonly surfaceGeneration: number;
 	readonly frameNumber: number;
 }
@@ -25,6 +26,17 @@ export interface IJScene3DViewportSelection extends IJScene3DViewportSessionIden
 	readonly paneId: string;
 	readonly revision: number;
 	readonly occurrence: IJScene3DSceneViewOccurrence | null;
+}
+
+export type JScene3DCameraProjection = 'perspective' | 'orthographic';
+
+/** Renderer-authoritative editor-camera state for one exact Scene View session. */
+export interface IJScene3DViewportCameraState extends IJScene3DViewportSessionIdentity {
+	readonly paneId: string;
+	readonly position: readonly [number, number, number];
+	readonly orientationDegrees: readonly [number, number, number];
+	readonly pivot: readonly [number, number, number];
+	readonly projection: JScene3DCameraProjection;
 }
 
 export type JScene3DTransformTool = 'select' | 'move' | 'rotate' | 'scale';
@@ -189,7 +201,8 @@ export interface IJScene3DViewportBridge {
 		onFrame: (frame: VideoFrame, identity: IJScene3DViewportFrameIdentity) => Promise<void>,
 		onFailure: (failure: IJScene3DViewportFailure) => void,
 		onSelection: (selection: IJScene3DViewportSelection) => void,
-		onTransform: (transform: IJScene3DViewportTransform) => void
+		onTransform: (transform: IJScene3DViewportTransform) => void,
+		onCameraState: (cameraState: IJScene3DViewportCameraState) => void
 	): void;
 	unregisterPane(paneId: string): void;
 	start(paneId: string, launch: IJScene3DViewportLaunch, width: number, height: number): Promise<IJScene3DViewportSessionIdentity>;
