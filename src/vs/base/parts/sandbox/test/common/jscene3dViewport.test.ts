@@ -69,7 +69,26 @@ suite('JScene3DViewportFrameRouter', () => {
 						material: { kind: 'asset', locator: 'material', projectPath: null },
 						visible: true
 					}],
-					directionalLight: null
+					directionalLight: null,
+					cameras: [{
+						kind: 'perspective',
+						identity,
+						fieldOfViewDegrees: '55',
+						near: '0.1',
+						far: '500',
+						primary: false
+					}, {
+						kind: 'orthographic',
+						identity: { ...identity, componentId: 'camera-b' },
+						left: '-8',
+						right: '8',
+						top: '5',
+						bottom: '-5',
+						near: '0',
+						far: '500',
+						zoom: '1.5',
+						primary: true
+					}]
 				}]
 			}
 		};
@@ -113,6 +132,35 @@ suite('JScene3DViewportFrameRouter', () => {
 				}]
 			}
 		}), false);
+		const visualOccurrence = richSceneLaunch.snapshot.occurrences[0];
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: undefined }] }
+		}), false, 'requires an explicit camera collection even when it is empty');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], kind: 'panoramic' }] }] }
+		}), false, 'rejects unknown camera discriminators');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], far: '0.1' }] }] }
+		}), false, 'rejects invalid perspective clipping planes');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], near: undefined }] }] }
+		}), false, 'rejects missing required camera fields');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], identity: { ...identity, componentId: '' } }] }] }
+		}), false, 'rejects invalid camera component identity');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], far: '9'.repeat(400) }] }] }
+		}), false, 'rejects decimals outside the finite renderer number domain');
+		assert.strictEqual(isViewportLaunch({
+			...richSceneLaunch,
+			snapshot: { ...richSceneLaunch.snapshot, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[1], left: '8', right: '-8' }] }] }
+		}), false, 'rejects invalid orthographic bounds');
 	});
 
 	test('rejects malformed identities and frames from another session', async () => {

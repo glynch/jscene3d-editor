@@ -149,6 +149,29 @@ export interface IJScene3DSceneViewResourceReference {
 	readonly projectPath: string | null;
 }
 
+/** Authored camera projection semantics retained for editor visualization. */
+export type IJScene3DSceneViewCamera =
+	| {
+		readonly kind: 'perspective';
+		readonly identity: IJScene3DSceneViewComponentIdentity;
+		readonly fieldOfViewDegrees: string;
+		readonly near: string;
+		readonly far: string;
+		readonly primary: boolean;
+	}
+	| {
+		readonly kind: 'orthographic';
+		readonly identity: IJScene3DSceneViewComponentIdentity;
+		readonly left: string;
+		readonly right: string;
+		readonly top: string;
+		readonly bottom: string;
+		readonly near: string;
+		readonly far: string;
+		readonly zoom: string;
+		readonly primary: boolean;
+	};
+
 /** Complete built-in visual state for one expanded Scene occurrence. */
 export interface IJScene3DSceneViewVisualOccurrence {
 	readonly occurrence: IJScene3DSceneViewOccurrence;
@@ -176,6 +199,7 @@ export interface IJScene3DSceneViewVisualOccurrence {
 		readonly intensity: string;
 		readonly target: IJScene3DSceneViewVector3;
 	} | null;
+	readonly cameras: readonly IJScene3DSceneViewCamera[];
 }
 
 /** Complete Java-projected state for one exact authored Scene revision. */

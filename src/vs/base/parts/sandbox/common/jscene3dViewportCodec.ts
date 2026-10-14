@@ -3,7 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IJScene3DGameViewportLaunch, IJScene3DSceneViewportLaunch, IJScene3DSceneViewComponentIdentity, IJScene3DSceneViewNavigation, IJScene3DSceneViewOccurrence, IJScene3DSceneViewResourceReference, IJScene3DSceneViewSnapshot, IJScene3DSceneViewVector3, IJScene3DSceneViewVisualOccurrence, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportCameraState, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from './jscene3dViewportProtocol.js';
+import { IJScene3DGameViewportLaunch, IJScene3DSceneViewportLaunch, IJScene3DSceneViewNavigation, IJScene3DTransformPointer, IJScene3DTransformSettings, IJScene3DViewportCameraState, IJScene3DViewportFrameIdentity, IJScene3DViewportLaunch, IJScene3DViewportSessionIdentity, IJScene3DViewportTransform } from './jscene3dViewportProtocol.js';
+import { isSceneViewSnapshot } from './jscene3dViewportSceneSnapshotCodec.js';
+import { isNonEmptyString } from './jscene3dViewportValidation.js';
+
+export { isSceneViewOccurrence, isSceneViewSelectableOccurrence, isSceneViewSnapshot } from './jscene3dViewportSceneSnapshotCodec.js';
 
 export function isViewportPaneId(value: unknown): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= 128;
@@ -90,13 +94,13 @@ export function isViewportTransform(value: unknown): value is IJScene3DViewportT
 		&& Number.isInteger(candidate.sessionId) && candidate.sessionId! > 0
 		&& Number.isInteger(candidate.rendererGeneration) && candidate.rendererGeneration! > 0
 		&& (candidate.phase === 'begin' || candidate.phase === 'update' || candidate.phase === 'commit' || candidate.phase === 'cancel' || candidate.phase === 'blocked')
-		&& nonEmpty(candidate.editId) && candidate.editId!.length <= 128
+		&& isNonEmptyString(candidate.editId) && candidate.editId!.length <= 128
 		&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
-		&& nonEmpty(candidate.definitionAssetId)
-		&& Array.isArray(candidate.entityPath) && candidate.entityPath.length > 0 && candidate.entityPath.every(nonEmpty)
-		&& nonEmpty(candidate.authoredDefinitionAssetId) && nonEmpty(candidate.authoredEntityId) && nonEmpty(candidate.componentId)
+		&& isNonEmptyString(candidate.definitionAssetId)
+		&& Array.isArray(candidate.entityPath) && candidate.entityPath.length > 0 && candidate.entityPath.every(isNonEmptyString)
+		&& isNonEmptyString(candidate.authoredDefinitionAssetId) && isNonEmptyString(candidate.authoredEntityId) && isNonEmptyString(candidate.componentId)
 		&& (candidate.propertyId === 'position' || candidate.propertyId === 'orientation' || candidate.propertyId === 'scale')
-		&& Array.isArray(candidate.literals) && candidate.literals.length === 3 && candidate.literals.every(nonEmpty);
+		&& Array.isArray(candidate.literals) && candidate.literals.length === 3 && candidate.literals.every(isNonEmptyString);
 }
 
 /** Returns whether a value is finite renderer-authoritative camera state for one viewport session. */
@@ -136,22 +140,22 @@ export function isViewportLaunch(value: unknown): value is IJScene3DViewportLaun
 	}
 	const candidate = value as Partial<IJScene3DViewportLaunch>;
 	return isViewportPaneId(candidate.viewportId)
-		&& nonEmpty(candidate.connectionGeneration)
+		&& isNonEmptyString(candidate.connectionGeneration)
 		&& Number.isInteger(candidate.projectGeneration) && candidate.projectGeneration! > 0
-		&& nonEmpty(candidate.projectId)
-		&& nonEmpty(candidate.projectName)
-		&& nonEmpty(candidate.projectRoot)
-		&& nonEmpty(candidate.publishedContentRoot)
-		&& nonEmpty(candidate.engineVersion)
-		&& nonEmpty(candidate.sceneAssetId)
-		&& nonEmpty(candidate.sceneName)
+		&& isNonEmptyString(candidate.projectId)
+		&& isNonEmptyString(candidate.projectName)
+		&& isNonEmptyString(candidate.projectRoot)
+		&& isNonEmptyString(candidate.publishedContentRoot)
+		&& isNonEmptyString(candidate.engineVersion)
+		&& isNonEmptyString(candidate.sceneAssetId)
+		&& isNonEmptyString(candidate.sceneName)
 		&& (isGameLaunch(candidate) || isSceneLaunch(candidate));
 }
 
 function isGameLaunch(candidate: Partial<IJScene3DViewportLaunch>): candidate is IJScene3DGameViewportLaunch {
 	return candidate.kind === 'game'
 		&& Array.isArray(candidate.runtimeArtifacts)
-		&& candidate.runtimeArtifacts.every(nonEmpty);
+		&& candidate.runtimeArtifacts.every(isNonEmptyString);
 }
 
 function isSceneLaunch(candidate: Partial<IJScene3DViewportLaunch>): candidate is IJScene3DSceneViewportLaunch {
@@ -159,112 +163,6 @@ function isSceneLaunch(candidate: Partial<IJScene3DViewportLaunch>): candidate i
 		&& !('runtimeArtifacts' in candidate)
 		&& isSceneViewSnapshot(candidate.snapshot)
 		&& candidate.snapshot.sceneAssetId === candidate.sceneAssetId;
-}
-
-/** Returns whether an IPC value is a complete runtime-free Scene View snapshot. */
-export function isSceneViewSnapshot(value: unknown): value is IJScene3DSceneViewSnapshot {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewSnapshot>;
-	return nonEmpty(candidate.sceneAssetId)
-		&& Number.isInteger(candidate.revision) && candidate.revision! >= 0
-		&& Array.isArray(candidate.occurrences)
-		&& candidate.occurrences.every(isSceneViewVisualOccurrence);
-}
-
-function isSceneViewVisualOccurrence(value: unknown): value is IJScene3DSceneViewVisualOccurrence {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewVisualOccurrence>;
-	return isSceneViewOccurrence(candidate.occurrence)
-		&& (candidate.parent === null || isSceneViewOccurrence(candidate.parent))
-		&& nonEmpty(candidate.authoredAssetId)
-		&& nonEmpty(candidate.authoredSource)
-		&& nonEmpty(candidate.authoredEntityId)
-		&& (candidate.name === null || typeof candidate.name === 'string')
-		&& typeof candidate.enabled === 'boolean'
-		&& (candidate.transform === null || isSceneViewTransform(candidate.transform))
-		&& Array.isArray(candidate.meshes) && candidate.meshes.every(isSceneViewMesh)
-		&& (candidate.directionalLight === null || isSceneViewDirectionalLight(candidate.directionalLight));
-}
-
-export function isSceneViewOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewOccurrence>;
-	return nonEmpty(candidate.rootDefinitionAssetId)
-		&& Array.isArray(candidate.entityPath) && candidate.entityPath.every(nonEmpty);
-}
-
-/** Returns whether an occurrence identifies a selectable authored entity rather than the Scene root. */
-export function isSceneViewSelectableOccurrence(value: unknown): value is IJScene3DSceneViewOccurrence {
-	return isSceneViewOccurrence(value) && value.entityPath.length > 0;
-}
-
-function isSceneViewComponentIdentity(value: unknown): value is IJScene3DSceneViewComponentIdentity {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewComponentIdentity>;
-	return isSceneViewOccurrence(candidate.occurrence)
-		&& !!candidate.scope && typeof candidate.scope === 'object'
-		&& nonEmpty(candidate.scope.definitionAssetId)
-		&& isSceneViewOccurrence(candidate.scope.anchor)
-		&& nonEmpty(candidate.authoredEntityId)
-		&& nonEmpty(candidate.componentId);
-}
-
-function isSceneViewVector3(value: unknown): value is IJScene3DSceneViewVector3 {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewVector3>;
-	return decimal(candidate.x) && decimal(candidate.y) && decimal(candidate.z);
-}
-
-function isSceneViewTransform(value: unknown): boolean {
-	const candidate = value as IJScene3DSceneViewVisualOccurrence['transform'];
-	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
-		&& isSceneViewVector3(candidate.position)
-		&& isSceneViewVector3(candidate.orientationDegrees)
-		&& isSceneViewVector3(candidate.scale);
-}
-
-function isSceneViewResource(value: unknown): value is IJScene3DSceneViewResourceReference {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-	const candidate = value as Partial<IJScene3DSceneViewResourceReference>;
-	return (candidate.kind === 'project' || candidate.kind === 'asset' || candidate.kind === 'import')
-		&& nonEmpty(candidate.locator)
-		&& (candidate.kind === 'project' ? nonEmpty(candidate.projectPath) : candidate.projectPath === null);
-}
-
-function isSceneViewMesh(value: unknown): boolean {
-	const candidate = value as IJScene3DSceneViewVisualOccurrence['meshes'][number];
-	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
-		&& isSceneViewResource(candidate.mesh)
-		&& isSceneViewResource(candidate.material)
-		&& typeof candidate.visible === 'boolean';
-}
-
-function isSceneViewDirectionalLight(value: unknown): boolean {
-	const candidate = value as NonNullable<IJScene3DSceneViewVisualOccurrence['directionalLight']>;
-	return !!candidate && isSceneViewComponentIdentity(candidate.identity)
-		&& isSceneViewVector3(candidate.color)
-		&& decimal(candidate.intensity)
-		&& isSceneViewVector3(candidate.target);
-}
-
-function decimal(value: unknown): value is string {
-	return typeof value === 'string' && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value);
-}
-
-function nonEmpty(value: unknown): value is string {
-	return typeof value === 'string' && value.length > 0;
 }
 
 export function isViewportSessionIdentity(value: unknown): value is IJScene3DViewportSessionIdentity {

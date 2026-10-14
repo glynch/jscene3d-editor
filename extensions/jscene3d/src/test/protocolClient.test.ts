@@ -7,6 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AuthoringProtocolClient, authoringProtocolMethods } from '../protocol/authoringProtocol';
+import { validateSceneViewSnapshot } from '../protocol/authoringSceneViewProtocol';
 import { JsonRpcClient, JsonRpcError } from '../protocol/jsonRpcClient';
 import { JsonObject, JsonValue, MessageTransport } from '../protocol/messageTransport';
 
@@ -106,6 +107,41 @@ suite('JScene3D authoring protocol client', () => {
 			}
 		});
 		assert.strictEqual(Object.keys(result.launch).includes('runtimeArtifacts'), false);
+	});
+
+	test('validates discriminated authored camera projections on the Java boundary', () => {
+		const occurrence = { rootDefinitionAssetId: 'scene:a', entityPath: ['entity-a'] };
+		const identity = {
+			occurrence,
+			scope: { definitionAssetId: 'scene:a', anchor: occurrence },
+			authoredEntityId: 'entity-a',
+			componentId: 'camera-a'
+		};
+		const visualOccurrence = {
+			occurrence,
+			parent: null,
+			authoredAssetId: 'scene:a',
+			authoredSource: 'file:///projects/a/scene.json',
+			authoredEntityId: 'entity-a',
+			name: 'Camera',
+			enabled: true,
+			transform: null,
+			meshes: [],
+			directionalLight: null,
+			cameras: [{ kind: 'perspective', identity, fieldOfViewDegrees: '55', near: '0.1', far: '500', primary: false }, {
+				kind: 'orthographic', identity: { ...identity, componentId: 'camera-b' }, left: '-8', right: '8', top: '5', bottom: '-5', near: '0', far: '500', zoom: '1.5', primary: true
+			}]
+		};
+		const snapshot = validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [visualOccurrence] }));
+
+		assert.deepStrictEqual(snapshot.occurrences[0].cameras.map(camera => camera.kind), ['perspective', 'orthographic']);
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: undefined }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], kind: 'panoramic' }] }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], far: '0.1' }] }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], near: undefined }] }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], identity: { ...identity, componentId: '' } }] }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[0], far: '9'.repeat(400) }] }] })));
+		assert.throws(() => validateSceneViewSnapshot(json({ sceneAssetId: 'scene:a', revision: 4, occurrences: [{ ...visualOccurrence, cameras: [{ ...visualOccurrence.cameras[1], left: '8', right: '-8' }] }] })));
 	});
 
 	test('uses one protocol-method authority for required capabilities and requests', async () => {
@@ -1103,4 +1139,8 @@ function stringValue(value: JsonValue): string {
 		throw new Error('Expected a string result');
 	}
 	return value;
+}
+
+function json(value: unknown): JsonValue {
+	return value as JsonValue;
 }

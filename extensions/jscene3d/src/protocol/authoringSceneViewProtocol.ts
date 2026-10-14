@@ -5,26 +5,12 @@
 
 import { JsonValue } from './messageTransport';
 import { ProjectDiagnosticDto, validateProjectDiagnostic } from './authoringProjectProtocol';
-import { nullableInteger, nullableString, requiredArray, requiredBoolean, requiredDecimal, requiredInteger, requiredNonEmptyString, requiredObject, requiredReferenceKind, requiredString, requiredStringArray } from './authoringProtocolValidation';
+import { validateSceneViewCamera, SceneViewCameraDto } from './authoringSceneViewCameraProtocol';
+import { validateSceneViewComponentIdentity, validateSceneViewOccurrence, SceneViewComponentIdentityDto, SceneViewOccurrenceDto } from './authoringSceneViewIdentityProtocol';
+import { nullableInteger, nullableString, requiredArray, requiredBoolean, requiredDecimal, requiredInteger, requiredNonEmptyString, requiredObject, requiredReferenceKind, requiredString } from './authoringProtocolValidation';
 
-export interface SceneViewOccurrenceDto {
-	readonly rootDefinitionAssetId: string;
-	readonly entityPath: readonly string[];
-}
-
-/** Wire definition scope that owns a projected component. */
-export interface SceneViewScopeDto {
-	readonly definitionAssetId: string;
-	readonly anchor: SceneViewOccurrenceDto;
-}
-
-/** Wire reverse-lookup identity for one projected built-in component. */
-export interface SceneViewComponentIdentityDto {
-	readonly occurrence: SceneViewOccurrenceDto;
-	readonly scope: SceneViewScopeDto;
-	readonly authoredEntityId: string;
-	readonly componentId: string;
-}
+export { validateSceneViewCamera, SceneViewCameraDto } from './authoringSceneViewCameraProtocol';
+export { validateSceneViewComponentIdentity, validateSceneViewOccurrence, SceneViewComponentIdentityDto, SceneViewOccurrenceDto, SceneViewScopeDto } from './authoringSceneViewIdentityProtocol';
 
 /** Exact decimal three-component vector on the authoring wire. */
 export interface SceneViewVector3Dto {
@@ -67,6 +53,7 @@ export interface SceneViewVisualOccurrenceDto {
 		readonly intensity: string;
 		readonly target: SceneViewVector3Dto;
 	} | null;
+	readonly cameras: readonly SceneViewCameraDto[];
 }
 
 /** Complete Java-owned safe projection for one authored Scene revision. */
@@ -167,29 +154,8 @@ export function validateSceneViewVisualOccurrence(value: JsonValue): SceneViewVi
 		enabled: requiredBoolean(object.enabled, 'enabled'),
 		transform: object.transform === null ? null : validateSceneViewTransform(object.transform),
 		meshes: requiredArray(object.meshes, 'meshes').map(validateSceneViewMesh),
-		directionalLight: object.directionalLight === null ? null : validateSceneViewDirectionalLight(object.directionalLight)
-	};
-}
-
-export function validateSceneViewOccurrence(value: JsonValue | undefined): SceneViewOccurrenceDto {
-	const object = requiredObject(value, 'Scene View occurrence');
-	return {
-		rootDefinitionAssetId: requiredNonEmptyString(object.rootDefinitionAssetId, 'rootDefinitionAssetId'),
-		entityPath: requiredStringArray(object.entityPath, 'entityPath')
-	};
-}
-
-export function validateSceneViewComponentIdentity(value: JsonValue | undefined): SceneViewComponentIdentityDto {
-	const object = requiredObject(value, 'Scene View component identity');
-	const scope = requiredObject(object.scope, 'Scene View scope');
-	return {
-		occurrence: validateSceneViewOccurrence(object.occurrence),
-		scope: {
-			definitionAssetId: requiredNonEmptyString(scope.definitionAssetId, 'definitionAssetId'),
-			anchor: validateSceneViewOccurrence(scope.anchor)
-		},
-		authoredEntityId: requiredNonEmptyString(object.authoredEntityId, 'authoredEntityId'),
-		componentId: requiredNonEmptyString(object.componentId, 'componentId')
+		directionalLight: object.directionalLight === null ? null : validateSceneViewDirectionalLight(object.directionalLight),
+		cameras: requiredArray(object.cameras, 'cameras').map(validateSceneViewCamera)
 	};
 }
 

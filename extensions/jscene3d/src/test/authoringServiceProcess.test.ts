@@ -101,6 +101,71 @@ suite('JScene3D authoring service process', () => {
 			await service.shutdown();
 		}
 	});
+
+	test('validates the Java-generated mixed-camera snapshot through the TypeScript contract', async function () {
+		this.timeout(15000);
+		const modulePath = process.env.JSCENE3D_AUTHORING_SERVICE_MODULE_PATH;
+		const cameraProject = process.env.JSCENE3D_CAMERA_PROJECT_DESCRIPTOR;
+		if (modulePath === undefined || modulePath.trim().length === 0
+			|| cameraProject === undefined || cameraProject.trim().length === 0) {
+			this.skip();
+		}
+		const service = new AuthoringService(() => ({
+			javaExecutable: process.env.JSCENE3D_JAVA_EXECUTABLE ?? 'java',
+			modulePath: modulePath ?? '',
+			installedExtensionMetadata: [],
+			clientLanguage: 'en',
+			contractIdentity: process.env.JSCENE3D_DEVELOPMENT_CONTRACT_IDENTITY ?? 'jscene3d-editor-development',
+			buildIdentity: process.env.JSCENE3D_DEVELOPMENT_BUILD_IDENTITY ?? 'unverified-source-build'
+		}), new NodeAuthoringProcessLauncher(), new TestLogger());
+		try {
+			const opened = await service.openProject(cameraProject ?? '');
+			assert.strictEqual(opened.opened, true);
+			const generation = opened.projectGeneration ?? 0;
+			await service.openDefinition(generation, '53bb0d96-eb30-4481-a3ef-351951dcfbc5');
+			const response = await service.readSceneView(generation, '53bb0d96-eb30-4481-a3ef-351951dcfbc5', 0);
+			const snapshot = response.result.snapshot;
+
+			assert.notStrictEqual(snapshot, null);
+			assert.deepStrictEqual(snapshot?.occurrences.map(occurrence => occurrence.cameras.map(camera => camera.kind)), [
+				['perspective'], ['orthographic']
+			]);
+			const perspective = snapshot?.occurrences[0].cameras[0];
+			assert.strictEqual(perspective?.kind, 'perspective');
+			if (perspective?.kind === 'perspective') {
+				assert.deepStrictEqual({
+					componentId: perspective.identity.componentId,
+					fieldOfViewDegrees: perspective.fieldOfViewDegrees,
+					near: perspective.near,
+					far: perspective.far,
+					primary: perspective.primary
+				}, {
+					componentId: 'af77fa88-7394-4854-9c46-e1927028a493',
+					fieldOfViewDegrees: '55', near: '0.1', far: '500', primary: false
+				});
+			}
+			const orthographic = snapshot?.occurrences[1].cameras[0];
+			assert.strictEqual(orthographic?.kind, 'orthographic');
+			if (orthographic?.kind === 'orthographic') {
+				assert.deepStrictEqual({
+					componentId: orthographic.identity.componentId,
+					left: orthographic.left,
+					right: orthographic.right,
+					top: orthographic.top,
+					bottom: orthographic.bottom,
+					near: orthographic.near,
+					far: orthographic.far,
+					zoom: orthographic.zoom,
+					primary: orthographic.primary
+				}, {
+					componentId: '7aa2898d-5955-4bbf-b1e3-55fd85e0c37e',
+					left: '-8', right: '8', top: '5', bottom: '-5', near: '0', far: '500', zoom: '1.5', primary: true
+				});
+			}
+		} finally {
+			await service.shutdown();
+		}
+	});
 });
 
 class TestLogger {

@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import { AuthoredDefinitionResource } from '../definition/authoredDefinitionState';
-import { ConnectionScopedResult, ProjectDiagnosticDto, SceneViewOccurrenceDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
+import { ConnectionScopedResult, ProjectDiagnosticDto, SceneViewCameraDto, SceneViewOccurrenceDto, SceneViewReadResultDto, SceneViewSnapshotDto } from '../protocol/authoringProtocol';
 import { SceneViewportLaunch, SceneViewAuthoringClient, SceneViewHost, SceneViewLifecycle, SceneViewSelectionEvent } from '../sceneView/sceneViewLifecycle';
 
 suite('JScene3D safe Scene View lifecycle', () => {
@@ -103,6 +103,19 @@ suite('JScene3D safe Scene View lifecycle', () => {
 			openedRevisions: [1],
 			updated: []
 		});
+	});
+
+	test('reuses snapshot replacement for camera addition, replacement, and removal', async () => {
+		const host = new TestHost();
+		const lifecycle = new SceneViewLifecycle(new CameraClient(), host, new TestLogger(), sequenceIds());
+
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 0));
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 1));
+		await lifecycle.synchronize(definition('scene-a', 'scene-definition', 2));
+
+		assert.deepStrictEqual(host.opened[0].snapshot.occurrences[0].cameras.map(camera => camera.kind), ['perspective']);
+		assert.deepStrictEqual(host.updatedSnapshots[0].occurrences[0].cameras.map(camera => camera.kind), ['orthographic']);
+		assert.deepStrictEqual(host.updatedSnapshots[1].occurrences, []);
 	});
 
 	test('returns a useful failure while retaining timestamped projection diagnostics', async () => {
@@ -204,10 +217,20 @@ class DeferredClient implements SceneViewAuthoringClient {
 	}
 }
 
+class CameraClient implements SceneViewAuthoringClient {
+	readSceneView(_projectGeneration: number, sceneAssetId: string, revision: number): Promise<ConnectionScopedResult<SceneViewReadResultDto>> {
+		const cameras: readonly SceneViewCameraDto[] = revision === 0
+			? [perspectiveCamera()]
+			: revision === 1 ? [orthographicCamera()] : [];
+		return Promise.resolve(projectedWithCameras(sceneAssetId, revision, cameras));
+	}
+}
+
 class TestHost implements SceneViewHost {
 	readonly opened: SceneViewportLaunch[] = [];
 	readonly ownerResources: string[] = [];
 	readonly updated: { viewportId: string; revision: number }[] = [];
+	readonly updatedSnapshots: SceneViewSnapshotDto[] = [];
 	readonly selected: { viewportId: string; revision: number; occurrence: SceneViewOccurrenceDto | null }[] = [];
 	readonly closed: string[] = [];
 	viewportAvailable = true;
@@ -224,6 +247,7 @@ class TestHost implements SceneViewHost {
 			return Promise.resolve(undefined);
 		}
 		this.updated.push({ viewportId, revision: snapshot.revision });
+		this.updatedSnapshots.push(snapshot);
 		return Promise.resolve(true);
 	}
 
@@ -288,6 +312,43 @@ function projected(sceneAssetId: string, revision: number): ConnectionScopedResu
 			failureCode: null
 		}
 	};
+}
+
+function projectedWithCameras(sceneAssetId: string, revision: number, cameras: readonly SceneViewCameraDto[]): ConnectionScopedResult<SceneViewReadResultDto> {
+	const response = projected(sceneAssetId, revision);
+	if (!response.result.accepted || response.result.snapshot === null) {
+		throw new Error('Expected projected Scene View response');
+	}
+	return {
+		...response,
+		result: {
+			...response.result,
+			snapshot: {
+				...response.result.snapshot,
+				occurrences: cameras.length === 0 ? [] : [{
+					occurrence: occurrence(), parent: null, authoredAssetId: sceneAssetId,
+					authoredSource: 'file:///project/scene-a.json', authoredEntityId: 'camera-entity',
+					name: 'Camera', enabled: true, transform: null, meshes: [], directionalLight: null, cameras
+				}]
+			}
+		}
+	};
+}
+
+function perspectiveCamera(): SceneViewCameraDto {
+	return { kind: 'perspective', identity: componentIdentity('perspective-camera'), fieldOfViewDegrees: '55', near: '0.1', far: '500', primary: false };
+}
+
+function orthographicCamera(): SceneViewCameraDto {
+	return { kind: 'orthographic', identity: componentIdentity('orthographic-camera'), left: '-8', right: '8', top: '5', bottom: '-5', near: '0', far: '500', zoom: '1.5', primary: true };
+}
+
+function componentIdentity(componentId: string) {
+	return { occurrence: occurrence(), scope: { definitionAssetId: 'scene-a', anchor: occurrence() }, authoredEntityId: 'camera-entity', componentId };
+}
+
+function occurrence(): SceneViewOccurrenceDto {
+	return { rootDefinitionAssetId: 'scene-a', entityPath: ['camera-entity'] };
 }
 
 function sequenceIds(): () => string {
