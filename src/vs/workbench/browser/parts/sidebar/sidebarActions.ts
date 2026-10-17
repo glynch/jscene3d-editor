@@ -28,7 +28,7 @@ registerAction2(class extends Action2 {
 	}
 
 	run(accessor: ServicesAccessor): void {
-		accessor.get(IWorkbenchLayoutService).setPartHidden(true, Parts.SIDEBAR_PART);
+		accessor.get(IWorkbenchLayoutService).setPartHiddenByUser(true, Parts.SIDEBAR_PART);
 	}
 });
 
@@ -53,9 +53,7 @@ export class FocusSideBarAction extends Action2 {
 		const paneCompositeService = accessor.get(IPaneCompositePartService);
 
 		// Show side bar
-		if (!layoutService.isVisible(Parts.SIDEBAR_PART)) {
-			layoutService.setPartHidden(false, Parts.SIDEBAR_PART);
-		}
+		layoutService.setPartHiddenByUser(false, Parts.SIDEBAR_PART);
 
 		// Focus into active viewlet
 		const viewlet = paneCompositeService.getActivePaneComposite(ViewContainerLocation.Sidebar);

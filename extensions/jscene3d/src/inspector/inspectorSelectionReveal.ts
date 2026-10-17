@@ -5,18 +5,18 @@
 
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
 
-export type InspectorRevealAction = () => PromiseLike<void> | void;
+export type InspectorAutomaticRevealAction = () => PromiseLike<void> | void;
 export type InspectorRevealFailureHandler = (error: unknown) => void;
 export type InspectorVisibility = () => boolean;
 
-/** Reveals Inspector whenever the shared authored-definition selection acquires an entity. */
+/** Requests an intent-aware automatic Inspector reveal when shared selection acquires an entity. */
 export class InspectorSelectionReveal {
 	private readonly subscription: { dispose(): void };
 
 	constructor(
 		definitions: AuthoredDefinitionState,
 		isVisible: InspectorVisibility,
-		reveal: InspectorRevealAction,
+		reveal: InspectorAutomaticRevealAction,
 		reportFailure: InspectorRevealFailureHandler
 	) {
 		this.subscription = definitions.onDidChange(change => {

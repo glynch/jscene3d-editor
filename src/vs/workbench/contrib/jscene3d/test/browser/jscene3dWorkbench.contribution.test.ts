@@ -9,7 +9,7 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { MenuId, MenuRegistry, isIMenuItem } from '../../../../../platform/actions/common/actions.js';
-import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { CommandsRegistry, ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ContextKeyValue, IContext } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IResourceEditorInput } from '../../../../../platform/editor/common/editor.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
@@ -20,6 +20,7 @@ import { breadcrumbsEnabledForEditor } from '../../../../browser/parts/editor/br
 import { jscene3dProjectEmptyEditorPresentation } from '../../../../browser/parts/editor/editorGroupWatermark.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IEditorGroup, IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
+import { ViewRevealDenialReason, ViewRevealIntent, ViewRevealOutcome, type IViewsService } from '../../../../services/views/common/viewsService.js';
 import { emptyViewName } from '../../../files/browser/views/emptyView.js';
 import { registerEmptyExplorerWelcomeContent } from '../../../files/browser/explorerViewlet.js';
 import { GettingStartedInput } from '../../../welcomeGettingStarted/browser/gettingStartedInput.js';
@@ -27,9 +28,11 @@ import { shouldRemovePartsSplashOnInitialLayout } from '../../../splash/browser/
 import {
 	closeJScene3DWelcomeEditors,
 	completeJScene3DStartupPresentation,
+	JSCENE3D_REVEAL_INSPECTOR_AUTOMATICALLY_COMMAND_ID,
 	JScene3DWelcomeSidebarController,
 	openJScene3DDefinitionEditor,
-	registerJScene3DFileMenu
+	registerJScene3DFileMenu,
+	revealJScene3DInspectorAutomatically
 } from '../../browser/jscene3dWorkbench.contribution.js';
 import {
 	hideJScene3DProjectLoadingSplash,
@@ -48,6 +51,24 @@ import {
 
 suite('JScene3D workbench integration', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('bridges automatic Inspector reveal to the generic intent-aware view operation', async () => {
+		const calls: Array<{ readonly id: string; readonly intent: ViewRevealIntent; readonly focus: boolean | undefined }> = [];
+		const viewsService: Pick<IViewsService, 'revealView'> = {
+			revealView: async (id, options) => {
+				calls.push({ id, intent: options.intent, focus: options.focus });
+				return { outcome: ViewRevealOutcome.Denied, reason: ViewRevealDenialReason.PartExplicitlyHidden };
+			}
+		};
+
+		await revealJScene3DInspectorAutomatically(viewsService);
+
+		assert.deepStrictEqual({ command: JSCENE3D_REVEAL_INSPECTOR_AUTOMATICALLY_COMMAND_ID, calls }, {
+			command: 'jscene3d.workbench.revealInspectorAutomatically',
+			calls: [{ id: 'jscene3d.inspector', intent: ViewRevealIntent.Automatic, focus: false }]
+		});
+		assert.ok(CommandsRegistry.getCommand(JSCENE3D_REVEAL_INSPECTOR_AUTOMATICALLY_COMMAND_ID));
+	});
 
 	test('registers first-level File menu project commands with established contexts', () => {
 		let items = MenuRegistry.getMenuItems(MenuId.MenubarFileMenu)

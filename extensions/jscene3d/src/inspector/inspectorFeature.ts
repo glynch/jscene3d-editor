@@ -4,21 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { DefinitionMutationOutcome } from '../definition/authoredDefinitionLifecycle';
 import { AuthoredDefinitionState } from '../definition/authoredDefinitionState';
-import { DefinitionMutationDto, InspectorMutationTargetDto } from '../protocol/authoringProtocol';
+import { InspectorDefinitionEditor, InspectorEditCoordinator } from './inspectorEditCoordinator';
 import { InspectorReader, InspectorState } from './inspectorState';
 import { InspectorSelectionReveal } from './inspectorSelectionReveal';
-import { inspectorViewId, InspectorViewProvider, revealInspector } from './inspectorView';
-
-/** Definition mutation boundary consumed by Inspector registration. */
-export interface InspectorDefinitionEditor {
-	acceptInspectorMutation(
-		target: InspectorMutationTargetDto,
-		mutation: DefinitionMutationDto,
-		label: string
-	): Promise<DefinitionMutationOutcome>;
-}
+import { inspectorViewId, InspectorViewProvider, revealInspector, revealInspectorAutomatically } from './inspectorView';
 
 /** Inspector capabilities consumed by Project close and supporting editor features. */
 export interface RegisteredInspectorFeature extends vscode.Disposable {
@@ -38,6 +28,7 @@ export function registerInspectorFeature(
 
 class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 	private readonly state: InspectorState;
+	private readonly edits: InspectorEditCoordinator;
 	private readonly provider: InspectorViewProvider;
 	private readonly registration: vscode.Disposable;
 	private readonly selectionReveal: InspectorSelectionReveal;
@@ -50,34 +41,29 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 		private readonly logger: { appendLine(message: string): void }
 	) {
 		this.state = new InspectorState(reader, definitions);
+		this.edits = new InspectorEditCoordinator(this.state, definitions, editor, {
+			rejected: async (label, reason) => {
+				await vscode.window.showErrorMessage(vscode.l10n.t(
+					'JScene3D rejected {0}: {1}', label, reason));
+			},
+			failed: async error => {
+				const message = errorMessage(error);
+				this.logger.appendLine(`Inspector edit failed: ${message}`);
+				await vscode.window.showErrorMessage(vscode.l10n.t(
+					'JScene3D could not apply the edit: {0}', message));
+			}
+		});
 		this.provider = new InspectorViewProvider(
 			this.state,
 			vscode.env.language,
 			(message, ...args) => vscode.l10n.t(message, ...args),
-			{
-				mutate: async (target, candidate, label) => {
-					try {
-						const outcome = await editor.acceptInspectorMutation(
-							target, { operation: 'set', value: candidate }, label);
-						if (outcome.status === 'rejected') {
-							const reason = outcome.diagnostics[0]?.message ?? outcome.outcome;
-							await vscode.window.showErrorMessage(vscode.l10n.t(
-								'JScene3D rejected {0}: {1}', label, reason));
-						}
-					} catch (error) {
-						const message = errorMessage(error);
-						this.logger.appendLine(`Inspector edit failed: ${message}`);
-						await vscode.window.showErrorMessage(vscode.l10n.t(
-							'JScene3D could not apply the edit: {0}', message));
-					}
-				}
-			}
+			this.edits
 		);
 		this.registration = vscode.window.registerWebviewViewProvider(inspectorViewId, this.provider);
 		this.selectionReveal = new InspectorSelectionReveal(
 			definitions,
 			() => this.provider.visible,
-			() => revealInspector(command => vscode.commands.executeCommand(command)),
+			() => revealInspectorAutomatically(command => vscode.commands.executeCommand(command)),
 			error => this.logger.appendLine(`Failed to reveal JScene3D Inspector: ${errorMessage(error)}`)
 		);
 	}
@@ -102,6 +88,7 @@ class VsCodeInspectorFeature implements RegisteredInspectorFeature {
 		this.selectionReveal.dispose();
 		this.registration.dispose();
 		this.provider.dispose();
+		this.edits.dispose();
 		this.state.dispose();
 	}
 }

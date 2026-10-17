@@ -65,7 +65,7 @@ export class TogglePanelAction extends Action2 {
 
 	override async run(accessor: ServicesAccessor): Promise<void> {
 		const layoutService = accessor.get(IWorkbenchLayoutService);
-		layoutService.setPartHidden(layoutService.isVisible(Parts.PANEL_PART), Parts.PANEL_PART);
+		layoutService.setPartHiddenByUser(layoutService.isVisible(Parts.PANEL_PART), Parts.PANEL_PART);
 	}
 }
 
@@ -92,7 +92,7 @@ registerAction2(class extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor) {
-		accessor.get(IWorkbenchLayoutService).setPartHidden(true, Parts.PANEL_PART);
+		accessor.get(IWorkbenchLayoutService).setPartHiddenByUser(true, Parts.PANEL_PART);
 	}
 });
 
@@ -115,9 +115,7 @@ registerAction2(class extends Action2 {
 		const paneCompositeService = accessor.get(IPaneCompositePartService);
 
 		// Show panel
-		if (!layoutService.isVisible(Parts.PANEL_PART)) {
-			layoutService.setPartHidden(false, Parts.PANEL_PART);
-		}
+		layoutService.setPartHiddenByUser(false, Parts.PANEL_PART);
 
 		// Focus into active panel
 		const panel = paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel);

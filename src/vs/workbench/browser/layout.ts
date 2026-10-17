@@ -12,7 +12,8 @@ import { isWindows, isLinux, isMacintosh, isWeb, isIOS } from '../../base/common
 import { EditorInputCapabilities, GroupIdentifier, isResourceEditorInput, IUntypedEditorInput, pathsToEditors } from '../common/editor.js';
 import { SidebarPart } from './parts/sidebar/sidebarPart.js';
 import { PanelPart } from './parts/panel/panelPart.js';
-import { Position, Parts, PartOpensMaximizedOptions, IWorkbenchLayoutService, positionFromString, positionToString, partOpensMaximizedFromString, PanelAlignment, ActivityBarPosition, LayoutSettings, MULTI_WINDOW_PARTS, SINGLE_WINDOW_PARTS, ZenModeSettings, EditorTabsMode, EditorActionsLocation, shouldShowCustomTitleBar, isHorizontal, isMultiWindowPart, IPartVisibilityChangeEvent, isFloatingTopEdgeExposed, ModernUIDensity } from '../services/layout/browser/layoutService.js';
+import { Position, Parts, PartOpensMaximizedOptions, IWorkbenchLayoutService, positionFromString, positionToString, partOpensMaximizedFromString, PanelAlignment, ActivityBarPosition, LayoutSettings, MULTI_WINDOW_PARTS, SINGLE_WINDOW_PARTS, ZenModeSettings, EditorTabsMode, EditorActionsLocation, shouldShowCustomTitleBar, isHorizontal, isMultiWindowPart, IPartVisibilityChangeEvent, isFloatingTopEdgeExposed, ModernUIDensity, PartVisibilityIntent, ViewHostingPart } from '../services/layout/browser/layoutService.js';
+import { WorkbenchPartVisibilityIntentState } from '../services/layout/browser/partVisibilityIntent.js';
 import { isTemporaryWorkspace, IWorkspaceContextService, WorkbenchState } from '../../platform/workspace/common/workspace.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../platform/storage/common/storage.js';
 import { IConfigurationChangeEvent, IConfigurationService, isConfigured } from '../../platform/configuration/common/configuration.js';
@@ -313,6 +314,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 	private state!: ILayoutState;
 	private stateModel!: LayoutStateModel;
+	private partVisibilityIntentState!: WorkbenchPartVisibilityIntentState;
 
 	private disposed = false;
 
@@ -739,6 +741,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			mainContainerDimension: this._mainContainerDimension,
 			resetLayout: Boolean(this.layoutOptions?.resetLayout)
 		});
+		this.partVisibilityIntentState = new WorkbenchPartVisibilityIntentState(this.storageService, Boolean(this.layoutOptions?.resetLayout));
 
 		this._register(this.stateModel.onDidChangeState(change => {
 			if (change.key === LayoutStateKeys.ACTIVITYBAR_HIDDEN) {
@@ -1727,6 +1730,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			this.stateModel.setInitializationValue(LayoutStateKeys.AUXILIARYBAR_SIZE, auxiliaryBarSize as number);
 
 			this.stateModel.save(true, true);
+			this.partVisibilityIntentState.save();
 		}));
 
 		this._register(Event.any(this.paneCompositeService.onDidPaneCompositeOpen, this.paneCompositeService.onDidPaneCompositeClose)(() => {
@@ -2331,9 +2335,20 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		}
 	}
 
+	getPartVisibilityIntent(part: ViewHostingPart): PartVisibilityIntent {
+		return this.partVisibilityIntentState.get(part);
+	}
+
+	setPartHiddenByUser(hidden: boolean, part: ViewHostingPart): void {
+		this.partVisibilityIntentState.set(part, hidden ? PartVisibilityIntent.ExplicitlyHidden : PartVisibilityIntent.ExplicitlyShown);
+		if (this.isVisible(part) === hidden) {
+			this.setPartHidden(hidden, part);
+		}
+	}
+
 	toggleSecondarySideBar(): void {
 		const visible = !this.isSecondarySideBarVisible();
-		this.setPartHidden(!visible, Parts.AUXILIARYBAR_PART);
+		this.setPartHiddenByUser(!visible, Parts.AUXILIARYBAR_PART);
 		alert(visible
 			? localize('auxiliaryBarVisible', "Secondary Side Bar shown")
 			: localize('auxiliaryBarHidden', "Secondary Side Bar hidden"));

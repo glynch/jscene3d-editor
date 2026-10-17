@@ -820,12 +820,14 @@ class ViewContainerActivityAction extends CompositeBarAction {
 					case 'toggle':
 					default:
 						// Hide sidebar if selected viewlet already visible
-						this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
+						this.layoutService.setPartHiddenByUser(true, Parts.SIDEBAR_PART);
 						break;
 				}
 
 				return;
 			}
+
+			this.layoutService.setPartHiddenByUser(false, Parts.SIDEBAR_PART);
 		}
 
 		await this.paneCompositePart.openPaneComposite(this.compositeBarActionItem.id, focus);

@@ -95,7 +95,7 @@ registerAction2(class extends Action2 {
 		});
 	}
 	run(accessor: ServicesAccessor) {
-		accessor.get(IWorkbenchLayoutService).setPartHidden(true, Parts.AUXILIARYBAR_PART);
+		accessor.get(IWorkbenchLayoutService).setPartHiddenByUser(true, Parts.AUXILIARYBAR_PART);
 	}
 });
 
@@ -118,9 +118,7 @@ registerAction2(class FocusAuxiliaryBarAction extends Action2 {
 		const layoutService = accessor.get(IWorkbenchLayoutService);
 
 		// Show auxiliary bar
-		if (!layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
-			layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
-		}
+		layoutService.setPartHiddenByUser(false, Parts.AUXILIARYBAR_PART);
 
 		// Focus into active composite
 		const composite = paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar);

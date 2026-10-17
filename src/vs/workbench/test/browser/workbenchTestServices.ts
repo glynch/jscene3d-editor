@@ -165,7 +165,7 @@ import { IHistoryService } from '../../services/history/common/history.js';
 import { IHostService, IToastOptions, IToastResult } from '../../services/host/browser/host.js';
 import { LabelService } from '../../services/label/common/labelService.js';
 import { ILanguageDetectionService } from '../../services/languageDetection/common/languageDetectionWorkerService.js';
-import { IPartVisibilityChangeEvent, IWorkbenchLayoutService, PanelAlignment, Position as PartPosition, Parts, SINGLE_WINDOW_PARTS } from '../../services/layout/browser/layoutService.js';
+import { IPartVisibilityChangeEvent, IWorkbenchLayoutService, PanelAlignment, PartVisibilityIntent, Position as PartPosition, Parts, SINGLE_WINDOW_PARTS, ViewHostingPart } from '../../services/layout/browser/layoutService.js';
 import { ILifecycleService, InternalBeforeShutdownEvent, IWillShutdownEventJoiner, ShutdownReason, WillShutdownEvent } from '../../services/lifecycle/common/lifecycle.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
 import { IPathService } from '../../services/path/common/pathService.js';
@@ -182,7 +182,7 @@ import { UntitledTextEditorInput } from '../../services/untitled/common/untitled
 import { IUntitledTextEditorModelManager, IUntitledTextEditorService, UntitledTextEditorService } from '../../services/untitled/common/untitledTextEditorService.js';
 import { IUserDataProfileService } from '../../services/userDataProfile/common/userDataProfile.js';
 import { UserDataProfileService } from '../../services/userDataProfile/common/userDataProfileService.js';
-import { IViewsService } from '../../services/views/common/viewsService.js';
+import { IViewRevealOptions, IViewsService, ViewRevealOutcome, ViewRevealResult } from '../../services/views/common/viewsService.js';
 import { BrowserWorkingCopyBackupService } from '../../services/workingCopy/browser/workingCopyBackupService.js';
 import { IWorkingCopy, IWorkingCopyBackupMeta, IWorkingCopyIdentifier } from '../../services/workingCopy/common/workingCopy.js';
 import { IResolvedWorkingCopyBackup, IWorkingCopyBackupService } from '../../services/workingCopy/common/workingCopyBackup.js';
@@ -629,6 +629,7 @@ export class TestLayoutService implements IWorkbenchLayoutService {
 	declare readonly _serviceBrand: undefined;
 
 	openedDefaultEditors = false;
+	private readonly partVisibilityIntents = new Map<ViewHostingPart, PartVisibilityIntent>();
 
 	mainContainerDimension: IDimension = { width: 800, height: 600 };
 	activeContainerDimension: IDimension = { width: 800, height: 600 };
@@ -676,6 +677,11 @@ export class TestLayoutService implements IWorkbenchLayoutService {
 	async setSideBarHidden(_hidden: boolean): Promise<void> { }
 	async setAuxiliaryBarHidden(_hidden: boolean): Promise<void> { }
 	async setPartHidden(_hidden: boolean, part: Parts): Promise<void> { }
+	getPartVisibilityIntent(part: ViewHostingPart): PartVisibilityIntent { return this.partVisibilityIntents.get(part) ?? PartVisibilityIntent.Default; }
+	async setPartHiddenByUser(hidden: boolean, part: ViewHostingPart): Promise<void> {
+		this.partVisibilityIntents.set(part, hidden ? PartVisibilityIntent.ExplicitlyHidden : PartVisibilityIntent.ExplicitlyShown);
+		await this.setPartHidden(hidden, part);
+	}
 	isSecondarySideBarVisible(): boolean { return false; }
 	toggleSecondarySideBar(): void { }
 	isPanelHidden(): boolean { return false; }
@@ -857,6 +863,7 @@ export class TestViewsService implements IViewsService {
 	getActiveViewWithId<T extends IView>(id: string): T | null { return null; }
 	getViewWithId<T extends IView>(id: string): T | null { return null; }
 	openView<T extends IView>(id: string, focus?: boolean | undefined): Promise<T | null> { return Promise.resolve(null); }
+	revealView(_id: string, _options: IViewRevealOptions): Promise<ViewRevealResult> { return Promise.resolve({ outcome: ViewRevealOutcome.Unavailable }); }
 	closeView(id: string): void { }
 	getViewProgressIndicator(id: string) { return null!; }
 	getActiveViewPaneContainerWithId(id: string) { return null; }

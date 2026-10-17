@@ -18,6 +18,7 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
+import { IViewsService, ViewRevealIntent, ViewRevealOutcome } from '../../../services/views/common/viewsService.js';
 import { GettingStartedInput } from '../../welcomeGettingStarted/browser/gettingStartedInput.js';
 import { removePartsSplash } from '../../splash/browser/partsSplash.js';
 import {
@@ -32,6 +33,9 @@ export const JSCENE3D_CLOSE_WELCOME_COMMAND_ID = 'jscene3d.workbench.closeWelcom
 export const JSCENE3D_COMPLETE_STARTUP_PRESENTATION_COMMAND_ID = 'jscene3d.workbench.completeStartupPresentation';
 export const JSCENE3D_SHOW_PROJECT_LOADING_SPLASH_COMMAND_ID = 'jscene3d.workbench.showProjectLoadingSplash';
 export const JSCENE3D_HIDE_PROJECT_LOADING_SPLASH_COMMAND_ID = 'jscene3d.workbench.hideProjectLoadingSplash';
+export const JSCENE3D_REVEAL_INSPECTOR_AUTOMATICALLY_COMMAND_ID = 'jscene3d.workbench.revealInspectorAutomatically';
+
+const jscene3dInspectorViewId = 'jscene3d.inspector';
 
 const projectOpenContext = 'jscene3d.projectOpen';
 const projectBusyContext = 'jscene3d.projectBusy';
@@ -180,6 +184,19 @@ export async function closeJScene3DWelcomeEditors(editorService: IEditorService)
 	}
 }
 
+/** Requests an automatic Inspector reveal through the workbench-owned visibility policy. */
+export async function revealJScene3DInspectorAutomatically(
+	viewsService: Pick<IViewsService, 'revealView'>
+): Promise<void> {
+	const result = await viewsService.revealView(jscene3dInspectorViewId, {
+		intent: ViewRevealIntent.Automatic,
+		focus: false
+	});
+	if (result.outcome === ViewRevealOutcome.Failed) {
+		throw new Error('The JScene3D Inspector could not be revealed');
+	}
+}
+
 /** Removes transient restored groups once application-startup coverage can yield to a coherent presentation. */
 export function completeJScene3DStartupPresentation(
 	editorGroupsService: IEditorGroupsService,
@@ -233,6 +250,11 @@ if (product.applicationName === 'jscene3d-editor') {
 			operationId,
 			fadeDurationMs
 		)
+	);
+
+	CommandsRegistry.registerCommand(
+		JSCENE3D_REVEAL_INSPECTOR_AUTOMATICALLY_COMMAND_ID,
+		accessor => revealJScene3DInspectorAutomatically(accessor.get(IViewsService))
 	);
 
 	registerJScene3DFileMenu();

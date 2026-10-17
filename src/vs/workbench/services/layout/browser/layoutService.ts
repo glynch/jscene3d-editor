@@ -31,6 +31,21 @@ export const enum Parts {
 	STATUSBAR_PART = 'workbench.parts.statusbar'
 }
 
+/**
+ * Workbench parts that host movable views and therefore support a persisted
+ * explicit user visibility preference.
+ */
+export type ViewHostingPart = Parts.SIDEBAR_PART | Parts.PANEL_PART | Parts.AUXILIARYBAR_PART;
+
+/**
+ * The user's explicit visibility preference for a view-hosting workbench part.
+ */
+export const enum PartVisibilityIntent {
+	Default = 'default',
+	ExplicitlyShown = 'explicitlyShown',
+	ExplicitlyHidden = 'explicitlyHidden',
+}
+
 export const enum ZenModeSettings {
 	SHOW_TABS = 'zenMode.showTabs',
 	HIDE_LINENUMBERS = 'zenMode.hideLineNumbers',
@@ -578,6 +593,17 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	 * Set part hidden or not in the target window.
 	 */
 	setPartHidden(hidden: boolean, part: Parts): void;
+
+	/**
+	 * Returns the user's explicit visibility preference for a view-hosting part.
+	 */
+	getPartVisibilityIntent(part: ViewHostingPart): PartVisibilityIntent;
+
+	/**
+	 * Applies an explicit user visibility choice and records it independently of
+	 * the resulting actual part visibility.
+	 */
+	setPartHiddenByUser(hidden: boolean, part: ViewHostingPart): void;
 
 	/**
 	 * Returns whether the layout surface that represents the secondary sidebar is visible.

@@ -33,7 +33,9 @@ import { FilterViewPaneContainer } from '../../../browser/parts/views/viewsViewl
 import { IPaneCompositePartService } from '../../panecomposite/browser/panecomposite.js';
 import { ICommandActionTitle, ILocalizedString } from '../../../../platform/action/common/action.js';
 import { IEditorService } from '../../editor/common/editorService.js';
-import { IViewsService } from '../common/viewsService.js';
+import { ILifecycleService } from '../../lifecycle/common/lifecycle.js';
+import { IntentAwareViewReveal } from './intentAwareViewReveal.js';
+import { IViewRevealOptions, IViewsService, ViewRevealResult } from '../common/viewsService.js';
 
 export class ViewsService extends Disposable implements IViewsService {
 
@@ -55,13 +57,15 @@ export class ViewsService extends Disposable implements IViewsService {
 	private readonly enabledViewContainersContextKeys: Map<string, IContextKey<boolean>>;
 	private readonly visibleViewContextKeys: Map<string, IContextKey<boolean>>;
 	private readonly focusedViewContextKey: IContextKey<string>;
+	private readonly intentAwareViewReveal: IntentAwareViewReveal;
 
 	constructor(
 		@IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService,
 		@IPaneCompositePartService private readonly paneCompositeService: IPaneCompositePartService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@ILifecycleService lifecycleService: ILifecycleService
 	) {
 		super();
 
@@ -69,6 +73,15 @@ export class ViewsService extends Disposable implements IViewsService {
 		this.enabledViewContainersContextKeys = new Map<string, IContextKey<boolean>>();
 		this.visibleViewContextKeys = new Map<string, IContextKey<boolean>>();
 		this.viewPaneContainers = new Map<string, ViewPaneContainer>();
+		this.intentAwareViewReveal = this._register(new IntentAwareViewReveal(
+			viewDescriptorService,
+			paneCompositeService,
+			layoutService,
+			contextKeyService,
+			lifecycleService,
+			(id, focus) => this.openView(id, focus),
+			id => this.getActiveViewWithId(id)
+		));
 
 		this._register(toDisposable(() => {
 			this.viewDisposable.forEach(disposable => disposable.dispose());
@@ -321,6 +334,10 @@ export class ViewsService extends Disposable implements IViewsService {
 		}
 
 		return null;
+	}
+
+	revealView(id: string, options: IViewRevealOptions): Promise<ViewRevealResult> {
+		return this.intentAwareViewReveal.reveal(id, options);
 	}
 
 	closeView(id: string): void {

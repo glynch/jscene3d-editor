@@ -40,11 +40,6 @@ interface ReadonlyNumericPropertyEditorModel {
 	readonly intermediatePattern: string;
 }
 
-const integerCompletePattern = '^[+-]?\\d+$';
-const integerIntermediatePattern = '^[+-]?$';
-const numberCompletePattern = '^[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?$';
-const numberIntermediatePattern = '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)[eE][+-]?)$';
-
 interface ReadonlyComponentPropertyEditorModel {
 	readonly collapsible: true;
 	readonly components: readonly ReadonlyPropertyEditorComponent[];
@@ -137,12 +132,26 @@ export function numericInputStatus(
 	kind: 'integer' | 'number',
 	literal: string
 ): 'complete' | 'intermediate' | 'invalid' {
-	const complete = new RegExp(kind === 'integer' ? integerCompletePattern : numberCompletePattern);
+	const patterns = numericInputPatterns(kind);
+	const complete = new RegExp(patterns.complete);
 	if (complete.test(literal)) {
 		return 'complete';
 	}
-	const intermediate = new RegExp(kind === 'integer' ? integerIntermediatePattern : numberIntermediatePattern);
+	const intermediate = new RegExp(patterns.intermediate);
 	return intermediate.test(literal) ? 'intermediate' : 'invalid';
+}
+
+/** Returns the exact numeric grammar shared by presentation, browser drafts, and host validation. */
+export function numericInputPatterns(kind: 'integer' | 'number'): {
+	readonly complete: string;
+	readonly intermediate: string;
+} {
+	return kind === 'integer'
+		? { complete: '^[+-]?\\d+$', intermediate: '^[+-]?$' }
+		: {
+			complete: '^[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?$',
+			intermediate: '^(?:[+-]?|[+-]?\\.|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)[eE][+-]?)$'
+		};
 }
 
 function scalarPropertyEditor(
@@ -210,14 +219,15 @@ function numericEditor(
 	property: InspectorPropertyDto,
 	value: InspectorValueDto | null
 ): ReadonlyPropertyEditorModel {
+	const patterns = numericInputPatterns(kind === 'integer' ? 'integer' : 'number');
 	return {
 		kind,
 		decimal: value?.kind === 'number' ? value.decimal : null,
 		editable: editable(property),
 		minimum: property.constraints.editor.minimum,
 		maximum: property.constraints.editor.maximum,
-		completePattern: kind === 'integer' ? integerCompletePattern : numberCompletePattern,
-		intermediatePattern: kind === 'integer' ? integerIntermediatePattern : numberIntermediatePattern
+		completePattern: patterns.complete,
+		intermediatePattern: patterns.intermediate
 	};
 }
 
@@ -232,11 +242,12 @@ function componentEditor(
 	property: InspectorPropertyDto,
 	value: InspectorValueDto | null
 ): ReadonlyPropertyEditorModel {
+	const patterns = numericInputPatterns('number');
 	if (value === null) {
 		const components = labels.map(label => ({ label, decimal: null }));
 		return {
 			kind, collapsible: true, unit, components, editable: editable(property),
-			completePattern: numberCompletePattern, intermediatePattern: numberIntermediatePattern,
+			completePattern: patterns.complete, intermediatePattern: patterns.intermediate,
 			summary: componentSummary(components, unit, kind === 'linearColor')
 		};
 	}
@@ -253,7 +264,7 @@ function componentEditor(
 	}
 	return {
 		kind, collapsible: true, unit, components, editable: editable(property),
-		completePattern: numberCompletePattern, intermediatePattern: numberIntermediatePattern,
+		completePattern: patterns.complete, intermediatePattern: patterns.intermediate,
 		summary: componentSummary(components, unit, kind === 'linearColor')
 	};
 }

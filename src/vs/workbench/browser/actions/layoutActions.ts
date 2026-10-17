@@ -327,7 +327,7 @@ export class ToggleSidebarVisibilityAction extends Action2 {
 		const layoutService = accessor.get(IWorkbenchLayoutService);
 		const isCurrentlyVisible = layoutService.isVisible(Parts.SIDEBAR_PART);
 
-		layoutService.setPartHidden(isCurrentlyVisible, Parts.SIDEBAR_PART);
+		layoutService.setPartHiddenByUser(isCurrentlyVisible, Parts.SIDEBAR_PART);
 
 		// Announce visibility change to screen readers
 		const alertMessage = isCurrentlyVisible
